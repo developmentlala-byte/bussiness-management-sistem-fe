@@ -1,26 +1,146 @@
 @import "tailwindcss";
+@import "@heroui/styles";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+:root,
+.light,
+.default,
+[data-theme="light"],
+[data-theme="default"] {
+  /* Theme Colors (Light Mode) */
+  --accent: oklch(58.67% 0.118 52.55);
+  --accent-foreground: oklch(99.11% 0 0);
+  --background: oklch(97.02% 0.0146 52.55);
+  --border: oklch(90% 0.0146 52.55);
+  --danger: oklch(65.32% 0.2396 1.59);
+  --danger-foreground: oklch(99.11% 0 0);
+  --default: oklch(94% 0.0146 52.55);
+  --default-foreground: oklch(21.03% 0.0059 52.55);
+  --field-background: oklch(100% 0.0073 52.55);
+  --field-foreground: oklch(21.03% 0.0146 52.55);
+  --field-placeholder: oklch(55.17% 0.0292 52.55);
+  --focus: oklch(58.67% 0.118 52.55);
+  --foreground: oklch(21.03% 0.0146 52.55);
+  --muted: oklch(55.17% 0.0292 52.55);
+  --overlay: oklch(100% 0.0044 52.55);
+  --overlay-foreground: oklch(21.03% 0.0146 52.55);
+  --scrollbar: oklch(87.1% 0.0146 52.55);
+  --segment: oklch(100% 0.0146 52.55);
+  --segment-foreground: oklch(21.03% 0.0146 52.55);
+  --separator: oklch(92% 0.0146 52.55);
+  --success: oklch(73.29% 0.1992 126.66);
+  --success-foreground: oklch(21.03% 0.0059 126.66);
+  --surface: oklch(100% 0.0073 52.55);
+  --surface-foreground: oklch(21.03% 0.0146 52.55);
+  --surface-secondary: oklch(95.24% 0.0117 52.55);
+  --surface-secondary-foreground: oklch(21.03% 0.0146 52.55);
+  --surface-tertiary: oklch(93.73% 0.0117 52.55);
+  --surface-tertiary-foreground: oklch(21.03% 0.0146 52.55);
+  --warning: oklch(78.19% 0.1631 48.18);
+  --warning-foreground: oklch(21.03% 0.0059 48.18);
+
+  /* Border Radius */
+  --radius: 0.5rem;
+  --field-radius: 0.5rem;
+
+  /* Font Family */
+  /* Make sure to load Inter font in your app */
+  --font-sans: var(--font-inter);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+  /* Theme Colors (Dark Mode) */
+  --accent: oklch(58.67% 0.118 52.55);
+  --accent-foreground: oklch(99.11% 0 0);
+  --background: oklch(12% 0.0061 52.55);
+  --border: oklch(28% 0.0061 52.55);
+  --danger: oklch(59.4% 0.1991 0.48);
+  --danger-foreground: oklch(99.11% 0 0);
+  --default: oklch(27.4% 0.0061 52.55);
+  --default-foreground: oklch(99.11% 0 0);
+  --field-background: oklch(21.03% 0.0122 52.55);
+  --field-foreground: oklch(99.11% 0.0061 52.55);
+  --field-placeholder: oklch(70.5% 0.0122 52.55);
+  --focus: oklch(58.67% 0.118 52.55);
+  --foreground: oklch(99.11% 0.0061 52.55);
+  --muted: oklch(70.5% 0.0122 52.55);
+  --overlay: oklch(21.03% 0.0122 52.55);
+  --overlay-foreground: oklch(99.11% 0.0061 52.55);
+  --scrollbar: oklch(70.5% 0.0061 52.55);
+  --segment: oklch(39.64% 0.0061 52.55);
+  --segment-foreground: oklch(99.11% 0.0061 52.55);
+  --separator: oklch(25% 0.0061 52.55);
+  --success: oklch(73.29% 0.1959 126.66);
+  --success-foreground: oklch(21.03% 0.0059 126.66);
+  --surface: oklch(21.03% 0.0122 52.55);
+  --surface-foreground: oklch(99.11% 0.0061 52.55);
+  --surface-secondary: oklch(25.7% 0.0092 52.55);
+  --surface-secondary-foreground: oklch(99.11% 0.0061 52.55);
+  --surface-tertiary: oklch(27.21% 0.0092 52.55);
+  --surface-tertiary-foreground: oklch(99.11% 0.0061 52.55);
+  --warning: oklch(82.03% 0.1405 52.19);
+  --warning-foreground: oklch(21.03% 0.0059 52.19);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+.driver-popover.driver-theme-luxury {
+  border-radius: 0px !important; /* Siku tajam mutlak */
+  background-color: var(--surface) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3) !important;
+  font-family: var(--font-sans) !important;
+  padding: 1.5rem !important;
+}
+
+.driver-theme-luxury .driver-popover-title {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.5rem !important;
+  color: var(--foreground) !important;
+}
+
+.driver-theme-luxury .driver-popover-description {
+  color: var(--muted-foreground) !important;
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+}
+
+.driver-theme-luxury .driver-popover-footer {
+  margin-top: 1.5rem !important;
+}
+
+.driver-theme-luxury .driver-popover-footer button {
+  border-radius: 0px !important; /* Tombol siku tajam */
+  background-color: var(--segment) !important;
+  color: var(--segment-foreground) !important;
+  border: 1px solid var(--border) !important;
+  text-shadow: none !important;
+  font-weight: 500 !important;
+  padding: 0.5rem 1rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.driver-theme-luxury .driver-popover-footer button:hover {
+  background-color: var(--surface-secondary) !important;
+}
+
+/* Mengubah warna panah (arrow) agar sesuai background */
+.driver-theme-luxury .driver-popover-arrow[data-placement^="top"]::before {
+  border-top-color: var(--surface) !important;
+}
+.driver-theme-luxury .driver-popover-arrow[data-placement^="bottom"]::before {
+  border-bottom-color: var(--surface) !important;
+}
+.driver-theme-luxury .driver-popover-arrow[data-placement^="left"]::before {
+  border-left-color: var(--surface) !important;
+}
+.driver-theme-luxury .driver-popover-arrow[data-placement^="right"]::before {
+  border-right-color: var(--surface) !important;
 }
