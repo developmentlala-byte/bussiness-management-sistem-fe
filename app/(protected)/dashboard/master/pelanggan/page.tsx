@@ -1,7 +1,13 @@
 "use client";
 
 import { Avatar, InputGroup, TextField, Chip } from "@heroui/react";
-import { MagnifyingGlass, Users, Crown, Clock, CheckCircle2 } from "@phosphor-icons/react";
+import {
+  MagnifyingGlass,
+  Users,
+  Crown,
+  Clock,
+  CheckCircle,
+} from "@phosphor-icons/react";
 import { useState, useMemo } from "react";
 import { useApiFetch } from "@/app/libs/use-http";
 import Link from "next/link";
@@ -64,7 +70,9 @@ const formatDate = (dateStr: string) => {
 
 export default function MasterPelangganPage() {
   const [search, setSearch] = useState("");
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    null,
+  );
 
   const { data: responseData, isLoading } = useApiFetch<{ data: Customer[] }>(
     ["customers"],
@@ -185,7 +193,9 @@ export default function MasterPelangganPage() {
           {!selectedCustomer ? (
             <div className="text-center py-20 border border-dashed border-border rounded-2xl">
               <Users className="w-12 h-12 text-muted mx-auto mb-3" />
-              <p className="text-muted text-sm">Pilih pelanggan untuk melihat detail</p>
+              <p className="text-muted text-sm">
+                Pilih pelanggan untuk melihat detail
+              </p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -209,7 +219,10 @@ export default function MasterPelangganPage() {
                           color="success"
                           startContent={<Crown className="w-3 h-3" />}
                         >
-                          {selectedCustomer.active_membership.membership_package?.name}
+                          {
+                            selectedCustomer.active_membership
+                              .membership_package?.name
+                          }
                         </Chip>
                       )}
                     </div>
@@ -257,7 +270,10 @@ export default function MasterPelangganPage() {
                           Paket
                         </span>
                         <p className="font-semibold">
-                          {selectedCustomer.active_membership.membership_package?.name}
+                          {
+                            selectedCustomer.active_membership
+                              .membership_package?.name
+                          }
                         </p>
                       </div>
                       <div>
@@ -265,7 +281,7 @@ export default function MasterPelangganPage() {
                           Status
                         </span>
                         <p className="font-semibold flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-success" />
+                          <CheckCircle className="w-4 h-4 text-success" />
                           Aktif
                         </p>
                       </div>
@@ -274,7 +290,9 @@ export default function MasterPelangganPage() {
                           Mulai
                         </span>
                         <p className="font-semibold">
-                          {formatDate(selectedCustomer.active_membership.start_date)}
+                          {formatDate(
+                            selectedCustomer.active_membership.start_date,
+                          )}
                         </p>
                       </div>
                       <div>
@@ -283,7 +301,9 @@ export default function MasterPelangganPage() {
                         </span>
                         <p className="font-semibold flex items-center gap-1.5">
                           <Clock className="w-4 h-4" />
-                          {formatDate(selectedCustomer.active_membership.end_date)}
+                          {formatDate(
+                            selectedCustomer.active_membership.end_date,
+                          )}
                         </p>
                       </div>
                     </div>
@@ -296,7 +316,8 @@ export default function MasterPelangganPage() {
                         {selectedCustomer.active_membership.membership_package?.variants?.map(
                           (variant) => {
                             const remaining =
-                              selectedCustomer.active_membership?.remaining_quota?.[
+                              selectedCustomer.active_membership
+                                ?.remaining_quota?.[
                                 variant.service_variant_id
                               ] ?? variant.quota;
                             const used = variant.quota - remaining;
@@ -333,7 +354,9 @@ export default function MasterPelangganPage() {
                 <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
                   <div className="text-center py-8">
                     <Users className="w-12 h-12 text-muted mx-auto mb-3" />
-                    <h3 className="text-sm font-semibold">Belum Memiliki Membership</h3>
+                    <h3 className="text-sm font-semibold">
+                      Belum Memiliki Membership
+                    </h3>
                     <p className="text-xs text-muted mt-1">
                       Pelanggan ini belum terdaftar sebagai member
                     </p>
