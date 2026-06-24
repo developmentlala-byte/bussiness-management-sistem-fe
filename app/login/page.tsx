@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Form, Input, Button, Separator, Label, toast } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -9,7 +9,6 @@ import * as z from "zod";
 import axiosInstance from "../services/axios-instance";
 import { useAuthStore } from "../libs/use-user";
 
-// 1. Schema Validasi Zod
 const loginSchema = z.object({
   email: z
     .string()
@@ -20,43 +19,31 @@ const loginSchema = z.object({
 
 type LoginFormInputs = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // 2. Tarik fungsi setAuth dari Zustand
   const { setAuth } = useAuthStore();
 
-  // 3. Setup React Hook Form
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<LoginFormInputs>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+    defaultValues: { email: "", password: "" },
   });
 
-  // 4. Handler Login Manual (Email & Password)
   const onSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true);
     setErrorMsg("");
-
     try {
       const response = await axiosInstance.post("/auth/login", data);
-
-      // Membaca dari struktur ApiResponse::success() backend Laravel Anda
       const result = response.data.data;
-
       if (result && result.token) {
-        // Simpan data user & token ke Zustand (Otomatis masuk localStorage lewat persist)
         setAuth(result.user, result.token);
-
         router.push("/dashboard");
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,7 +57,6 @@ export default function LoginPage() {
     }
   };
 
-  // 5. Handler Login OAuth
   const handleOAuthLogin = (provider: string) => {
     const baseUrl =
       process.env.NEXT_PUBLIC_API_BASE_URL_LOGIN || "http://localhost:8000";
@@ -88,7 +74,6 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] flex flex-col items-center">
         {/* Brand Header */}
         <div className="flex items-center gap-2 mb-12">
-          {/* Logo Mahalu - Siku Tajam */}
           <div className="w-7 h-7 bg-foreground flex items-center justify-center rounded-none shadow-sm">
             <span className="text-background text-xs font-bold font-serif">
               M
@@ -97,17 +82,14 @@ export default function LoginPage() {
           <span className="text-xl font-bold tracking-tight">Mahalu</span>
         </div>
 
-        {/* Welcome Text */}
         <h1 className="text-2xl font-semibold mb-8 text-center tracking-tight">
           Welcome
         </h1>
 
-        {/* Form Login */}
         <Form
           className="w-full flex flex-col gap-6"
           onSubmit={handleSubmit(onSubmit)}
         >
-          {/* Error Message Box */}
           {errorMsg && (
             <div className="w-full p-3 bg-danger/10 border border-danger text-danger text-sm rounded-none font-medium shadow-sm">
               {errorMsg}
@@ -115,7 +97,6 @@ export default function LoginPage() {
           )}
 
           <div className="w-full flex flex-col gap-5">
-            {/* Input Group: Email */}
             <div className="flex flex-col gap-2 w-full">
               <Label
                 htmlFor="email"
@@ -141,7 +122,6 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* Input Group: Password */}
             <div className="flex flex-col gap-2 w-full">
               <Label
                 htmlFor="password"
@@ -177,7 +157,6 @@ export default function LoginPage() {
           </Button>
         </Form>
 
-        {/* Divider OR */}
         <div className="flex items-center w-full gap-4 my-8">
           <Separator className="flex-1 bg-border" />
           <span className="text-xs text-muted uppercase tracking-widest font-medium">
@@ -186,7 +165,6 @@ export default function LoginPage() {
           <Separator className="flex-1 bg-border" />
         </div>
 
-        {/* OAuth Buttons */}
         <div className="w-full flex flex-col gap-3">
           <Button
             variant="outline"
@@ -196,7 +174,6 @@ export default function LoginPage() {
             <GoogleIcon />
             Continue with Google
           </Button>
-
           <Button
             variant="outline"
             onClick={() => handleOAuthLogin("github")}
@@ -207,7 +184,6 @@ export default function LoginPage() {
           </Button>
         </div>
 
-        {/* Terms & Conditions Footer */}
         <div className="mt-12 text-center text-xs text-muted">
           <p className="mb-4">
             By continuing, you agree to{` Mahalu's`}{" "}
@@ -238,6 +214,14 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   );
 }
 

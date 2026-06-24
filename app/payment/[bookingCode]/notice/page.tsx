@@ -1,27 +1,26 @@
 "use client";
 
+import { Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "@heroui/react";
 
-export default function BookingPaymentNoticePage() {
+function BookingPaymentNoticePageInner() {
   const params = useParams<{ bookingCode: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const bookingCode = params?.bookingCode ?? "";
-  const from = searchParams.get("from"); // return | cancel
+  const from = searchParams.get("from");
 
   useEffect(() => {
     if (!bookingCode) return;
-
     if (from === "cancel") {
       toast.warning("Pembayaran dibatalkan", {
         description: `Booking ${bookingCode}. Kamu bisa coba bayar lagi.`,
       });
       return;
     }
-
     toast.success("Kembali dari pembayaran", {
       description: `Booking ${bookingCode}. Klik untuk lihat hasil pembayaran.`,
     });
@@ -34,13 +33,11 @@ export default function BookingPaymentNoticePage() {
           Booking
         </p>
         <h1 className="mt-2 text-xl font-semibold">{bookingCode}</h1>
-
         <p className="mt-6 text-sm text-muted-foreground">
           {from === "cancel"
             ? "Pembayaran dibatalkan. Kamu bisa cek status atau bayar ulang dari dashboard."
             : "Silakan cek hasil pembayaran. Status resmi tetap dari callback (notifyUrl)."}
         </p>
-
         <div className="mt-6 space-y-3">
           <button
             onClick={() => router.push(`/payment/${bookingCode}/result`)}
@@ -48,7 +45,6 @@ export default function BookingPaymentNoticePage() {
           >
             Lihat hasil pembayaran
           </button>
-
           <button
             onClick={() => router.push("/dashboard/reservasi/booking")}
             className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold"
@@ -61,3 +57,10 @@ export default function BookingPaymentNoticePage() {
   );
 }
 
+export default function BookingPaymentNoticePage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingPaymentNoticePageInner />
+    </Suspense>
+  );
+}

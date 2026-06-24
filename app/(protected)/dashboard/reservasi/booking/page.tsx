@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import {
   Chip,
   Button,
@@ -27,7 +28,7 @@ import {
   CaretRight,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
-import { DataTable } from "@/app/components/data-table"; // Pastikan ini mengarah ke file DataTable TanStack
+import { DataTable } from "@/app/components/data-table";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   endOfMonth,
@@ -41,7 +42,6 @@ import { useApiFetch, usePost } from "@/app/libs/use-http";
 import { formatDate } from "@/app/libs/date-format";
 import { useSearchParams, useRouter } from "next/navigation";
 
-// Helper untuk warna status reservasi
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
     BookingStatus,
@@ -55,10 +55,9 @@ const getBookingStatusColor = (status: BookingStatus) => {
   return map[status];
 };
 
-// 1. Gunakan ColumnHelper dari TanStack
 const columnHelper = createColumnHelper<SpaBooking>();
 
-export default function BookingsPage() {
+function BookingsPageInner() {
   const timeZone = getLocalTimeZone();
   const currentDateObj = today(timeZone);
 
@@ -84,12 +83,11 @@ export default function BookingsPage() {
   const startDateStr = dateRange.start.toString();
   const endDateStr = dateRange.end.toString();
 
-  const { data } = useApiFetch<{
-    data: SpaBooking[];
-  }>(["bookings", startDateStr, endDateStr], "/master/bookings", {
-    start_date: startDateStr,
-    end_date: endDateStr,
-  });
+  const { data } = useApiFetch<{ data: SpaBooking[] }>(
+    ["bookings", startDateStr, endDateStr],
+    "/master/bookings",
+    { start_date: startDateStr, end_date: endDateStr },
+  );
 
   const createPayment = usePost<
     { data: { payment_url: string } },
@@ -140,30 +138,23 @@ export default function BookingsPage() {
 
   const handleRetryPayment = async () => {
     if (!selectedBooking?.id || createPayment.isPending) return;
-
     const payload = {
       bookingId: Number(selectedBooking.id),
       idempotency_key: crypto.randomUUID(),
     };
-
-    console.log("Creating payment link with payload:", payload);
-
     try {
       const response = await createPayment.mutateAsync(payload);
-
       const paymentUrl = response?.data?.payment_url;
       if (!paymentUrl) {
         toast.warning("Gagal membuat payment link");
         return;
       }
-
       window.location.href = paymentUrl;
     } catch {
       toast.warning("Gagal membuat payment link");
     }
   };
 
-  // 2. Definisi kolom dengan standard TanStack (menggunakan cell, bukan render)
   const columns = [
     columnHelper.accessor("id", {
       header: "Booking ID",
@@ -173,7 +164,6 @@ export default function BookingsPage() {
         </span>
       ),
     }),
-
     columnHelper.accessor("customer_name", {
       header: "Customer",
       cell: (info) => (
@@ -187,13 +177,10 @@ export default function BookingsPage() {
         </div>
       ),
     }),
-
     columnHelper.accessor("service_name", {
       header: "Service & Therapist",
       cell: (info) => {
-        const isBundle =
-          info.row.original?.booking_bundle_promos &&
-          info.row.original?.booking_bundle_promos.length > 0;
+        const isBundle = info.row.original?.booking_bundle_promos?.length > 0;
         const lines = info.row.original?.service_variants ?? [];
         const serviceName =
           lines.length > 0
@@ -213,7 +200,6 @@ export default function BookingsPage() {
             </div>
           );
         }
-
         return (
           <div className="flex flex-col">
             <span className="text-sm">{serviceName}</span>
@@ -224,43 +210,35 @@ export default function BookingsPage() {
         );
       },
     }),
-
     columnHelper.accessor("schedule_date", {
       header: "Schedule",
       cell: (info) => {
-        const date = new Date(info.row?.original.schedule_date);
+        const date = new Date(info.row.original.schedule_date);
         return (
           <div className="flex flex-col">
             <span className="text-sm">
               {formatDate(date, { withTime: true })}
             </span>
             <span className="text-xs text-muted-foreground">
-              {/* {new Intl.DateTimeFormat("id-ID", { timeStyle: "short" }).format(
-                date,
-              )}{" "} */}
               ({info.row.original.duration_minutes} min)
             </span>
           </div>
         );
       },
     }),
-
     columnHelper.accessor("status", {
       header: "Status",
-      cell: (info) => {
-        const status = info.getValue();
-        return (
-          <div className="flex gap-2 items-center">
-            <Chip
-              size="sm"
-              variant="primary"
-              color={getBookingStatusColor(status)}
-            >
-              {status}
-            </Chip>
-          </div>
-        );
-      },
+      cell: (info) => (
+        <div className="flex gap-2 items-center">
+          <Chip
+            size="sm"
+            variant="primary"
+            color={getBookingStatusColor(info.getValue())}
+          >
+            {info.getValue()}
+          </Chip>
+        </div>
+      ),
       footer: () => (
         <div className="flex justify-end w-full">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.15em]">
@@ -269,7 +247,6 @@ export default function BookingsPage() {
         </div>
       ),
     }),
-
     columnHelper.accessor("totalAmount", {
       header: "Amount",
       cell: (info) => (
@@ -287,19 +264,16 @@ export default function BookingsPage() {
             style: "currency",
             currency: "IDR",
             maximumFractionDigits: 0,
-          }).format(totalAmount)}{" "}
-          {/* Pastikan state totalAmount tersedia di scope ini */}
+          }).format(totalAmount)}
         </span>
       ),
     }),
-
     columnHelper.display({
       id: "actions",
       header: "",
       enableSorting: false,
       cell: (info) => (
         <div className="flex justify-end gap-2">
-          {/* Note: Menggunakan varian 'primary' agar icon button tidak terlihat memblok (clean design) */}
           <Button
             isIconOnly
             size="sm"
@@ -335,7 +309,7 @@ export default function BookingsPage() {
         gap: "var(--space-5)",
       }}
     >
-      {/* ── PAGE HEADER ── */}
+      {/* PAGE HEADER */}
       <div
         className="flex flex-wrap justify-between items-start"
         style={{ gap: "var(--space-4)" }}
@@ -362,7 +336,6 @@ export default function BookingsPage() {
           </p>
         </div>
 
-        {/* Primary action — always reachable, visually distinct from filters */}
         <Drawer state={createBookingDrawer} isDismissable={false}>
           <Button
             variant="primary"
@@ -396,12 +369,11 @@ export default function BookingsPage() {
         </Drawer>
       </div>
 
-      {/* ── TOOLBAR: filters (left-aligned) + secondary actions (right-aligned) ── */}
+      {/* TOOLBAR */}
       <div
         className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-3"
         style={{ borderRadius: "var(--radius-xl)" }}
       >
-        {/* DATE FILTER */}
         <div className="flex h-11 w-full items-center justify-between overflow-visible rounded-full border border-border shadow-sm transition-colors sm:w-fit">
           <button
             onClick={() => {
@@ -479,7 +451,6 @@ export default function BookingsPage() {
           </button>
         </div>
 
-        {/* SECONDARY ACTION — timeline toggle */}
         <Button
           variant="secondary"
           style={{
@@ -520,7 +491,7 @@ export default function BookingsPage() {
         </Button>
       </div>
 
-      {/* WRAPPER ANIMASI GANTT CHART (BEST PRACTICE CSS GRID) */}
+      {/* GANTT CHART */}
       <div
         className={cn(
           "grid transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] w-full",
@@ -530,17 +501,15 @@ export default function BookingsPage() {
         )}
       >
         <div className="overflow-hidden">
-          {/* Tambahkan pt-1 agar shadow/border tidak terpotong saat overflow-hidden, 
-              mb-4 untuk spacing ke tabel saat terbuka */}
           <div className="pt-1 pb-4">
             <GanttChartBookings />
           </div>
         </div>
       </div>
 
-      {/* Perhatikan props yang dikirim ke DataTable (Hanya columns, data, dan opsional pageSize) */}
       <DataTable columns={columns} data={bookings} defaultPageSize={10} />
 
+      {/* DETAIL DRAWER */}
       <Drawer state={detailDrawer} isDismissable={false}>
         <Drawer.Content
           placement="center"
@@ -636,15 +605,15 @@ export default function BookingsPage() {
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  {isBundlePromoLine(line) ? (
+                                  {isBundlePromoLine(line) && (
                                     <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
                                       Bundle Promo
                                     </span>
-                                  ) : null}
+                                  )}
                                   <p className="font-medium mt-1">
                                     {getBookingLineLabel(line)}
                                   </p>
-                                  {isBundlePromoLine(line) ? (
+                                  {isBundlePromoLine(line) && (
                                     <p className="text-xs text-muted-foreground mt-1">
                                       Hemat{" "}
                                       {new Intl.NumberFormat("id-ID", {
@@ -653,10 +622,10 @@ export default function BookingsPage() {
                                         maximumFractionDigits: 0,
                                       }).format(line.discount_amount)}
                                     </p>
-                                  ) : null}
+                                  )}
                                 </div>
                                 <div className="text-right">
-                                  {isBundlePromoLine(line) ? (
+                                  {isBundlePromoLine(line) && (
                                     <p className="text-xs text-muted-foreground line-through">
                                       {new Intl.NumberFormat("id-ID", {
                                         style: "currency",
@@ -664,7 +633,7 @@ export default function BookingsPage() {
                                         maximumFractionDigits: 0,
                                       }).format(line.subtotal)}
                                     </p>
-                                  ) : null}
+                                  )}
                                   <p className="text-sm font-semibold">
                                     {new Intl.NumberFormat("id-ID", {
                                       style: "currency",
@@ -702,5 +671,13 @@ export default function BookingsPage() {
         </Drawer.Content>
       </Drawer>
     </div>
+  );
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingsPageInner />
+    </Suspense>
   );
 }
