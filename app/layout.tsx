@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-// Hapus import Sidebar dari sini
+import { Toast } from "@heroui/react";
+import ReactQueryProvider from "./react-quesry-provider";
 
 const interSans = Inter({
-  variable: "--font-inter", // Saya sesuaikan dengan variabel CSS Anda sebelumnya
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -25,8 +26,14 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${interSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <Providers>{children}</Providers>
+      {/* TAMBAHKAN suppressHydrationWarning JUGA DI BODY */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <ReactQueryProvider>
+          <Providers>
+            <Toast.Provider placement="top end" />
+            {children}
+          </Providers>
+        </ReactQueryProvider>
       </body>
     </html>
   );

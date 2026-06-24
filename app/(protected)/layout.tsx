@@ -6,6 +6,7 @@ import { Spinner } from "@heroui/react";
 import Sidebar from "@/app/components/sidebar";
 import { useAuthStore } from "../libs/use-user";
 import axiosInstance from "../services/axios-instance";
+import { GlobalAttendanceModal } from "../components/modal/global-attendance-modal";
 
 export default function ProtectedLayout({
   children,
@@ -74,5 +75,10 @@ export default function ProtectedLayout({
     );
   }
 
-  return <Sidebar>{children}</Sidebar>;
+  return (
+    <Sidebar>
+      {/* <GlobalAttendanceModal /> */}
+      {children}
+    </Sidebar>
+  );
 }

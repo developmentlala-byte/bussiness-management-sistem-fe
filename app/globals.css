@@ -1,17 +1,25 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* ============================================================
+   FLUID RESPONSIVE SYSTEM
+   Scale range: 375px (mobile) → 1920px (desktop wide)
+   Semua nilai fluid pakai clamp(min, preferred-vw, max)
+   ============================================================ */
+
 :root,
 .light,
 .default,
 [data-theme="light"],
 [data-theme="default"] {
-  /* Theme Colors (Light Mode) */
+  /* ----------------------------------------------------------
+     THEME COLORS (Light Mode) — tidak diubah
+  ---------------------------------------------------------- */
   --accent: oklch(58.67% 0.118 52.55);
   --accent-foreground: oklch(99.11% 0 0);
   --background: oklch(97.02% 0.0146 52.55);
   --border: oklch(90% 0.0146 52.55);
-  --danger: oklch(65.32% 0.2396 1.59);
+  --danger: oklch(58.011% 0.19404 25.639);
   --danger-foreground: oklch(99.11% 0 0);
   --default: oklch(94% 0.0146 52.55);
   --default-foreground: oklch(21.03% 0.0059 52.55);
@@ -38,24 +46,137 @@
   --warning: oklch(78.19% 0.1631 48.18);
   --warning-foreground: oklch(21.03% 0.0059 48.18);
 
-  /* Border Radius */
+  /* ----------------------------------------------------------
+     BORDER RADIUS
+  ---------------------------------------------------------- */
   --radius: 0.5rem;
   --field-radius: 0.5rem;
 
-  /* Font Family */
-  /* Make sure to load Inter font in your app */
+  /* ----------------------------------------------------------
+     FONT FAMILY
+  ---------------------------------------------------------- */
   --font-sans: var(--font-inter);
+
+  /* ==========================================================
+     FLUID TYPOGRAPHY
+     clamp(mobile-min, fluid-vw, desktop-max)
+     Min  → 375px viewport
+     Max  → 1920px viewport
+     Preferred vw dikalibrasi agar smooth di antara keduanya
+     
+     Cara baca: --text-sm = 12px di mobile, fluid di tengah, 14px di desktop
+     ========================================================== */
+  --text-xs: clamp(0.625rem, 0.55vw + 0.42rem, 0.75rem); /* 10px → 12px  */
+  --text-sm: clamp(0.75rem, 0.55vw + 0.54rem, 0.875rem); /* 12px → 14px  */
+  --text-base: clamp(0.875rem, 0.55vw + 0.67rem, 1rem); /* 14px → 16px  */
+  --text-md: clamp(0.9375rem, 0.65vw + 0.73rem, 1.125rem); /* 15px → 18px  */
+  --text-lg: clamp(1rem, 0.75vw + 0.77rem, 1.25rem); /* 16px → 20px  */
+  --text-xl: clamp(1.125rem, 1vw + 0.84rem, 1.5rem); /* 18px → 24px  */
+  --text-2xl: clamp(1.25rem, 1.3vw + 0.9rem, 1.875rem); /* 20px → 30px  */
+  --text-3xl: clamp(1.5rem, 1.8vw + 1rem, 2.25rem); /* 24px → 36px  */
+  --text-4xl: clamp(1.875rem, 2.3vw + 1.2rem, 3rem); /* 30px → 48px  */
+  --text-5xl: clamp(2.25rem, 3vw + 1.4rem, 4rem); /* 36px → 64px  */
+
+  /* ==========================================================
+     FLUID SPACING
+     Dipakai untuk padding, gap, margin
+     ========================================================== */
+  --space-1: clamp(0.25rem, 0.3vw + 0.13rem, 0.5rem); /* 4px  → 8px   */
+  --space-2: clamp(0.375rem, 0.45vw + 0.2rem, 0.75rem); /* 6px  → 12px  */
+  --space-3: clamp(0.5rem, 0.6vw + 0.27rem, 1rem); /* 8px  → 16px  */
+  --space-4: clamp(0.75rem, 0.8vw + 0.45rem, 1.25rem); /* 12px → 20px  */
+  --space-5: clamp(1rem, 1vw + 0.6rem, 1.5rem); /* 16px → 24px  */
+  --space-6: clamp(1.25rem, 1.3vw + 0.75rem, 2rem); /* 20px → 32px  */
+  --space-8: clamp(1.5rem, 1.7vw + 0.9rem, 2.5rem); /* 24px → 40px  */
+  --space-10: clamp(2rem, 2.2vw + 1.1rem, 3rem); /* 32px → 48px  */
+  --space-12: clamp(2.5rem, 2.8vw + 1.4rem, 4rem); /* 40px → 64px  */
+  --space-16: clamp(3rem, 3.5vw + 1.7rem, 5rem); /* 48px → 80px  */
+  --space-20: clamp(4rem, 4.5vw + 2rem, 6rem); /* 64px → 96px  */
+
+  /* ==========================================================
+     FLUID COMPONENT SIZING
+     ========================================================== */
+
+  /* Border radius — fluid agar proporsi tetap */
+  --radius-sm: clamp(0.25rem, 0.3vw + 0.13rem, 0.5rem);
+  --radius-md: clamp(0.5rem, 0.45vw + 0.33rem, 0.75rem);
+  --radius-lg: clamp(0.75rem, 0.6vw + 0.5rem, 1rem);
+  --radius-xl: clamp(1rem, 0.8vw + 0.7rem, 1.5rem);
+  --radius-2xl: clamp(1.25rem, 1vw + 0.9rem, 2rem);
+
+  /* Button height */
+  --btn-height-sm: clamp(1.75rem, 1.5vw + 1.18rem, 2.25rem); /* 28px → 36px */
+  --btn-height-md: clamp(2rem, 1.8vw + 1.32rem, 2.5rem); /* 32px → 40px */
+  --btn-height-lg: clamp(2.25rem, 2vw + 1.5rem, 2.875rem); /* 36px → 46px */
+
+  /* Button padding horizontal */
+  --btn-px-sm: clamp(0.625rem, 0.7vw + 0.38rem, 1rem); /* 10px → 16px */
+  --btn-px-md: clamp(0.875rem, 0.9vw + 0.55rem, 1.25rem); /* 14px → 20px */
+  --btn-px-lg: clamp(1.125rem, 1.1vw + 0.73rem, 1.625rem); /* 18px → 26px */
+
+  /* Input / field height */
+  --input-height-sm: clamp(1.75rem, 1.5vw + 1.18rem, 2.25rem);
+  --input-height-md: clamp(2rem, 1.8vw + 1.32rem, 2.5rem);
+  --input-height-lg: clamp(2.25rem, 2vw + 1.5rem, 2.875rem);
+
+  /* Card padding */
+  --card-padding-sm: clamp(0.75rem, 0.8vw + 0.45rem, 1.25rem); /* 12px → 20px */
+  --card-padding-md: clamp(1rem, 1vw + 0.6rem, 1.5rem); /* 16px → 24px */
+  --card-padding-lg: clamp(1.25rem, 1.3vw + 0.75rem, 2rem); /* 20px → 32px */
+
+  /* Card gap (internal spacing) */
+  --card-gap-sm: clamp(0.5rem, 0.6vw + 0.27rem, 0.875rem);
+  --card-gap-md: clamp(0.75rem, 0.8vw + 0.45rem, 1.125rem);
+  --card-gap-lg: clamp(1rem, 1vw + 0.6rem, 1.5rem);
+
+  /* Icon size */
+  --icon-xs: clamp(0.75rem, 0.65vw + 0.5rem, 1rem); /* 12px → 16px */
+  --icon-sm: clamp(0.875rem, 0.75vw + 0.59rem, 1.125rem); /* 14px → 18px */
+  --icon-md: clamp(1rem, 0.9vw + 0.66rem, 1.25rem); /* 16px → 20px */
+  --icon-lg: clamp(1.25rem, 1.1vw + 0.83rem, 1.5rem); /* 20px → 24px */
+  --icon-xl: clamp(1.5rem, 1.4vw + 1rem, 2rem); /* 24px → 32px */
+
+  /* Sidebar */
+  --sidebar-width-collapsed: clamp(3rem, 3.5vw + 1.7rem, 4.5rem);
+  --sidebar-width-expanded: clamp(13rem, 12vw + 5rem, 16rem);
+
+  /* Layout page padding */
+  --page-padding-x: clamp(1rem, 2.5vw + 0.5rem, 2.5rem);
+  --page-padding-y: clamp(1rem, 1.8vw + 0.5rem, 2rem);
+
+  /* Table */
+  --table-cell-px: clamp(0.75rem, 0.8vw + 0.45rem, 1.25rem);
+  --table-cell-py: clamp(0.5rem, 0.6vw + 0.27rem, 0.875rem);
+  --table-row-height: clamp(2.5rem, 2.5vw + 1.5rem, 3.5rem);
+
+  /* Avatar / thumbnail */
+  --avatar-sm: clamp(1.5rem, 1.5vw + 0.93rem, 2rem);
+  --avatar-md: clamp(2rem, 2vw + 1.25rem, 2.5rem);
+  --avatar-lg: clamp(2.5rem, 2.5vw + 1.56rem, 3.25rem);
+
+  /* Badge */
+  --badge-height: clamp(1.125rem, 1.1vw + 0.7rem, 1.5rem);
+  --badge-px: clamp(0.375rem, 0.4vw + 0.23rem, 0.625rem);
+
+  /* Modal */
+  --modal-padding: clamp(1.25rem, 1.5vw + 0.75rem, 2rem);
+
+  /* Divider / separator thickness — tetap 1px */
+  --separator-size: 1px;
 }
 
+/* ============================================================
+   DARK MODE — colors only, fluid tokens inherit dari :root
+   ============================================================ */
 .dark,
 [data-theme="dark"] {
   color-scheme: dark;
-  /* Theme Colors (Dark Mode) */
+
   --accent: oklch(58.67% 0.118 52.55);
   --accent-foreground: oklch(99.11% 0 0);
   --background: oklch(12% 0.0061 52.55);
   --border: oklch(28% 0.0061 52.55);
-  --danger: oklch(59.4% 0.1991 0.48);
+  --danger: oklch(58.011% 0.19404 25.639);
   --danger-foreground: oklch(99.11% 0 0);
   --default: oklch(27.4% 0.0061 52.55);
   --default-foreground: oklch(99.11% 0 0);
@@ -83,14 +204,21 @@
   --warning-foreground: oklch(21.03% 0.0059 52.19);
 }
 
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-size: var(--text-base);
 }
 
+/* ============================================================
+   DRIVER.JS LUXURY THEME — tidak diubah
+   ============================================================ */
 .driver-popover.driver-theme-luxury {
-  border-radius: 0px !important; /* Siku tajam mutlak */
+  border-radius: 0px !important;
   background-color: var(--surface) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--border) !important;
@@ -117,7 +245,7 @@ body {
 }
 
 .driver-theme-luxury .driver-popover-footer button {
-  border-radius: 0px !important; /* Tombol siku tajam */
+  border-radius: 0px !important;
   background-color: var(--segment) !important;
   color: var(--segment-foreground) !important;
   border: 1px solid var(--border) !important;
@@ -131,7 +259,6 @@ body {
   background-color: var(--surface-secondary) !important;
 }
 
-/* Mengubah warna panah (arrow) agar sesuai background */
 .driver-theme-luxury .driver-popover-arrow[data-placement^="top"]::before {
   border-top-color: var(--surface) !important;
 }
@@ -144,3 +271,7 @@ body {
 .driver-theme-luxury .driver-popover-arrow[data-placement^="right"]::before {
   border-right-color: var(--surface) !important;
 }
+
+/* * {
+  border: 1px solid var(--border);
+} */

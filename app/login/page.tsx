@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { Form, Input, Button, Separator, Label } from "@heroui/react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+import { Form, Input, Button, Separator, Label, toast } from "@heroui/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -22,6 +22,7 @@ type LoginFormInputs = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -72,9 +73,15 @@ export default function LoginPage() {
   // 5. Handler Login OAuth
   const handleOAuthLogin = (provider: string) => {
     const baseUrl =
-      process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      process.env.NEXT_PUBLIC_API_BASE_URL_LOGIN || "http://localhost:8000";
     window.location.href = `${baseUrl}/auth/${provider}/redirect`;
   };
+
+  useEffect(() => {
+    if (params.get("error")) {
+      toast.danger(params.get("error") || "Login gagal");
+    }
+  }, [params]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 font-sans">

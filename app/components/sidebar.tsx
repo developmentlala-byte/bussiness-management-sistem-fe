@@ -1,6 +1,6 @@
 "use client";
 
-import React, {
+import {
   createContext,
   useContext,
   useState,
@@ -9,28 +9,27 @@ import React, {
   useCallback,
   ReactNode,
 } from "react";
-import { Dropdown, Label, Separator, Header, Button } from "@heroui/react";
+import { Dropdown, Label, Separator, Button } from "@heroui/react";
 import {
   CaretRight,
   CaretUpDown,
-  DotsThree,
   List,
   PushPin,
   PushPinSlash,
-  Check,
-  Plus,
   Gear,
   UserCircle,
   CreditCard,
   SignOut,
   Sparkle,
-  Question, // Ikon untuk butang Tour
+  Question,
+  SquaresFour, // Ikon untuk butang Tour
 } from "@phosphor-icons/react";
 import SIDEBAR_DATA from "../data/sidebar-data";
 import BreadcrumbTrail, { generateBreadcrumbs } from "./breadcrumb-trail";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "../libs/use-user";
 import { useAppTour } from "../libs/use-app-tour";
+import { ThemeSwitch } from "./theme-switch";
 
 // ==========================================
 // 1. KONTEKS GLOBAL & HOOK LAYOUT
@@ -200,7 +199,6 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
   const [isPinned, setIsPinned] = useState(false);
   const [isHoveredSidebar, setIsHoveredSidebar] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [activeTeam, setActiveTeam] = useState(SIDEBAR_DATA.teams[0]);
 
   const isExpanded = isPinned || isHoveredSidebar || isMobileOpen;
 
@@ -295,15 +293,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const currentBreadcrumbs = generateBreadcrumbs(activeMenu, activeTeam.name);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleTeamSelection = (key: any) => {
-    const idx = parseInt(key as string);
-    if (!isNaN(idx)) {
-      setActiveTeam(SIDEBAR_DATA.teams[idx]);
-    }
-  };
+  const currentBreadcrumbs = generateBreadcrumbs(activeMenu, "Mahalu Spa");
 
   return (
     <>
@@ -376,7 +366,9 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                   : "-translate-x-full md:translate-x-0"
               }`}
             style={{
-              width: isExpanded ? "280px" : "80px",
+              width: isExpanded
+                ? "var(--sidebar-width-expanded)"
+                : "var(--sidebar-width-collapsed)",
             }}
           >
             <div
@@ -388,133 +380,38 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
 
             <div className="p-4 flex items-center h-16 shrink-0 border-b border-border relative z-20">
               <div className="flex-1 min-w-0">
-                <Dropdown className="min-w-[260px] w-full p-1 bg-background border border-border shadow-lg rounded-xl">
-                  <Dropdown.Trigger className="w-full">
-                    <div
-                      className="w-full relative cursor-pointer py-0.5 group outline-none border-none bg-transparent text-left"
-                      onMouseEnter={() => setHoveredMenu("header-team")}
-                      onClick={() => setActiveMenu("header-team")}
-                    >
+                <div className="w-full flex items-center">
+                  <div className="w-[48px] flex items-center justify-center shrink-0">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary text-primary-foreground shadow-sm">
+                      <SquaresFour className="w-4 h-4" weight="bold" />
+                    </div>
+                  </div>
+                  <div
+                    className={`grid css-grid-transition flex-1 ${
+                      isExpanded ? "grid-cols-[1fr]" : "grid-cols-[0fr]"
+                    }`}
+                  >
+                    <div className="overflow-hidden whitespace-nowrap w-full">
                       <div
-                        data-nav-id="header-team"
-                        className={`relative z-10 flex items-center w-full py-1.5 rounded-lg transition-colors duration-200
-                        ${
-                          hoveredMenu === "header-team" ||
-                          activeMenu === "header-team"
-                            ? "text-foreground font-medium"
-                            : "text-muted-foreground group-hover:text-foreground"
-                        }`}
+                        style={{
+                          transform: isExpanded
+                            ? "translate3d(0,0,0)"
+                            : "translate3d(0,10px,0)",
+                          opacity: isExpanded ? 1 : 0,
+                          transition:
+                            "transform 0.5s cubic-bezier(0.2,0.9,0.3,1), opacity 0.5s cubic-bezier(0.2,0.9,0.3,1)",
+                        }}
                       >
-                        <div className="w-[48px] flex items-center justify-center shrink-0">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary text-primary-foreground shadow-sm">
-                            <activeTeam.logo
-                              className="w-4 h-4"
-                              weight="bold"
-                            />
-                          </div>
-                        </div>
-
-                        <div
-                          className={`grid css-grid-transition flex-1 ${
-                            isExpanded ? "grid-cols-[1fr]" : "grid-cols-[0fr]"
-                          }`}
-                        >
-                          <div className="overflow-hidden whitespace-nowrap w-full">
-                            <div
-                              className="flex items-center justify-between pr-2 w-full"
-                              style={{
-                                transform: isExpanded
-                                  ? "translate3d(0, 0, 0)"
-                                  : "translate3d(0, 10px, 0)",
-                                opacity: isExpanded ? 1 : 0,
-                                transition:
-                                  "transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1)",
-                                willChange: "transform, opacity",
-                              }}
-                            >
-                              <div className="flex flex-col items-start overflow-hidden">
-                                <span className="text-sm font-semibold truncate text-left">
-                                  {activeTeam.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground truncate text-left font-normal">
-                                  {activeTeam.plan}
-                                </span>
-                              </div>
-                              <CaretUpDown className="w-4 h-4 shrink-0 text-muted-foreground ml-2" />
-                            </div>
-                          </div>
-                        </div>
+                        <span className="text-sm font-semibold">
+                          Mahalu Spa
+                        </span>
+                        <span className="block text-xs text-muted-foreground font-normal">
+                          Business Management
+                        </span>
                       </div>
                     </div>
-                  </Dropdown.Trigger>
-                  <Dropdown.Popover>
-                    <Dropdown.Menu
-                      onAction={handleTeamSelection}
-                      aria-label="Team Selection Menu"
-                    >
-                      <Dropdown.Section>
-                        <Header className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-2 pb-2">
-                          Pasukan Anda
-                        </Header>
-                        {SIDEBAR_DATA.teams.map((team, idx) => (
-                          <Dropdown.Item
-                            key={idx.toString()}
-                            id={idx.toString()}
-                            textValue={team.name}
-                            className="py-2 px-2 lg:pe-4 hover:bg-accent rounded-md transition-colors"
-                          >
-                            <div className="flex items-center flex-1 gap-3">
-                              <div className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary">
-                                <team.logo className="w-4 h-4" weight="fill" />
-                              </div>
-                              <div className="flex flex-col flex-1">
-                                <Label className="font-medium text-sm cursor-pointer">
-                                  {team.name}
-                                </Label>
-                                <span className="text-xs text-muted-foreground">
-                                  {team.plan}
-                                </span>
-                              </div>
-                              {activeTeam.name === team.name && (
-                                <Check
-                                  className="w-4 h-4 text-primary"
-                                  weight="bold"
-                                />
-                              )}
-                            </div>
-                          </Dropdown.Item>
-                        ))}
-                      </Dropdown.Section>
-                      <Separator className="my-1 border-border/50" />
-                      <Dropdown.Section>
-                        <Dropdown.Item
-                          id="create-team"
-                          textValue="Cipta Pasukan"
-                          className="py-2 hover:bg-accent rounded-md transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Plus className="w-4 h-4 text-muted-foreground" />
-                            <Label className="cursor-pointer text-sm font-medium">
-                              Cipta Pasukan Baharu
-                            </Label>
-                          </div>
-                        </Dropdown.Item>
-                        <Dropdown.Item
-                          id="manage-teams"
-                          textValue="Urus Pasukan"
-                          className="py-2 hover:bg-accent rounded-md transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Gear className="w-4 h-4 text-muted-foreground" />
-                            <Label className="cursor-pointer text-sm font-medium">
-                              Urus Pasukan
-                            </Label>
-                          </div>
-                        </Dropdown.Item>
-                      </Dropdown.Section>
-                    </Dropdown.Menu>
-                  </Dropdown.Popover>
-                </Dropdown>
+                  </div>
+                </div>
               </div>
 
               {/* TARGET TOUR #2: BUTANG PIN */}
@@ -575,7 +472,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                 </div>
               </div>
 
-              <div>
+              {/* <div>
                 <div
                   className={`grid css-grid-transition ${
                     isExpanded
@@ -715,7 +612,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </nav>
 
             {/* TARGET TOUR #3: DROPDOWN PENGGUNA */}
@@ -781,7 +678,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                 </Dropdown.Trigger>
                 <Dropdown.Popover>
                   <Dropdown.Menu aria-label="User Actions Menu">
-                    <Dropdown.Section>
+                    <Dropdown.Section className="">
                       <Dropdown.Item
                         id="user-info"
                         textValue="Info Pengguna"
@@ -866,17 +763,20 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                         id="logout"
                         textValue="Log Keluar"
                         variant="danger"
-                        onClick={handleLogout}
-                        className="py-2 hover:bg-danger/10 rounded-md transition-colors group/logout"
+                        className="py-1"
                       >
-                        <div className="flex items-center gap-2">
-                          <SignOut
-                            className="w-4 h-4 text-danger"
-                            weight="bold"
-                          />
-                          <Label className="cursor-pointer text-sm font-semibold text-danger">
-                            Log Keluar
-                          </Label>
+                        <div className="flex w-full items-center justify-between gap-2 px-2 py-1.5">
+                          <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 text-danger transition-colors hover:opacity-80"
+                          >
+                            <SignOut className="w-4 h-4" weight="bold" />
+                            <Label className="max-sm:hidden cursor-pointer text-sm font-semibold text-danger">
+                              Log Keluar
+                            </Label>
+                          </button>
+
+                          <ThemeSwitch />
                         </div>
                       </Dropdown.Item>
                     </Dropdown.Section>
@@ -909,26 +809,54 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
               <Button
                 variant="outline"
                 size="sm"
-                className="border-border hover:bg-surface-secondary font-medium"
+                className="border-border hover:bg-surface-secondary font-medium flex items-center justify-center"
                 onClick={startTour}
               >
-                <Question className="w-4 h-4 mr-1" /> Bantuan Panduan
+                <Question className="w-4 h-4 mr-1" />{" "}
+                <span className="max-md:hidden text-sm font-medium">
+                  Bantuan Panduan
+                </span>
               </Button>
             </header>
 
-            <div className="flex-1 overflow-auto p-6">
+            <div
+              className="flex-1 overflow-auto"
+              style={{
+                padding: "var(--page-padding-y) var(--page-padding-x)",
+              }}
+            >
               {children || (
                 <div className="text-muted-foreground max-w-2xl">
-                  <h1 className="text-2xl font-bold text-foreground mb-4">
+                  <h1
+                    style={{
+                      fontSize: "var(--text-2xl)",
+                      fontWeight: "bold",
+                      color: "var(--foreground)",
+                      marginBottom: "var(--space-4)",
+                    }}
+                  >
                     Kandungan untuk:{" "}
                     {currentBreadcrumbs[currentBreadcrumbs.length - 1].title}
                   </h1>
-                  <p className="mb-4">
+                  <p
+                    style={{
+                      marginBottom: "var(--space-4)",
+                      fontSize: "var(--text-base)",
+                    }}
+                  >
                     Sidebar ini direka setanding perisian korporat terkemuka
                     seperti Vercel dan Stripe.
                   </p>
-                  <ul className="list-disc pl-5 space-y-2">
-                    <li>
+                  <ul
+                    style={{
+                      listStyleType: "disc",
+                      paddingLeft: "var(--space-5)",
+                      gap: "var(--space-2)",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <li style={{ fontSize: "var(--text-base)" }}>
                       Sila klik butang pin/unpin atau klik pada{" "}
                       {`"Bantuan Panduan"`} di sudut kanan atas untuk mencuba
                       animasi *tour* Driver.js.

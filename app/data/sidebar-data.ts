@@ -1,15 +1,11 @@
 import {
-  BookOpen,
-  BoundingBox,
-  CalendarCheckIcon,
-  ChartPieSlice,
-  Command,
-  Faders,
-  Robot,
-  Stack,
-  TerminalWindow,
+  CalendarCheck,
+  Receipt,
   Users,
-  Waveform,
+  Storefront,
+  Tag,
+  Crown,
+  SquaresFour,
 } from "@phosphor-icons/react";
 
 const SIDEBAR_DATA = {
@@ -18,51 +14,50 @@ const SIDEBAR_DATA = {
     email: "skyleen@example.com",
     avatar: "https://api.dicebear.com/9.x/adventurer/svg?seed=Aidan",
   },
-  teams: [
-    { name: "Acme Inc", logo: Stack, plan: "Perusahaan" },
-    { name: "Acme Corp.", logo: Waveform, plan: "Syarikat Pemula" },
-    { name: "Evil Corp.", logo: Command, plan: "Percuma" },
-  ],
   navMain: [
+    {
+      title: "Master Data",
+      url: "#",
+      icon: SquaresFour,
+      isActive: false,
+      items: [
+        {
+          title: "Produk & Layanan",
+          url: "/master/product-&-layanan",
+          icon: Storefront,
+        },
+        { title: "Karyawan", url: "/master/karyawan", icon: Users },
+        { title: "Bundle Promo", url: "/master/bundle-promo", icon: Tag },
+        { title: "Paket Membership", url: "/master/membership", icon: Crown },
+      ],
+    },
+
+    {
+      title: "Transaksi",
+      url: "#",
+      icon: Receipt,
+      isActive: true,
+      items: [{ title: "Pembayaran", url: "/payment" }],
+    },
+
     {
       title: "Reservasi",
       url: "#",
-      icon: CalendarCheckIcon,
+      icon: CalendarCheck,
       isActive: true,
       items: [
         { title: "Daftar Booking", url: "/reservasi/booking" },
-        { title: "Kalender Jadwal", url: "/reservasi/calendar" },
-        { title: "Buat Booking", url: "/reservasi/create" },
+        { title: "Daftar Membership", url: "/keanggotaan" },
       ],
     },
+
     {
       title: "Pelanggan",
-      url: "/pelanggan",
+      url: "#",
       icon: Users,
+      isActive: true,
+      items: [{ title: "Semua Pelanggan", url: "/pelanggan" }],
     },
-    {
-      title: "Dokumentasi",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        { title: "Pengenalan", url: "#" },
-        { title: "Mula Menggunakan", url: "#" },
-        { title: "Tutorial", url: "#" },
-      ],
-    },
-    {
-      title: "Tetapan",
-      url: "#",
-      icon: Faders,
-      items: [
-        { title: "Umum", url: "#" },
-        { title: "Pasukan", url: "#" },
-      ],
-    },
-  ],
-  projects: [
-    { name: "Kejuruteraan Reka Bentuk", url: "#", icon: BoundingBox },
-    { name: "Jualan & Pemasaran", url: "#", icon: ChartPieSlice },
   ],
 };
 

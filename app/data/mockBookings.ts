@@ -13,6 +13,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Confirmed",
     paymentStatus: "Paid",
     totalAmount: 350000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 3,
+      },
+    ],
   },
   {
     id: "BK-2604-002",
@@ -25,6 +33,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 500000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 4,
+      },
+    ],
   },
   {
     id: "BK-2604-003",
@@ -37,6 +53,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Completed",
     paymentStatus: "Paid",
     totalAmount: 150000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 7,
+      },
+    ],
   },
   {
     id: "BK-2604-004",
@@ -49,6 +73,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 8,
+      },
+    ],
   },
   {
     id: "BK-2604-005",
@@ -61,6 +93,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 9,
+      },
+    ],
   },
   {
     id: "BK-2604-006",
@@ -73,6 +113,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 10,
+      },
+    ],
   },
   {
     id: "BK-2604-007",
@@ -85,6 +133,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 9,
+      },
+    ],
   },
   {
     id: "BK-2604-008",
@@ -109,6 +165,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 8,
+      },
+    ],
   },
   {
     id: "BK-2604-010",
@@ -121,6 +185,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 5,
+      },
+    ],
   },
   {
     id: "BK-2604-011",
@@ -133,6 +205,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 9,
+      },
+    ],
   },
   {
     id: "BK-2604-012",
@@ -145,6 +225,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 10,
+      },
+    ],
   },
   {
     id: "BK-2604-013",
@@ -157,6 +245,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 9,
+      },
+    ],
   },
   {
     id: "BK-2604-014",
@@ -169,6 +265,14 @@ export const mockBookings: SpaBooking[] = [
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 5,
+      },
+    ],
   },
   {
     id: "BK-2604-015",
@@ -181,17 +285,33 @@ export const mockBookings: SpaBooking[] = [
     status: "Pending",
     paymentStatus: "Unpaid",
     totalAmount: 250000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 11,
+      },
+    ],
   },
   {
     id: "BK-2604-016",
     customerName: "Lily Dian",
     customerPhone: "+628222333444",
-    serviceName: "Deep Tissue Massage",
+    // serviceName: "Deep Tissue Massage",
     therapistName: "Rahmatullah",
     scheduleDate: "2026-04-18T10:00:00Z",
     durationMinutes: 60,
     status: "Cancelled",
     paymentStatus: "Refunded",
     totalAmount: 200000,
+    service_variant: [
+      {
+        id: 0,
+      },
+      {
+        id: 10,
+      },
+    ],
   },
 ];
