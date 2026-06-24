@@ -112,8 +112,8 @@ export const usePost = <
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: (data: TVariables) => {
       const finalUrl = typeof url === "function" ? url(data) : url;
-      // Menjaga logika asli: jika url adalah function, kirim payload kosong (asumsi data cuma dipakai untuk URL)
-      return apiPost(finalUrl, typeof url === "function" ? {} : data);
+      // Always send the payload, even when URL is a function
+      return apiPost(finalUrl, data);
     },
     onSuccess: (data, variables, context) => {
       if (Array.isArray(options.invalidate)) {

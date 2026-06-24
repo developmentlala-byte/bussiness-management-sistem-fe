@@ -41,7 +41,13 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.status == 401) {
+    console.error("API Error:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+
+    if (error.response?.status === 401) {
       localStorage.setItem("auth_error", "expired");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
@@ -49,7 +55,7 @@ axiosInstance.interceptors.response.use(
       console.warn("Unauthorized or token expired");
     }
 
-    if (error.status == 422) {
+    if (error.response?.status === 422) {
       localStorage.setItem("validasi_error", error.response.data.message);
     }
 
