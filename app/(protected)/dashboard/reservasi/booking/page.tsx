@@ -353,7 +353,7 @@ function BookingsPageInner() {
           </Button>
           <Drawer.Content
             placement="bottom"
-            className="h-[100vh] w-[100vw] max-w-6xl sm:h-[90vh]"
+            className="h-[100vh] w-[100vw] max-w-6xl sm:h-[100vh]"
           >
             <Drawer.Dialog className="flex h-full w-full flex-col overflow-hidden p-0">
               <Drawer.CloseTrigger className="absolute right-4 top-4 z-10" />
@@ -513,7 +513,7 @@ function BookingsPageInner() {
       <Drawer state={detailDrawer} isDismissable={false}>
         <Drawer.Content
           placement="bottom"
-          className="h-[88vh] w-[96vw] max-w-3xl sm:h-[85vh]"
+          className="h-[88vh] w-[100vw] mx-auto max-w-3xl sm:h-[100vh]"
         >
           <Drawer.Dialog className="flex h-full w-full flex-col overflow-y-auto p-0">
             <Drawer.CloseTrigger className="absolute right-4 top-4 z-10 text-foreground" />
