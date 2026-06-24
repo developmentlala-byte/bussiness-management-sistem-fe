@@ -141,11 +141,15 @@ export default function BookingsPage() {
   const handleRetryPayment = async () => {
     if (!selectedBooking?.id || createPayment.isPending) return;
 
+    const payload = {
+      bookingId: Number(selectedBooking.id),
+      idempotency_key: crypto.randomUUID(),
+    };
+
+    console.log("Creating payment link with payload:", payload);
+
     try {
-      const response = await createPayment.mutateAsync({
-        bookingId: Number(selectedBooking.id),
-        idempotency_key: crypto.randomUUID(),
-      });
+      const response = await createPayment.mutateAsync(payload);
 
       const paymentUrl = response?.data?.payment_url;
       if (!paymentUrl) {
