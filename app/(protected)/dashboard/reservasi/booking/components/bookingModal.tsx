@@ -413,7 +413,7 @@ function OrderPanel({
             onChange={(e) => {
               setForm((p: FormState) => ({ ...p, name: e.target.value }));
             }}
-            autoFocus
+            // autoFocus
           />
 
           <input

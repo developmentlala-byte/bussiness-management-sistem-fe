@@ -41,6 +41,7 @@ import BookingModal from "./components/bookingModal";
 import { useApiFetch, usePost } from "@/app/libs/use-http";
 import { formatDate } from "@/app/libs/date-format";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -65,7 +66,7 @@ function BookingsPageInner() {
     start: startOfMonth(currentDateObj),
     end: endOfMonth(currentDateObj),
   });
-
+  const drawerHeight = useVisualViewportHeight();
   const createBookingDrawer = useOverlayState();
   const detailDrawer = useOverlayState();
   const [bookingModalAction, setBookingModalAction] = useState<
@@ -336,7 +337,7 @@ function BookingsPageInner() {
           </p>
         </div>
 
-        <Drawer state={createBookingDrawer} isDismissable={false}>
+        <Drawer state={createBookingDrawer}>
           <Button
             variant="primary"
             style={{
@@ -351,21 +352,23 @@ function BookingsPageInner() {
             />
             New Booking
           </Button>
-          <Drawer.Content
-            placement="bottom"
-            className="h-[100vh] w-[100vw] max-w-6xl sm:h-[100vh]"
-          >
-            <Drawer.Dialog className="flex h-full w-full flex-col overflow-hidden p-0">
-              <Drawer.CloseTrigger className="absolute right-4 top-4 z-10" />
-              <BookingModal
-                key={`${bookingModalAction}-${editingBooking?.id ?? "new"}`}
-                isOpen={createBookingDrawer.isOpen}
-                action={bookingModalAction}
-                initialBooking={editingBooking}
-                onSaved={createBookingDrawer.close}
-              />
-            </Drawer.Dialog>
-          </Drawer.Content>
+          <Drawer.Backdrop isDismissable={false}>
+            <Drawer.Content placement="bottom">
+              <Drawer.Dialog
+                className="flex w-full max-w-6xl mx-auto flex-col overflow-hidden p-0"
+                style={{ height: drawerHeight }}
+              >
+                <Drawer.CloseTrigger className="absolute right-4 top-4 z-10" />
+                <BookingModal
+                  key={`${bookingModalAction}-${editingBooking?.id ?? "new"}`}
+                  isOpen={createBookingDrawer.isOpen}
+                  action={bookingModalAction}
+                  initialBooking={editingBooking}
+                  onSaved={createBookingDrawer.close}
+                />
+              </Drawer.Dialog>
+            </Drawer.Content>
+          </Drawer.Backdrop>
         </Drawer>
       </div>
 
@@ -510,165 +513,172 @@ function BookingsPageInner() {
       <DataTable columns={columns} data={bookings} defaultPageSize={10} />
 
       {/* DETAIL DRAWER */}
-      <Drawer state={detailDrawer} isDismissable={false}>
-        <Drawer.Content
-          placement="bottom"
-          className="h-[88vh] w-[100vw] mx-auto max-w-3xl sm:h-[100vh]"
-        >
-          <Drawer.Dialog className="flex h-full w-full flex-col overflow-y-auto p-0">
-            <Drawer.CloseTrigger className="absolute right-4 top-4 z-10 text-foreground" />
-            <div className="min-h-full bg-background p-6 text-foreground">
-              <div className="mx-auto max-w-3xl">
-                <h2 className="text-xl font-semibold mb-3">Booking details</h2>
-                {!selectedBooking ? (
-                  <p className="text-sm text-muted-foreground">
-                    No booking selected.
-                  </p>
-                ) : (
-                  <div className="space-y-4 text-sm text-foreground">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Booking code
-                        </p>
-                        <p className="font-semibold">
-                          {selectedBooking.booking_code}
-                        </p>
+      <Drawer state={detailDrawer}>
+        <Drawer.Backdrop isDismissable={false}>
+          <Drawer.Content placement="bottom">
+            <Drawer.Dialog
+              className="flex w-full max-w-3xl mx-auto flex-col overflow-y-auto p-0"
+              style={{ height: drawerHeight }}
+            >
+              <Drawer.CloseTrigger className="absolute right-4 top-4 z-10 text-foreground" />
+              <div className="min-h-full bg-background p-6 text-foreground">
+                <div className="mx-auto max-w-3xl">
+                  <h2 className="text-xl font-semibold mb-3">
+                    Booking details
+                  </h2>
+                  {!selectedBooking ? (
+                    <p className="text-sm text-muted-foreground">
+                      No booking selected.
+                    </p>
+                  ) : (
+                    <div className="space-y-4 text-sm text-foreground">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Booking code
+                          </p>
+                          <p className="font-semibold">
+                            {selectedBooking.booking_code}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Status
+                          </p>
+                          <p className="font-semibold">
+                            {selectedBooking.status}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Status
-                        </p>
-                        <p className="font-semibold">
-                          {selectedBooking.status}
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Customer
-                        </p>
-                        <p className="font-semibold">
-                          {selectedBooking.customer_name}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {selectedBooking.customer_phone}
-                        </p>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Customer
+                          </p>
+                          <p className="font-semibold">
+                            {selectedBooking.customer_name}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {selectedBooking.customer_phone}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Schedule
+                          </p>
+                          <p className="font-semibold">
+                            {formatDate(
+                              new Date(selectedBooking.schedule_date),
+                              {
+                                withTime: true,
+                              },
+                            )}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Schedule
-                        </p>
-                        <p className="font-semibold">
-                          {formatDate(new Date(selectedBooking.schedule_date), {
-                            withTime: true,
-                          })}
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Total amount
-                        </p>
-                        <p className="font-semibold">
-                          {new Intl.NumberFormat("id-ID", {
-                            style: "currency",
-                            currency: "IDR",
-                            maximumFractionDigits: 0,
-                          }).format(selectedBooking.total_amount ?? 0)}
-                        </p>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Total amount
+                          </p>
+                          <p className="font-semibold">
+                            {new Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              maximumFractionDigits: 0,
+                            }).format(selectedBooking.total_amount ?? 0)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Therapists
+                          </p>
+                          <p className="font-semibold">
+                            {selectedBooking.therapists?.join(", ") || "—"}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Therapists
-                        </p>
-                        <p className="font-semibold">
-                          {selectedBooking.therapists?.join(", ") || "—"}
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="rounded-2xl border border-border bg-card p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mb-3">
-                        Items
-                      </p>
-                      <div className="space-y-3">
-                        {(selectedBooking.service_variants ?? []).map(
-                          (line, idx) => (
-                            <div
-                              key={`${line.id}-${idx}`}
-                              className="rounded-xl border border-border/60 p-3"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  {isBundlePromoLine(line) && (
-                                    <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                                      Bundle Promo
-                                    </span>
-                                  )}
-                                  <p className="font-medium mt-1">
-                                    {getBookingLineLabel(line)}
-                                  </p>
-                                  {isBundlePromoLine(line) && (
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                      Hemat{" "}
+                      <div className="rounded-2xl border border-border bg-card p-4">
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mb-3">
+                          Items
+                        </p>
+                        <div className="space-y-3">
+                          {(selectedBooking.service_variants ?? []).map(
+                            (line, idx) => (
+                              <div
+                                key={`${line.id}-${idx}`}
+                                className="rounded-xl border border-border/60 p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    {isBundlePromoLine(line) && (
+                                      <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                                        Bundle Promo
+                                      </span>
+                                    )}
+                                    <p className="font-medium mt-1">
+                                      {getBookingLineLabel(line)}
+                                    </p>
+                                    {isBundlePromoLine(line) && (
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Hemat{" "}
+                                        {new Intl.NumberFormat("id-ID", {
+                                          style: "currency",
+                                          currency: "IDR",
+                                          maximumFractionDigits: 0,
+                                        }).format(line.discount_amount)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="text-right">
+                                    {isBundlePromoLine(line) && (
+                                      <p className="text-xs text-muted-foreground line-through">
+                                        {new Intl.NumberFormat("id-ID", {
+                                          style: "currency",
+                                          currency: "IDR",
+                                          maximumFractionDigits: 0,
+                                        }).format(line.subtotal)}
+                                      </p>
+                                    )}
+                                    <p className="text-sm font-semibold">
                                       {new Intl.NumberFormat("id-ID", {
                                         style: "currency",
                                         currency: "IDR",
                                         maximumFractionDigits: 0,
-                                      }).format(line.discount_amount)}
+                                      }).format(line.retail_price ?? 0)}
                                     </p>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  {isBundlePromoLine(line) && (
-                                    <p className="text-xs text-muted-foreground line-through">
-                                      {new Intl.NumberFormat("id-ID", {
-                                        style: "currency",
-                                        currency: "IDR",
-                                        maximumFractionDigits: 0,
-                                      }).format(line.subtotal)}
-                                    </p>
-                                  )}
-                                  <p className="text-sm font-semibold">
-                                    {new Intl.NumberFormat("id-ID", {
-                                      style: "currency",
-                                      currency: "IDR",
-                                      maximumFractionDigits: 0,
-                                    }).format(line.retail_price ?? 0)}
-                                  </p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ),
-                        )}
+                            ),
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {selectedBooking.status === "Pending" && (
-                      <div className="pt-2">
-                        <Button
-                          variant="primary"
-                          className="w-full rounded-xl"
-                          onClick={handleRetryPayment}
-                          isDisabled={createPayment.isPending}
-                        >
-                          {createPayment.isPending
-                            ? "Mengarahkan ke pembayaran..."
-                            : "Pilih Metode Pembayaran"}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      {selectedBooking.status === "Pending" && (
+                        <div className="pt-2">
+                          <Button
+                            variant="primary"
+                            className="w-full rounded-xl"
+                            onClick={handleRetryPayment}
+                            isDisabled={createPayment.isPending}
+                          >
+                            {createPayment.isPending
+                              ? "Mengarahkan ke pembayaran..."
+                              : "Pilih Metode Pembayaran"}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </Drawer.Dialog>
-        </Drawer.Content>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
       </Drawer>
     </div>
   );

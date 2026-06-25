@@ -272,6 +272,13 @@ body {
   border-right-color: var(--surface) !important;
 }
 
+/* Prevent iOS from resizing viewport when keyboard opens */
+@supports (-webkit-touch-callout: none) {
+  .drawer-content {
+    height: -webkit-fill-available;
+  }
+}
+
 /* * {
   border: 1px solid var(--border);
 } */

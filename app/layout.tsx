@@ -26,6 +26,12 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${interSans.variable} h-full antialiased`}
     >
+      <head>
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+        />
+      </head>
       {/* TAMBAHKAN suppressHydrationWarning JUGA DI BODY */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ReactQueryProvider>
