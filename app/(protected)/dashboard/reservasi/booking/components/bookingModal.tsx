@@ -24,6 +24,7 @@ import {
   getBundleCalendarBounds,
   type BundlePricing,
 } from "@/app/libs/bundle-pricing";
+import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { BundlePromoCard } from "./bundlePromoCard";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -197,10 +198,12 @@ interface ExistingTherapist {
   service_variant_id: number;
 }
 
+type LocalStaffAssignment = BookingStaffAssignment & { client_key: string };
+
 interface FormState {
   name: string;
   phone: string;
-  staffAssignments: BookingStaffAssignment[];
+  staffAssignments: LocalStaffAssignment[];
   date: string;
   slotTime: string;
 }
@@ -388,6 +391,39 @@ function OrderPanel({
     ? getBundleCalendarBounds(selectedBundle)
     : null;
 
+  const selectedServiceVariantUnits = useMemo(() => {
+    const counts = new Map<number, number>();
+
+    cartLines.forEach((line) => {
+      if (line.kind === "service") {
+        counts.set(line.variant.id, (counts.get(line.variant.id) ?? 0) + 1);
+        return;
+      }
+
+      line.bundle.bundle_items?.forEach((item: any) => {
+        const variantId = Number(item.bms_ms_service_variant_id);
+        const qty = Math.max(1, Number(item.quantity ?? 1));
+        counts.set(variantId, (counts.get(variantId) ?? 0) + qty);
+      });
+    });
+
+    const units: Array<{ key: string; variantId: number; unitIndex: number }> =
+      [];
+    Array.from(counts.entries())
+      .sort((a, b) => a[0] - b[0])
+      .forEach(([variantId, qty]) => {
+        for (let i = 0; i < qty; i++) {
+          units.push({
+            key: `${variantId}:${i + 1}`,
+            variantId,
+            unitIndex: i + 1,
+          });
+        }
+      });
+
+    return units;
+  }, [cartLines]);
+
   const isDateAvailable = (dateStr: string): boolean => {
     if (!availableDates.length) return true;
     return availableDates.includes(dateStr);
@@ -401,27 +437,25 @@ function OrderPanel({
    * 2. Fallback ke existingTherapists (data booking lama) — berguna saat
    *    slots belum selesai di-fetch ketika edit modal pertama dibuka.
    */
-  const therapistAssignmentByVariant = useMemo(() => {
-    const map = new Map<number, { id: number; name: string }>();
+  const therapistAssignmentByKey = useMemo(() => {
+    const map = new Map<string, { id: number; name: string }>();
 
     form.staffAssignments.forEach((assignment) => {
-      // Coba resolve dari slots yang sudah di-fetch
       const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
       const fromSlot = slot?.available_therapists.find(
         (t) => t.id === assignment.staff_id,
       );
 
       if (fromSlot) {
-        map.set(assignment.service_variant_id, fromSlot);
+        map.set(assignment.client_key, fromSlot);
         return;
       }
 
-      // Fallback: pakai data dari booking existing
       const fromExisting = existingTherapists.find(
         (t) => t.service_variant_id === assignment.service_variant_id,
       );
       if (fromExisting) {
-        map.set(assignment.service_variant_id, {
+        map.set(assignment.client_key, {
           id: fromExisting.id,
           name: fromExisting.name,
         });
@@ -477,31 +511,31 @@ function OrderPanel({
       if (variant) variantCategoryMap.set(variantId, variant.categoryId);
     });
 
-    const newAssignments: BookingStaffAssignment[] = [];
+    const used: Record<number, true> = {};
+    const newAssignments: LocalStaffAssignment[] = [];
 
-    for (const variantId of selectedServiceVariantIds) {
-      const categoryId = variantCategoryMap.get(variantId);
+    for (const unit of selectedServiceVariantUnits) {
+      const categoryId = variantCategoryMap.get(unit.variantId);
       if (categoryId === undefined) continue;
 
       const eligibleIds =
         slot.available_therapists_by_category[categoryId] ?? [];
       let selectedId: number | null = null;
-
-      // Reuse therapist yang sudah dipilih kalau masih eligible di slot baru
-      for (const existing of newAssignments) {
-        if (eligibleIds.includes(existing.staff_id)) {
-          selectedId = existing.staff_id;
+      for (const id of eligibleIds) {
+        if (!used[id]) {
+          selectedId = id;
           break;
         }
       }
-
       if (!selectedId) selectedId = eligibleIds[0] ?? null;
 
       if (selectedId !== null) {
         newAssignments.push({
-          service_variant_id: variantId,
+          client_key: unit.key,
+          service_variant_id: unit.variantId,
           staff_id: selectedId,
         });
+        used[selectedId] = true;
       }
     }
 
@@ -513,27 +547,15 @@ function OrderPanel({
     setStep("confirm");
   };
 
-  const handleTherapistChange = (variantId: number, therapistId: number) => {
+  const handleTherapistChange = (
+    assignmentKey: string,
+    therapistId: number,
+  ) => {
     setForm((prev) => {
-      // Kalau variant belum punya assignment, tambah baru
-      const exists = prev.staffAssignments.some(
-        (a) => a.service_variant_id === variantId,
-      );
-      if (!exists) {
-        return {
-          ...prev,
-          staffAssignments: [
-            ...prev.staffAssignments,
-            { service_variant_id: variantId, staff_id: therapistId },
-          ],
-        };
-      }
       return {
         ...prev,
         staffAssignments: prev.staffAssignments.map((a) =>
-          a.service_variant_id === variantId
-            ? { ...a, staff_id: therapistId }
-            : a,
+          a.client_key === assignmentKey ? { ...a, staff_id: therapistId } : a,
         ),
       };
     });
@@ -548,7 +570,7 @@ function OrderPanel({
     if (
       !availableSlots ||
       !form.slotTime ||
-      selectedServiceVariantIds.length === 0
+      selectedServiceVariantUnits.length === 0
     )
       return;
 
@@ -556,25 +578,32 @@ function OrderPanel({
     if (!slot) return;
 
     setForm((prev) => {
-      const missingVariantIds = selectedServiceVariantIds.filter(
-        (variantId) =>
+      const missingUnits = selectedServiceVariantUnits.filter(
+        (unit) =>
           !prev.staffAssignments.some(
-            (a) => a.service_variant_id === variantId && a.staff_id > 0,
+            (a) => a.client_key === unit.key && a.staff_id > 0,
           ),
       );
-      if (missingVariantIds.length === 0) return prev; // tidak ada yang perlu di-fill
+      if (missingUnits.length === 0) return prev;
 
-      const newAssignments = missingVariantIds.map((variantId) => {
-        const variant = availableVariants.find((v) => v.id === variantId);
+      const used: Record<number, true> = {};
+      prev.staffAssignments.forEach((a) => {
+        if (a.staff_id > 0) used[a.staff_id] = true;
+      });
+
+      const newAssignments = missingUnits.map((unit) => {
+        const variant = availableVariants.find((v) => v.id === unit.variantId);
         const categoryId = variant?.categoryId ?? 0;
         const eligibleIds =
           slot.available_therapists_by_category[categoryId] ?? [];
-        // Coba reuse therapist yang sudah di-assign di variant lain kalau eligible
-        const reuse = prev.staffAssignments.find((a) =>
-          eligibleIds.includes(a.staff_id),
-        );
-        const staffId = reuse?.staff_id ?? eligibleIds[0] ?? 0;
-        return { service_variant_id: variantId, staff_id: staffId };
+        let staffId =
+          eligibleIds.find((id) => !used[id]) ?? eligibleIds[0] ?? 0;
+        if (staffId > 0) used[staffId] = true;
+        return {
+          client_key: unit.key,
+          service_variant_id: unit.variantId,
+          staff_id: staffId,
+        };
       });
 
       return {
@@ -585,7 +614,7 @@ function OrderPanel({
   }, [
     availableSlots,
     form.slotTime,
-    selectedServiceVariantIds,
+    selectedServiceVariantUnits,
     availableVariants,
   ]);
 
@@ -610,12 +639,12 @@ function OrderPanel({
     form.staffAssignments.length > 0 &&
     form.staffAssignments.every((a) => a.staff_id > 0);
 
-  const allVariantsAssigned =
-    selectedServiceVariantIds.length === 0
-      ? allAssignmentsValid // variants belum loaded, fallback ke check validity saja
-      : selectedServiceVariantIds.every((variantId) => {
+  const allUnitsAssigned =
+    selectedServiceVariantUnits.length === 0
+      ? allAssignmentsValid
+      : selectedServiceVariantUnits.every((unit) => {
           const assignment = form.staffAssignments.find(
-            (a) => a.service_variant_id === variantId,
+            (a) => a.client_key === unit.key,
           );
           return assignment && assignment.staff_id > 0;
         });
@@ -634,7 +663,7 @@ function OrderPanel({
     hasItems &&
     !!form.date &&
     !!form.slotTime &&
-    allVariantsAssigned;
+    allUnitsAssigned;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F8F4F0]">
@@ -874,7 +903,8 @@ function OrderPanel({
               )}
 
               <div className="space-y-2">
-                {selectedServiceVariantIds.map((variantId) => {
+                {selectedServiceVariantUnits.map((unit) => {
+                  const variantId = unit.variantId;
                   const variant = availableVariants.find(
                     (v) => v.id === variantId,
                   );
@@ -896,16 +926,18 @@ function OrderPanel({
                       )
                     : availableTherapistsForSlot;
 
-                  const selectedTherapist =
-                    therapistAssignmentByVariant.get(variantId);
+                  const selectedTherapist = therapistAssignmentByKey.get(
+                    unit.key,
+                  );
 
                   return (
                     <div
-                      key={variantId}
+                      key={unit.key}
                       className="bg-white rounded-xl border border-[#EDE8E3] p-3"
                     >
                       <p className="text-[12px] text-[#7A736E] mb-1">
                         {variant?.name}
+                        {unit.unitIndex > 0 ? ` · #${unit.unitIndex}` : ""}
                       </p>
                       <Dropdown>
                         <Dropdown.Trigger className="w-full">
@@ -924,7 +956,7 @@ function OrderPanel({
                         <Dropdown.Popover className="rounded-2xl border border-[#EDE8E3] bg-white p-2 shadow-xl">
                           <Dropdown.Menu
                             onAction={(key) =>
-                              handleTherapistChange(variantId, Number(key))
+                              handleTherapistChange(unit.key, Number(key))
                             }
                           >
                             {therapistOptions.length === 0 ? (
@@ -1274,6 +1306,11 @@ export default function BookingModal({
     return Array.from(ids);
   }, [cartLines]);
 
+  const selectedBundle = useMemo(
+    () => cartLines.find((l) => l.kind === "bundle")?.bundle ?? null,
+    [cartLines],
+  );
+
   const availableDatesUrl = useMemo(() => {
     if (selectedServiceVariantIds.length === 0) return null;
     const params = new URLSearchParams();
@@ -1281,11 +1318,20 @@ export default function BookingModal({
     selectedServiceVariantIds.forEach((id) =>
       params.append("variant_ids[]", String(id)),
     );
+    if (selectedBundle?.id) {
+      params.set("bundle_promo_id", String(selectedBundle.id));
+    }
     if (isEdit && initialBooking?.id) {
       params.set("exclude_booking_id", String(initialBooking.id));
     }
     return `/master/bookings/available-dates?${params.toString()}`;
-  }, [viewingMonth, selectedServiceVariantIds, isEdit, initialBooking?.id]);
+  }, [
+    viewingMonth,
+    selectedServiceVariantIds,
+    selectedBundle?.id,
+    isEdit,
+    initialBooking?.id,
+  ]);
 
   const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
     [
@@ -1306,11 +1352,20 @@ export default function BookingModal({
     selectedServiceVariantIds.forEach((id) =>
       params.append("variant_ids[]", String(id)),
     );
+    if (selectedBundle?.id) {
+      params.set("bundle_promo_id", String(selectedBundle.id));
+    }
     if (isEdit && initialBooking?.id) {
       params.set("exclude_booking_id", String(initialBooking.id));
     }
     return `/master/bookings/available-slots?${params.toString()}`;
-  }, [form.date, selectedServiceVariantIds, isEdit, initialBooking?.id]);
+  }, [
+    form.date,
+    selectedServiceVariantIds,
+    selectedBundle?.id,
+    isEdit,
+    initialBooking?.id,
+  ]);
 
   const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
     [
@@ -1340,11 +1395,6 @@ export default function BookingModal({
         : line.variant.duration)
     );
   }, 0);
-
-  const selectedBundle = useMemo(
-    () => cartLines.find((l) => l.kind === "bundle")?.bundle ?? null,
-    [cartLines],
-  );
 
   const cartSummaryLabel = useMemo(() => {
     if (cartLines.length === 0) return "";
@@ -1469,7 +1519,12 @@ export default function BookingModal({
 
   const createPayment = usePost<
     { data: { payment_url: string } },
-    { bookingId: number; idempotency_key: string }
+    {
+      bookingId: number;
+      idempotency_key: string;
+      return_url?: string;
+      cancel_url?: string;
+    }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
   const payCash = usePost<
@@ -1572,6 +1627,7 @@ export default function BookingModal({
       const response = await createPayment.mutateAsync({
         bookingId: createdBooking.id,
         idempotency_key: crypto.randomUUID(),
+        ...buildBookingPaymentRedirectPayload(),
       });
       if (response?.data?.payment_url) {
         window.location.href = response.data.payment_url;

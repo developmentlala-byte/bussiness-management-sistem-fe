@@ -40,6 +40,7 @@ import GanttChartBookings from "./components/ganttChartBookings";
 import BookingModal from "./components/bookingModal";
 import { useApiFetch, usePost } from "@/app/libs/use-http";
 import { formatDate } from "@/app/libs/date-format";
+import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 
@@ -92,7 +93,12 @@ function BookingsPageInner() {
 
   const createPayment = usePost<
     { data: { payment_url: string } },
-    { bookingId: number; idempotency_key: string }
+    {
+      bookingId: number;
+      idempotency_key: string;
+      return_url?: string;
+      cancel_url?: string;
+    }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
   const payCash = usePost<
@@ -147,6 +153,7 @@ function BookingsPageInner() {
     const payload = {
       bookingId: Number(selectedBooking.id),
       idempotency_key: crypto.randomUUID(),
+      ...buildBookingPaymentRedirectPayload(),
     };
     try {
       const response = await createPayment.mutateAsync(payload);
