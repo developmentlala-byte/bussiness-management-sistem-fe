@@ -1,18 +1,9 @@
 "use client";
 
-// tambahkan ke import @heroui/react yang sudah ada
-import {
-  Calendar,
-  Dropdown,
-  EmptyState,
-  Label,
-  ListBox,
-  SearchField,
-  useFilter,
-} from "@heroui/react";
+import { Calendar, Dropdown, Label, useFilter } from "@heroui/react";
 import { parseDate } from "@internationalized/date";
-import { CalendarBlank, CreditCardIcon } from "@phosphor-icons/react";
-import { useState, useMemo, useEffect } from "react";
+import { CreditCardIcon } from "@phosphor-icons/react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePost, useApiFetch, usePut } from "@/app/libs/use-http";
 import { toast } from "@heroui/react";
@@ -31,24 +22,49 @@ import {
   calcBundlePricing,
   formatBundleDiscountLabel,
   getBundleCalendarBounds,
-  getBundleScheduleHint,
-  getBundleTimeBounds,
-  isDateTimeWithinBundle,
   type BundlePricing,
 } from "@/app/libs/bundle-pricing";
 import { BundlePromoCard } from "./bundlePromoCard";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const idr = (n: number): string => `Rp ${n.toLocaleString("id-ID")}`;
 
 const durFmt = (m: number): string => {
   if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60),
-    rm = m % 60;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
   return rm ? `${h}h ${rm}m` : `${h}h`;
 };
 
+/**
+ * Parse ISO datetime string tanpa konversi timezone.
+ * Backend menyimpan waktu lokal (WIB) tapi kadang pakai suffix Z — jangan
+ * lewat `new Date()` karena akan dikonversi ke UTC dan date/time bisa geser.
+ *
+ * Contoh: "2026-06-28T17:00:00.000000Z"
+ *   → { date: "2026-06-28", time: "17:00" }  ✅
+ * Bukan → { date: "2026-06-29", time: "00:00" } (salah timezone UTC+7)
+ */
+const toFormDateTime = (isoString: string): { date: string; time: string } => {
+  const [datePart, timePart] = isoString.split("T");
+  return {
+    date: datePart ?? "",
+    time: timePart ? timePart.substring(0, 5) : "",
+  };
+};
+
+const getCurrentMonth = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const inputCls =
   "w-full py-[9px] px-3 rounded-[10px] border border-[#EDE8E3] text-[13px] text-[#1A1614] bg-white outline-none transition-colors duration-150 focus:border-[#B55368] focus:ring-2 focus:ring-[rgba(181,83,104,0.10)]";
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 const IconCalendar = () => (
   <svg
@@ -147,6 +163,8 @@ const IconBack = () => (
   </svg>
 );
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface Variant {
   id: number;
   catKey: string;
@@ -168,14 +186,33 @@ interface ApiVariantRow {
   service?: { name?: string; bms_ms_service_category_id?: number };
 }
 
-interface ApiStaffRow {
-  first_name: string;
-  last_name?: string | null;
-}
-
 type CartLine =
   | { kind: "service"; variant: Variant }
   | { kind: "bundle"; bundle: BundlePromo; pricing: BundlePricing };
+
+/** Therapist yang sudah ter-assign di booking existing (edit mode) */
+interface ExistingTherapist {
+  id: number;
+  name: string;
+  service_variant_id: number;
+}
+
+interface FormState {
+  name: string;
+  phone: string;
+  staffAssignments: BookingStaffAssignment[];
+  date: string;
+  slotTime: string;
+}
+
+type BookingStep = "customer" | "services" | "datetime" | "confirm";
+
+interface CreatedBooking {
+  id: number;
+  booking_code: string;
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface ServiceCardProps {
   v: Variant;
@@ -293,15 +330,7 @@ function BundleCartRow({ bundle, pricing, onRemove }: BundleCartRowProps) {
   );
 }
 
-interface FormState {
-  name: string;
-  phone: string;
-  staffAssignments: BookingStaffAssignment[];
-  date: string;
-  slotTime: string;
-}
-
-type BookingStep = "customer" | "services" | "datetime" | "confirm";
+// ─── OrderPanel ───────────────────────────────────────────────────────────────
 
 interface OrderPanelProps {
   step: BookingStep;
@@ -317,6 +346,9 @@ interface OrderPanelProps {
   availableDates: string[];
   availableSlots: AvailableSlot[] | null;
   availableVariants: Variant[];
+  /** Therapist yang sudah ter-assign di booking existing. Dipakai sebagai
+   *  fallback saat availableSlots belum selesai di-fetch (edit mode). */
+  existingTherapists: ExistingTherapist[];
   onBook: () => void;
   submitLabel: string;
   onBack: () => void;
@@ -324,8 +356,6 @@ interface OrderPanelProps {
   selectedBundle: BundlePromo | null;
   customerBookingCount: number | null;
   isSubmitPending: boolean;
-  excludeBookingId?: number;
-  // ✅ FIX: track which month the calendar is showing
   viewingMonth: string;
   setViewingMonth: (month: string) => void;
 }
@@ -337,13 +367,13 @@ function OrderPanel({
   setForm,
   cartLines,
   onRemoveLine,
-  onClearCart,
   totalAmt,
   totalDur,
   selectedServiceVariantIds,
   availableDates,
   availableSlots,
   availableVariants,
+  existingTherapists,
   onBook,
   submitLabel,
   onBack,
@@ -351,38 +381,79 @@ function OrderPanel({
   selectedBundle,
   customerBookingCount,
   isSubmitPending,
-  // ✅ FIX: destructure new props
   viewingMonth,
   setViewingMonth,
 }: OrderPanelProps) {
-  const { contains } = useFilter({ sensitivity: "base" });
-
   const bundleCalendarBounds = selectedBundle
     ? getBundleCalendarBounds(selectedBundle)
     : null;
 
-  const isDateAvailable = (dateStr: string) => {
+  const isDateAvailable = (dateStr: string): boolean => {
     if (!availableDates.length) return true;
     return availableDates.includes(dateStr);
   };
 
+  /**
+   * Map variantId → therapist yang sedang di-assign.
+   *
+   * Priority:
+   * 1. Dari availableSlots (data fresh dari API)
+   * 2. Fallback ke existingTherapists (data booking lama) — berguna saat
+   *    slots belum selesai di-fetch ketika edit modal pertama dibuka.
+   */
   const therapistAssignmentByVariant = useMemo(() => {
-    const map = new Map<number, AvailableTherapist>();
-    form.staffAssignments.forEach((a) => {
-      const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
-      const therapist = slot?.available_therapists.find(
-        (t) => t.id === a.staff_id,
-      );
-      if (therapist) map.set(a.service_variant_id, therapist);
-    });
-    return map;
-  }, [form.staffAssignments, availableSlots, form.slotTime]);
+    const map = new Map<number, { id: number; name: string }>();
 
-  const availableTherapistsForSlot = useMemo(() => {
-    if (!availableSlots || !form.slotTime) return [];
-    const slot = availableSlots.find((s) => s.slot_time === form.slotTime);
-    return slot?.available_therapists || [];
-  }, [availableSlots, form.slotTime]);
+    form.staffAssignments.forEach((assignment) => {
+      // Coba resolve dari slots yang sudah di-fetch
+      const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
+      const fromSlot = slot?.available_therapists.find(
+        (t) => t.id === assignment.staff_id,
+      );
+
+      if (fromSlot) {
+        map.set(assignment.service_variant_id, fromSlot);
+        return;
+      }
+
+      // Fallback: pakai data dari booking existing
+      const fromExisting = existingTherapists.find(
+        (t) => t.service_variant_id === assignment.service_variant_id,
+      );
+      if (fromExisting) {
+        map.set(assignment.service_variant_id, {
+          id: fromExisting.id,
+          name: fromExisting.name,
+        });
+      }
+    });
+
+    return map;
+  }, [
+    form.staffAssignments,
+    availableSlots,
+    form.slotTime,
+    existingTherapists,
+  ]);
+
+  /**
+   * Daftar therapist yang bisa dipilih untuk slot yang aktif.
+   *
+   * Priority:
+   * 1. Dari availableSlots (real availability dari server)
+   * 2. Fallback ke existingTherapists — supaya dropdown tidak kosong saat
+   *    edit modal baru dibuka dan slots masih loading.
+   */
+  const availableTherapistsForSlot = useMemo((): AvailableTherapist[] => {
+    if (availableSlots && form.slotTime) {
+      const slot = availableSlots.find((s) => s.slot_time === form.slotTime);
+      if (slot?.available_therapists.length) {
+        return slot.available_therapists;
+      }
+    }
+    // Fallback ke existing therapists saat slots belum loaded
+    return existingTherapists.map((t) => ({ id: t.id, name: t.name }));
+  }, [availableSlots, form.slotTime, existingTherapists]);
 
   const handleDateSelect = (date: { toString: () => string }) => {
     const dateStr = date.toString();
@@ -390,19 +461,20 @@ function OrderPanel({
       ...prev,
       date: dateStr,
       slotTime: "",
-      staffAssignments: [],
+      // Reset staff assignments hanya kalau tanggal berubah, supaya
+      // user tidak perlu milih therapist ulang kalau ganti slot di hari sama
+      staffAssignments: prev.date === dateStr ? prev.staffAssignments : [],
     }));
   };
 
   const handleSlotSelect = (slot: AvailableSlot) => {
     if (!slot.is_available) return;
 
+    // Build map variantId → categoryId
     const variantCategoryMap = new Map<number, number>();
     selectedServiceVariantIds.forEach((variantId) => {
       const variant = availableVariants.find((v) => v.id === variantId);
-      if (variant) {
-        variantCategoryMap.set(variantId, variant.categoryId);
-      }
+      if (variant) variantCategoryMap.set(variantId, variant.categoryId);
     });
 
     const newAssignments: BookingStaffAssignment[] = [];
@@ -412,26 +484,25 @@ function OrderPanel({
       if (categoryId === undefined) continue;
 
       const eligibleIds =
-        slot.available_therapists_by_category[categoryId] || [];
+        slot.available_therapists_by_category[categoryId] ?? [];
       let selectedId: number | null = null;
 
-      // First try to reuse any already selected therapist (if eligible for this category)
-      for (const assignment of newAssignments) {
-        if (eligibleIds.includes(assignment.staff_id)) {
-          selectedId = assignment.staff_id;
+      // Reuse therapist yang sudah dipilih kalau masih eligible di slot baru
+      for (const existing of newAssignments) {
+        if (eligibleIds.includes(existing.staff_id)) {
+          selectedId = existing.staff_id;
           break;
         }
       }
 
-      // If no existing therapist eligible, pick the first one from the eligible list
-      if (!selectedId) {
-        selectedId = eligibleIds[0];
-      }
+      if (!selectedId) selectedId = eligibleIds[0] ?? null;
 
-      newAssignments.push({
-        service_variant_id: variantId,
-        staff_id: selectedId,
-      });
+      if (selectedId !== null) {
+        newAssignments.push({
+          service_variant_id: variantId,
+          staff_id: selectedId,
+        });
+      }
     }
 
     setForm((prev) => ({
@@ -443,24 +514,127 @@ function OrderPanel({
   };
 
   const handleTherapistChange = (variantId: number, therapistId: number) => {
-    setForm((prev) => ({
-      ...prev,
-      staffAssignments: prev.staffAssignments.map((a) =>
-        a.service_variant_id === variantId
-          ? { ...a, staff_id: therapistId }
-          : a,
-      ),
-    }));
+    setForm((prev) => {
+      // Kalau variant belum punya assignment, tambah baru
+      const exists = prev.staffAssignments.some(
+        (a) => a.service_variant_id === variantId,
+      );
+      if (!exists) {
+        return {
+          ...prev,
+          staffAssignments: [
+            ...prev.staffAssignments,
+            { service_variant_id: variantId, staff_id: therapistId },
+          ],
+        };
+      }
+      return {
+        ...prev,
+        staffAssignments: prev.staffAssignments.map((a) =>
+          a.service_variant_id === variantId
+            ? { ...a, staff_id: therapistId }
+            : a,
+        ),
+      };
+    });
   };
+
+  /**
+   * Saat availableSlots loaded dan ada variant yang belum punya assignment
+   * (misalnya data booking lama tidak lengkap), auto-assign therapist pertama
+   * yang eligible untuk variant tersebut.
+   */
+  useEffect(() => {
+    if (
+      !availableSlots ||
+      !form.slotTime ||
+      selectedServiceVariantIds.length === 0
+    )
+      return;
+
+    const slot = availableSlots.find((s) => s.slot_time === form.slotTime);
+    if (!slot) return;
+
+    setForm((prev) => {
+      const missingVariantIds = selectedServiceVariantIds.filter(
+        (variantId) =>
+          !prev.staffAssignments.some(
+            (a) => a.service_variant_id === variantId && a.staff_id > 0,
+          ),
+      );
+      if (missingVariantIds.length === 0) return prev; // tidak ada yang perlu di-fill
+
+      const newAssignments = missingVariantIds.map((variantId) => {
+        const variant = availableVariants.find((v) => v.id === variantId);
+        const categoryId = variant?.categoryId ?? 0;
+        const eligibleIds =
+          slot.available_therapists_by_category[categoryId] ?? [];
+        // Coba reuse therapist yang sudah di-assign di variant lain kalau eligible
+        const reuse = prev.staffAssignments.find((a) =>
+          eligibleIds.includes(a.staff_id),
+        );
+        const staffId = reuse?.staff_id ?? eligibleIds[0] ?? 0;
+        return { service_variant_id: variantId, staff_id: staffId };
+      });
+
+      return {
+        ...prev,
+        staffAssignments: [...prev.staffAssignments, ...newAssignments],
+      };
+    });
+  }, [
+    availableSlots,
+    form.slotTime,
+    selectedServiceVariantIds,
+    availableVariants,
+  ]);
 
   const canProceedFromCustomer = !!form.name.trim();
   const canProceedFromServices = cartLines.length > 0;
+
+  /**
+   * Validasi assignment therapist.
+   *
+   * Aturan:
+   * - Kalau selectedServiceVariantIds sudah terisi (variants loaded):
+   *   setiap variant harus punya assignment dengan staff_id valid (> 0).
+   * - Kalau selectedServiceVariantIds masih kosong (variants masih loading,
+   *   hanya di edit mode): cukup staffAssignments ada dan semua staff_id valid.
+   *
+   * CATATAN: jumlah assignment BOLEH kurang dari jumlah variant — bisa terjadi
+   * kalau data booking lama memang tidak punya assignment untuk semua variant
+   * (misalnya service baru ditambah setelah booking dibuat). Server yang akan
+   * validasi. Yang kita cek di client hanya: assignment yang ada harus valid.
+   */
+  const allAssignmentsValid =
+    form.staffAssignments.length > 0 &&
+    form.staffAssignments.every((a) => a.staff_id > 0);
+
+  const allVariantsAssigned =
+    selectedServiceVariantIds.length === 0
+      ? allAssignmentsValid // variants belum loaded, fallback ke check validity saja
+      : selectedServiceVariantIds.every((variantId) => {
+          const assignment = form.staffAssignments.find(
+            (a) => a.service_variant_id === variantId,
+          );
+          return assignment && assignment.staff_id > 0;
+        });
+
+  /**
+   * Di edit mode, cartLines mungkin masih kosong sementara variants loading.
+   * Kita deteksi edit mode dari existingTherapists.length > 0 (hanya ada
+   * saat edit) dan gunakan staffAssignments sebagai bukti "ada service".
+   */
+  const isInEditMode = existingTherapists.length > 0;
+  const hasItems =
+    cartLines.length > 0 || (isInEditMode && form.staffAssignments.length > 0);
+
   const canBook =
     !!form.name.trim() &&
-    cartLines.length > 0 &&
+    hasItems &&
     !!form.date &&
     !!form.slotTime &&
-    form.staffAssignments.length === selectedServiceVariantIds.length;
+    allVariantsAssigned;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F8F4F0]">
@@ -472,7 +646,9 @@ function OrderPanel({
           <IconBack /> Back
         </button>
       )}
+
       <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#D5CFC9] [&::-webkit-scrollbar-thumb]:rounded-full">
+        {/* ── STEP: CUSTOMER ── */}
         {step === "customer" && (
           <div className="px-4 py-4 space-y-4">
             <div>
@@ -496,19 +672,20 @@ function OrderPanel({
                 }
               />
               {customerBookingCount !== null &&
-              form.phone.trim().length >= 8 ? (
-                <p className="mt-2 text-[12px] text-[#7A736E]">
-                  Klien ini sudah booking{" "}
-                  <span className="font-semibold text-[#B55368]">
-                    {customerBookingCount}
-                  </span>{" "}
-                  kali
-                </p>
-              ) : null}
+                form.phone.trim().length >= 8 && (
+                  <p className="mt-2 text-[12px] text-[#7A736E]">
+                    Klien ini sudah booking{" "}
+                    <span className="font-semibold text-[#B55368]">
+                      {customerBookingCount}
+                    </span>{" "}
+                    kali
+                  </p>
+                )}
             </div>
           </div>
         )}
 
+        {/* ── STEP: SERVICES / DATETIME / CONFIRM — Cart summary ── */}
         {(step === "services" || step === "datetime" || step === "confirm") && (
           <div className="px-4 py-4 border-b border-[#EDE8E3]">
             <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
@@ -544,6 +721,7 @@ function OrderPanel({
           </div>
         )}
 
+        {/* ── STEP: DATETIME ── */}
         {step === "datetime" && cartLines.length > 0 && (
           <>
             <div className="px-4 py-4 border-b border-[#EDE8E3]">
@@ -556,14 +734,10 @@ function OrderPanel({
                 minValue={bundleCalendarBounds?.minValue}
                 maxValue={bundleCalendarBounds?.maxValue}
                 onChange={handleDateSelect}
-                // ✅ FIX: pakai onFocusChange (bukan onFocusedChange yang tidak ada)
-                // fires setiap kali user klik prev/next bulan atau navigasi keyboard
                 onFocusChange={(date) => {
                   if (date) {
                     const newMonth = `${date.year}-${String(date.month).padStart(2, "0")}`;
-                    if (newMonth !== viewingMonth) {
-                      setViewingMonth(newMonth);
-                    }
+                    if (newMonth !== viewingMonth) setViewingMonth(newMonth);
                   }
                 }}
                 isDateUnavailable={(date) => {
@@ -599,55 +773,71 @@ function OrderPanel({
                 </Calendar.YearPickerGrid>
               </Calendar>
             </div>
+
             {form.date && (
               <div className="px-4 py-4">
                 <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
                   Pilih Waktu
                 </p>
-                <div className="space-y-2">
-                  {availableSlots?.map((slot) => (
-                    <button
-                      key={slot.slot_time}
-                      onClick={() => handleSlotSelect(slot)}
-                      disabled={!slot.is_available}
-                      className={`w-full text-left rounded-xl border p-3 transition-all duration-150 ${
-                        slot.is_available
-                          ? "border-[#EDE8E3] bg-white hover:border-[#E8B4C0]"
-                          : "border-[#EDE8E3] bg-[#EDE8E3] opacity-50 cursor-not-allowed"
-                      } ${form.slotTime === slot.slot_time ? "border-[#B55368] bg-[#FEF1F4]" : ""}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] font-semibold text-[#1A1614]">
-                          {slot.slot_time}
-                        </span>
-                        {slot.is_available && (
-                          <div className="flex gap-1 flex-wrap justify-end">
-                            {slot.available_therapists.map((t) => (
-                              <span
-                                key={t.id}
-                                className="bg-[#EDE8E3] text-[#1A1614] text-[10px] px-2 py-0.5 rounded-full"
-                              >
-                                {t.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {!slot.is_available && (
-                          <span className="text-[11px] text-[#B5AFA9]">
-                            Tidak tersedia
+                {!availableSlots ? (
+                  <p className="text-[13px] text-[#B5AFA9] py-4 text-center">
+                    Memuat slot waktu...
+                  </p>
+                ) : availableSlots.length === 0 ? (
+                  <p className="text-[13px] text-[#B5AFA9] py-4 text-center">
+                    Tidak ada slot tersedia untuk tanggal ini.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {availableSlots.map((slot) => (
+                      <button
+                        key={slot.slot_time}
+                        onClick={() => handleSlotSelect(slot)}
+                        disabled={!slot.is_available}
+                        className={[
+                          "w-full text-left rounded-xl border p-3 transition-all duration-150",
+                          slot.is_available
+                            ? "border-[#EDE8E3] bg-white hover:border-[#E8B4C0]"
+                            : "border-[#EDE8E3] bg-[#EDE8E3] opacity-50 cursor-not-allowed",
+                          form.slotTime === slot.slot_time
+                            ? "border-[#B55368] bg-[#FEF1F4]"
+                            : "",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] font-semibold text-[#1A1614]">
+                            {slot.slot_time}
                           </span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                          {slot.is_available ? (
+                            <div className="flex gap-1 flex-wrap justify-end">
+                              {slot.available_therapists.map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="bg-[#EDE8E3] text-[#1A1614] text-[10px] px-2 py-0.5 rounded-full"
+                                >
+                                  {t.name}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#B5AFA9]">
+                              Tidak tersedia
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
 
+        {/* ── STEP: CONFIRM ── */}
         {step === "confirm" && (
           <div className="px-4 py-4 space-y-4">
+            {/* Appointment summary */}
             <div>
               <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
                 Appointment
@@ -655,7 +845,7 @@ function OrderPanel({
               <div className="bg-white rounded-xl border border-[#EDE8E3] p-3">
                 <p className="text-[13px] text-[#1A1614]">
                   {form.date
-                    ? new Date(form.date + "T00:00:00").toLocaleDateString(
+                    ? new Date(`${form.date}T00:00:00`).toLocaleDateString(
                         "id-ID",
                         {
                           weekday: "long",
@@ -669,27 +859,46 @@ function OrderPanel({
                 </p>
               </div>
             </div>
+
+            {/* Therapist selection */}
             <div>
               <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
                 Therapist
               </p>
+
+              {/* Loading state: slots masih di-fetch dan belum ada fallback */}
+              {!availableSlots && existingTherapists.length === 0 && (
+                <p className="text-[13px] text-[#B5AFA9] py-2">
+                  Memuat data therapist...
+                </p>
+              )}
+
               <div className="space-y-2">
                 {selectedServiceVariantIds.map((variantId) => {
                   const variant = availableVariants.find(
-                    (v: Variant) => v.id === variantId,
+                    (v) => v.id === variantId,
                   );
+                  const categoryId = variant?.categoryId ?? 0;
+
+                  // Eligible therapist IDs untuk kategori ini di slot yang dipilih
                   const currentSlot = availableSlots?.find(
                     (s) => s.slot_time === form.slotTime,
                   );
-                  const categoryId = variant?.categoryId ?? 0;
-                  const eligibleTherapistIds =
-                    currentSlot?.available_therapists_by_category[categoryId] ||
+                  const eligibleIds =
+                    currentSlot?.available_therapists_by_category[categoryId] ??
                     [];
-                  const eligibleTherapists = availableTherapistsForSlot.filter(
-                    (t) => eligibleTherapistIds.includes(t.id),
-                  );
+
+                  // Kalau slots sudah loaded → filter berdasarkan eligibility
+                  // Kalau slots belum loaded → tampilkan semua dari existingTherapists
+                  const therapistOptions: AvailableTherapist[] = availableSlots
+                    ? availableTherapistsForSlot.filter((t) =>
+                        eligibleIds.includes(t.id),
+                      )
+                    : availableTherapistsForSlot;
+
                   const selectedTherapist =
                     therapistAssignmentByVariant.get(variantId);
+
                   return (
                     <div
                       key={variantId}
@@ -701,8 +910,14 @@ function OrderPanel({
                       <Dropdown>
                         <Dropdown.Trigger className="w-full">
                           <div className="flex items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-white px-3 py-2 text-[13px] text-[#1A1614] cursor-pointer hover:border-[#E8B4C0]">
-                            <span>
-                              {selectedTherapist?.name || "Pilih therapist"}
+                            <span
+                              className={
+                                selectedTherapist
+                                  ? "text-[#1A1614]"
+                                  : "text-[#B5AFA9]"
+                              }
+                            >
+                              {selectedTherapist?.name ?? "Pilih therapist"}
                             </span>
                           </div>
                         </Dropdown.Trigger>
@@ -712,16 +927,27 @@ function OrderPanel({
                               handleTherapistChange(variantId, Number(key))
                             }
                           >
-                            {eligibleTherapists.map((t) => (
+                            {therapistOptions.length === 0 ? (
                               <Dropdown.Item
-                                key={t.id}
-                                id={String(t.id)}
-                                textValue={t.name}
-                                className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
+                                key="empty"
+                                id="empty"
+                                isDisabled
+                                className="rounded-xl px-3 py-2 text-[13px] text-[#B5AFA9]"
                               >
-                                <Label>{t.name}</Label>
+                                <Label>Tidak ada therapist tersedia</Label>
                               </Dropdown.Item>
-                            ))}
+                            ) : (
+                              therapistOptions.map((t) => (
+                                <Dropdown.Item
+                                  key={t.id}
+                                  id={String(t.id)}
+                                  textValue={t.name}
+                                  className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
+                                >
+                                  <Label>{t.name}</Label>
+                                </Dropdown.Item>
+                              ))
+                            )}
                           </Dropdown.Menu>
                         </Dropdown.Popover>
                       </Dropdown>
@@ -733,6 +959,8 @@ function OrderPanel({
           </div>
         )}
       </div>
+
+      {/* ── FOOTER ACTIONS ── */}
       <div className="shrink-0 border-t border-[#EDE8E3] bg-white px-4 py-3">
         {(step === "services" || step === "datetime" || step === "confirm") &&
           cartLines.length > 0 && (
@@ -753,6 +981,7 @@ function OrderPanel({
               </div>
             </div>
           )}
+
         {step === "customer" && (
           <button
             onClick={() => setStep("services")}
@@ -766,6 +995,7 @@ function OrderPanel({
             Next →
           </button>
         )}
+
         {step === "services" && (
           <div className="flex gap-2">
             <button
@@ -784,6 +1014,7 @@ function OrderPanel({
             )}
           </div>
         )}
+
         {step === "datetime" && (
           <div className="flex gap-2">
             <button
@@ -794,6 +1025,7 @@ function OrderPanel({
             </button>
           </div>
         )}
+
         {step === "confirm" && (
           <div className="flex gap-2">
             <button
@@ -820,6 +1052,8 @@ function OrderPanel({
   );
 }
 
+// ─── BookingModal ─────────────────────────────────────────────────────────────
+
 interface BookingModalProps {
   isOpen: boolean;
   action?: "create" | "edit";
@@ -827,20 +1061,84 @@ interface BookingModalProps {
   onSaved?: () => void;
 }
 
-interface CreatedBooking {
-  id: number;
-  booking_code: string;
+/** Build initial cart lines dari data booking yang sudah ada */
+function buildInitialCartLines(
+  booking: SpaBooking,
+  availableVariants: Variant[],
+): CartLine[] {
+  return (booking.service_variants ?? []).map((line) => {
+    if (isBundlePromoLine(line)) {
+      return {
+        kind: "bundle" as const,
+        bundle: {
+          id: line.bundle_promo_id as any,
+          name: line.name,
+          slug: line.slug,
+          description: null,
+          image_path: null,
+          bundle_type: line.bundle_type,
+          discount_value: line.discount_value,
+          start_date: "",
+          end_date: "",
+          is_active: true,
+          max_quantity: null,
+          used_count: 0,
+          bundle_items: line.items.map((item) => ({
+            id: item.id,
+            bms_ms_bundle_promo_id: line.bundle_promo_id,
+            bms_ms_service_variant_id: item.id,
+            quantity: item.quantity,
+            duration_minutes: item.duration_minutes,
+            price: item.retail_price,
+            sort_order: 0,
+            service_variant: {
+              id: item.id,
+              name: item.name,
+              duration_minutes: item.duration_minutes,
+              retail_price: item.retail_price,
+            },
+          })),
+        },
+        pricing: {
+          subtotal: line.subtotal,
+          discountAmount: line.discount_amount,
+          finalPrice: line.retail_price,
+          totalDuration: line.duration_minutes,
+          itemCount: line.items.reduce((sum, item) => sum + item.quantity, 0),
+        },
+      };
+    }
+
+    // Service variant — enrich dengan data dari availableVariants kalau ada
+    const variantFromApi = availableVariants.find((v) => v.id === line.id);
+    return {
+      kind: "service" as const,
+      variant: {
+        id: line.id,
+        catKey:
+          variantFromApi?.catKey ??
+          line.slug?.toLowerCase().replace(/\s+/g, "_") ??
+          "other",
+        subCat: variantFromApi?.subCat ?? "Selected Service",
+        name: line.name,
+        duration: line.duration_minutes ?? 0,
+        price: Number(line.retail_price ?? 0),
+        categoryId: variantFromApi?.categoryId ?? 0,
+      },
+    };
+  });
 }
 
-const toFormDateTime = (isoString: string) => {
-  const date = new Date(isoString);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  return { date: `${y}-${m}-${d}`, time: `${hh}:${mm}` };
-};
+/** Derive ExistingTherapist[] dari data therapists di SpaBooking */
+function buildExistingTherapists(booking: SpaBooking): ExistingTherapist[] {
+  return (booking.therapists ?? [])
+    .filter((t): t is BookingTherapist => typeof t !== "string")
+    .map((t) => ({
+      id: t.staff_id,
+      name: t.name,
+      service_variant_id: t.service_variant_id,
+    }));
+}
 
 export default function BookingModal({
   isOpen,
@@ -848,8 +1146,9 @@ export default function BookingModal({
   initialBooking = null,
   onSaved,
 }: BookingModalProps) {
-  const queryClient = useQueryClient();
+  const isEdit = action === "edit" && !!initialBooking;
 
+  // Load font
   useEffect(() => {
     const lk = document.createElement("link");
     lk.href =
@@ -858,111 +1157,49 @@ export default function BookingModal({
     document.head.appendChild(lk);
   }, []);
 
-  const initialEditCartLines: CartLine[] =
-    action === "edit" && initialBooking
-      ? (initialBooking.service_variants ?? []).map((line: any) => {
-          if (isBundlePromoLine(line)) {
-            return {
-              kind: "bundle" as const,
-              bundle: {
-                id: line.bundle_promo_id as any,
-                name: line.name,
-                slug: line.slug,
-                description: null,
-                image_path: null,
-                bundle_type: line.bundle_type,
-                discount_value: line.discount_value,
-                start_date: "",
-                end_date: "",
-                is_active: true,
-                max_quantity: null,
-                used_count: 0,
-                bundle_items: line.items.map((item: any) => ({
-                  id: item.id,
-                  bms_ms_bundle_promo_id: line.bundle_promo_id,
-                  bms_ms_service_variant_id: item.id,
-                  quantity: item.quantity,
-                  duration_minutes: item.duration_minutes,
-                  price: item.retail_price,
-                  sort_order: 0,
-                  service_variant: {
-                    id: item.id,
-                    name: item.name,
-                    duration_minutes: item.duration_minutes,
-                    retail_price: item.retail_price,
-                  },
-                })),
-              },
-              pricing: {
-                subtotal: line.subtotal,
-                discountAmount: line.discount_amount,
-                finalPrice: line.retail_price,
-                totalDuration: line.duration_minutes,
-                itemCount: line.items.reduce(
-                  (sum: number, item: any) => sum + item.quantity,
-                  0,
-                ),
-              },
-            };
-          }
-          return {
-            kind: "service" as const,
-            variant: {
-              id: line.id as number,
-              catKey: (line.slug ?? "other").toLowerCase().replace(/\s+/g, "_"),
-              subCat: "Selected Service",
-              name: line.name,
-              duration: line.duration_minutes ?? 0,
-              price: Number(line.retail_price ?? 0),
-              categoryId: 0,
-            },
-          };
-        })
-      : [];
+  // ── Initial values (derived once from initialBooking) ──────────────────────
+  const initialEditDateTime = useMemo(
+    () =>
+      isEdit
+        ? toFormDateTime(initialBooking!.schedule_date)
+        : { date: "", time: "" },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
-  const initialEditDateTime =
-    action === "edit" && initialBooking
-      ? toFormDateTime(initialBooking.schedule_date)
-      : { date: "", time: "" };
-
+  // ── State ──────────────────────────────────────────────────────────────────
   const [browseMode, setBrowseMode] = useState<"services" | "bundles">(
-    initialEditCartLines.some((line) => line.kind === "bundle")
-      ? "bundles"
-      : "services",
+    "services",
   );
-  const [cat, setCat] = useState(
-    initialEditCartLines.find((line) => line.kind === "service")?.variant
-      .catKey ?? "spa-wellness-6a3cd52cd23c2",
-  );
+  const [cat, setCat] = useState("spa-wellness-6a41bb8b42eb7");
   const [search, setSearch] = useState("");
-  const [cartLines, setCartLines] = useState<CartLine[]>(initialEditCartLines);
+  const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [step, setStep] = useState<BookingStep>(
-    action === "edit" ? "confirm" : "customer",
+    isEdit ? "confirm" : "customer",
   );
   const [form, setForm] = useState<FormState>({
-    name: action === "edit" ? (initialBooking?.customer_name ?? "") : "",
-    phone: action === "edit" ? (initialBooking?.customer_phone ?? "") : "",
-    staffAssignments:
-      action === "edit" && initialBooking?.staff_assignments
-        ? initialBooking.staff_assignments
-        : [],
+    name: isEdit ? (initialBooking?.customer_name ?? "") : "",
+    phone: isEdit ? (initialBooking?.customer_phone ?? "") : "",
+    staffAssignments: isEdit ? (initialBooking?.staff_assignments ?? []) : [],
     date: initialEditDateTime.date,
     slotTime: initialEditDateTime.time,
   });
-
-  // ✅ FIX: viewingMonth adalah state TERSENDIRI — tidak diturunkan dari form.date.
-  // Ini yang dikirim ke API available-dates, dan diupdate setiap kali user
-  // navigasi bulan di kalender (via onFocusChange di Calendar).
   const [viewingMonth, setViewingMonth] = useState<string>(() => {
-    // Inisialisasi dari tanggal yang sudah ada (edit mode) atau bulan sekarang
-    const dateStr = initialEditDateTime.date;
-    if (dateStr) return dateStr.slice(0, 7); // "YYYY-MM"
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (initialEditDateTime.date) return initialEditDateTime.date.slice(0, 7);
+    return getCurrentMonth();
   });
+  const [success, setSuccess] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState<CreatedBooking | null>(
+    isEdit && initialBooking
+      ? {
+          id: Number(initialBooking.id),
+          booking_code: initialBooking.booking_code,
+        }
+      : null,
+  );
+  const [mobileView, setMobileView] = useState<"browse" | "order">("browse");
 
-  // Sync viewingMonth jika user memilih tanggal di bulan berbeda
-  // (supaya kalau user pilih tanggal → back → buka lagi, bulan tetap sesuai)
+  // Sync viewingMonth kalau user pilih tanggal di bulan berbeda
   useEffect(() => {
     if (form.date) {
       const newMonth = form.date.slice(0, 7);
@@ -970,35 +1207,7 @@ export default function BookingModal({
     }
   }, [form.date]);
 
-  console.log("🚀 ~ BookingModal ~ form:", form);
-  console.log("🚀 ~ BookingModal ~ viewingMonth:", viewingMonth);
-
-  const [success, setSuccess] = useState(false);
-  const [createdBooking, setCreatedBooking] = useState<CreatedBooking | null>(
-    action === "edit" && initialBooking
-      ? {
-          id: Number(initialBooking.id),
-          booking_code: initialBooking.booking_code,
-        }
-      : null,
-  );
-  const [mobileView, setMobileView] = useState("browse");
-
-  const selectedServiceVariantIds = useMemo(() => {
-    const ids = new Set<number>();
-    cartLines.forEach((line) => {
-      if (line.kind === "service") {
-        ids.add(line.variant.id);
-      } else if (line.kind === "bundle") {
-        line.bundle.bundle_items?.forEach((item: any) => {
-          ids.add(item.bms_ms_service_variant_id);
-        });
-      }
-    });
-    return Array.from(ids);
-  }, [cartLines]);
-
-  // Fetch variants, bundles, available dates and slots
+  // ── API Fetches ────────────────────────────────────────────────────────────
   const { data: variantsResp, isLoading: variantsLoading } = useApiFetch<{
     data: ApiVariantRow[];
   }>(["variants"], "/master/variants", undefined, isOpen);
@@ -1007,62 +1216,8 @@ export default function BookingModal({
     data: BundlePromo[];
   }>(["bundle-promo-active"], "/master/bundle-promo/active", undefined, isOpen);
 
-  // ✅ FIX: gunakan viewingMonth (bukan form.date) untuk fetch available-dates
-  // Sebelumnya pakai selectedMonth yang diturunkan dari form.date → hanya fetch
-  // bulan yang sudah dipilih user, bukan bulan yang sedang dilihat di kalender.
-  const availableDatesUrl = useMemo(() => {
-    if (selectedServiceVariantIds.length === 0) return null;
-    const params = new URLSearchParams();
-    params.set("month", viewingMonth);
-    selectedServiceVariantIds.forEach((id) =>
-      params.append("variant_ids[]", String(id)),
-    );
-    if (action === "edit" && initialBooking?.id) {
-      params.set("exclude_booking_id", String(initialBooking.id));
-    }
-    return `/master/bookings/available-dates?${params.toString()}`;
-  }, [viewingMonth, selectedServiceVariantIds, action, initialBooking?.id]);
-
-  const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
-    [
-      "available-dates",
-      viewingMonth, // ✅ key berubah setiap ganti bulan → query baru
-      JSON.stringify(selectedServiceVariantIds),
-      String(initialBooking?.id ?? ""),
-    ] as string[],
-    availableDatesUrl || "",
-    undefined,
-    isOpen && !!availableDatesUrl,
-  );
-
-  const availableSlotsUrl = useMemo(() => {
-    if (selectedServiceVariantIds.length === 0 || !form.date) return null;
-    const params = new URLSearchParams();
-    params.set("date", form.date);
-    selectedServiceVariantIds.forEach((id) =>
-      params.append("variant_ids[]", String(id)),
-    );
-    if (action === "edit" && initialBooking?.id) {
-      params.set("exclude_booking_id", String(initialBooking.id));
-    }
-    return `/master/bookings/available-slots?${params.toString()}`;
-  }, [form.date, selectedServiceVariantIds, action, initialBooking?.id]);
-
-  const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
-    [
-      "available-slots",
-      form.date,
-      JSON.stringify(selectedServiceVariantIds),
-      String(initialBooking?.id ?? ""),
-    ] as string[],
-    availableSlotsUrl || "",
-    undefined,
-    isOpen && !!availableSlotsUrl,
-  );
-
   const availableVariants: Variant[] = useMemo(() => {
-    const list = variantsResp?.data ?? [];
-    return list.map((v) => ({
+    return (variantsResp?.data ?? []).map((v) => ({
       id: v.id,
       catKey:
         v.category?.slug ??
@@ -1080,15 +1235,123 @@ export default function BookingModal({
     [bundlesResp],
   );
 
-  const filteredBundles = useMemo(() => {
-    if (!search.trim()) return activeBundles;
-    const q = search.toLowerCase();
-    return activeBundles.filter(
-      (bundle) =>
-        bundle.name.toLowerCase().includes(q) ||
-        bundle.description?.toLowerCase().includes(q),
+  // ── Init cart lines saat edit mode (setelah variants loaded) ──────────────
+  useEffect(() => {
+    if (!isOpen || !isEdit || !initialBooking || availableVariants.length === 0)
+      return;
+    const lines = buildInitialCartLines(initialBooking, availableVariants);
+    setCartLines(lines);
+
+    // Set browse mode sesuai isi cart
+    if (lines.some((l) => l.kind === "bundle")) setBrowseMode("bundles");
+
+    // Set active category ke first service variant
+    const firstService = lines.find((l) => l.kind === "service");
+    if (firstService && firstService.kind === "service") {
+      setCat(firstService.variant.catKey);
+    }
+  }, [isOpen, isEdit, initialBooking, availableVariants]);
+
+  // ── Existing therapists (untuk fallback di confirm step) ──────────────────
+  const existingTherapists = useMemo(
+    (): ExistingTherapist[] =>
+      isEdit && initialBooking ? buildExistingTherapists(initialBooking) : [],
+    [isEdit, initialBooking],
+  );
+
+  // ── Available dates & slots ────────────────────────────────────────────────
+  const selectedServiceVariantIds = useMemo(() => {
+    const ids = new Set<number>();
+    cartLines.forEach((line) => {
+      if (line.kind === "service") {
+        ids.add(line.variant.id);
+      } else if (line.kind === "bundle") {
+        line.bundle.bundle_items?.forEach((item: any) => {
+          ids.add(item.bms_ms_service_variant_id);
+        });
+      }
+    });
+    return Array.from(ids);
+  }, [cartLines]);
+
+  const availableDatesUrl = useMemo(() => {
+    if (selectedServiceVariantIds.length === 0) return null;
+    const params = new URLSearchParams();
+    params.set("month", viewingMonth);
+    selectedServiceVariantIds.forEach((id) =>
+      params.append("variant_ids[]", String(id)),
     );
-  }, [activeBundles, search]);
+    if (isEdit && initialBooking?.id) {
+      params.set("exclude_booking_id", String(initialBooking.id));
+    }
+    return `/master/bookings/available-dates?${params.toString()}`;
+  }, [viewingMonth, selectedServiceVariantIds, isEdit, initialBooking?.id]);
+
+  const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
+    [
+      "available-dates",
+      viewingMonth,
+      JSON.stringify(selectedServiceVariantIds),
+      String(initialBooking?.id ?? ""),
+    ] as string[],
+    availableDatesUrl ?? "",
+    undefined,
+    isOpen && !!availableDatesUrl,
+  );
+
+  const availableSlotsUrl = useMemo(() => {
+    if (selectedServiceVariantIds.length === 0 || !form.date) return null;
+    const params = new URLSearchParams();
+    params.set("date", form.date);
+    selectedServiceVariantIds.forEach((id) =>
+      params.append("variant_ids[]", String(id)),
+    );
+    if (isEdit && initialBooking?.id) {
+      params.set("exclude_booking_id", String(initialBooking.id));
+    }
+    return `/master/bookings/available-slots?${params.toString()}`;
+  }, [form.date, selectedServiceVariantIds, isEdit, initialBooking?.id]);
+
+  const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
+    [
+      "available-slots",
+      form.date,
+      JSON.stringify(selectedServiceVariantIds),
+      String(initialBooking?.id ?? ""),
+    ] as string[],
+    availableSlotsUrl ?? "",
+    undefined,
+    isOpen && !!availableSlotsUrl,
+  );
+
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const totalAmt = cartLines.reduce((sum, line) => {
+    return (
+      sum +
+      (line.kind === "bundle" ? line.pricing.finalPrice : line.variant.price)
+    );
+  }, 0);
+
+  const totalDur = cartLines.reduce((sum, line) => {
+    return (
+      sum +
+      (line.kind === "bundle"
+        ? line.pricing.totalDuration
+        : line.variant.duration)
+    );
+  }, 0);
+
+  const selectedBundle = useMemo(
+    () => cartLines.find((l) => l.kind === "bundle")?.bundle ?? null,
+    [cartLines],
+  );
+
+  const cartSummaryLabel = useMemo(() => {
+    if (cartLines.length === 0) return "";
+    if (cartLines.length === 1 && cartLines[0].kind === "bundle")
+      return "1 bundle promo";
+    return `${cartLines.filter((l) => l.kind === "service").length} layanan`;
+  }, [cartLines]);
 
   const CATS = useMemo(() => {
     const map = new Map<string, { key: string; label: string }>();
@@ -1103,21 +1366,38 @@ export default function BookingModal({
     return Array.from(map.values());
   }, [variantsResp]);
 
-  const totalAmt = cartLines.reduce((sum, line) => {
-    if (line.kind === "bundle") return sum + line.pricing.finalPrice;
-    return sum + line.variant.price;
-  }, 0);
+  const filteredBundles = useMemo(() => {
+    if (!search.trim()) return activeBundles;
+    const q = search.toLowerCase();
+    return activeBundles.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.description?.toLowerCase().includes(q),
+    );
+  }, [activeBundles, search]);
 
-  const totalDur = cartLines.reduce((sum, line) => {
-    if (line.kind === "bundle") return sum + line.pricing.totalDuration;
-    return sum + line.variant.duration;
-  }, 0);
-
-  const selectedBundle = useMemo(
-    () => cartLines.find((line) => line.kind === "bundle")?.bundle ?? null,
-    [cartLines],
+  const filteredVariants = useMemo(
+    () =>
+      availableVariants.filter(
+        (v) =>
+          v.catKey === cat &&
+          (!search ||
+            v.name.toLowerCase().includes(search.toLowerCase()) ||
+            v.subCat.toLowerCase().includes(search.toLowerCase())),
+      ),
+    [cat, search, availableVariants],
   );
 
+  const groupedVariants = useMemo(
+    () =>
+      filteredVariants.reduce<Record<string, Variant[]>>((acc, v) => {
+        (acc[v.subCat] = acc[v.subCat] || []).push(v);
+        return acc;
+      }, {}),
+    [filteredVariants],
+  );
+
+  // ── Customer lookup ────────────────────────────────────────────────────────
   const customerLookupUrl =
     form.phone.trim().length >= 8
       ? `/customer/lookup?phone=${encodeURIComponent(form.phone.trim())}`
@@ -1134,9 +1414,10 @@ export default function BookingModal({
 
   const customerBookingCount =
     customerLookupUrl.length > 0
-      ? (customerLookupResp?.data?.total_bookings ?? 0)
+      ? (customerLookupResp?.data?.total_bookings ?? null)
       : null;
 
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const createBooking = usePost<
     { data: CreatedBooking },
     {
@@ -1191,58 +1472,38 @@ export default function BookingModal({
     { bookingId: number; idempotency_key: string }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
-  const filtered = useMemo(
-    () =>
-      availableVariants.filter(
-        (v) =>
-          v.catKey === cat &&
-          (!search ||
-            v.name.toLowerCase().includes(search.toLowerCase()) ||
-            v.subCat.toLowerCase().includes(search.toLowerCase())),
-      ),
-    [cat, search, availableVariants],
-  );
+  const isSubmitPending = isEdit
+    ? updateBooking.isPending
+    : createBooking.isPending;
 
-  const grouped = useMemo(
-    () =>
-      filtered.reduce((acc: Record<string, Variant[]>, v) => {
-        (acc[v.subCat] = acc[v.subCat] || []).push(v);
-        return acc;
-      }, {}),
-    [filtered],
-  );
-
-  const updateForm = (updater: (prev: FormState) => FormState) => {
-    setForm((prev) => {
-      const next = updater(prev);
-      if (!selectedBundle) return next;
-      const bounds = getBundleCalendarBounds(selectedBundle);
-      if (next.date) {
-        const picked = parseDate(next.date);
-        if (picked.compare(bounds.minValue) < 0) {
-          next.date = bounds.minValue.toString();
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const updateForm = useCallback(
+    (updater: (prev: FormState) => FormState) => {
+      setForm((prev) => {
+        const next = updater(prev);
+        if (!selectedBundle) return next;
+        const bounds = getBundleCalendarBounds(selectedBundle);
+        if (next.date) {
+          const picked = parseDate(next.date);
+          if (picked.compare(bounds.minValue) < 0)
+            next.date = bounds.minValue.toString();
+          if (picked.compare(bounds.maxValue) > 0)
+            next.date = bounds.maxValue.toString();
         }
-        if (picked.compare(bounds.maxValue) > 0) {
-          next.date = bounds.maxValue.toString();
-        }
-      }
-      return next;
-    });
-  };
-
-  const selectedBundleId =
-    cartLines.find((line) => line.kind === "bundle")?.bundle.id ?? null;
+        return next;
+      });
+    },
+    [selectedBundle],
+  );
 
   const inCart = (id: number) =>
-    cartLines.some((line) => line.kind === "service" && line.variant.id === id);
+    cartLines.some((l) => l.kind === "service" && l.variant.id === id);
 
   const toggleService = (v: Variant) => {
     setCartLines((prev) => {
-      const services = prev.filter((line) => line.kind === "service");
-      const exists = services.some((line) => line.variant.id === v.id);
-      if (exists) {
-        return services.filter((line) => line.variant.id !== v.id);
-      }
+      const services = prev.filter((l) => l.kind === "service");
+      const exists = services.some((l) => l.variant.id === v.id);
+      if (exists) return services.filter((l) => l.variant.id !== v.id);
       return [...services, { kind: "service", variant: v }];
     });
   };
@@ -1262,20 +1523,6 @@ export default function BookingModal({
   const removeLine = (index: number) =>
     setCartLines((prev) => prev.filter((_, i) => i !== index));
 
-  const cartSummaryLabel = useMemo(() => {
-    if (cartLines.length === 0) return "";
-    if (cartLines.length === 1 && cartLines[0].kind === "bundle") {
-      return "1 bundle promo";
-    }
-    const serviceCount = cartLines.filter(
-      (line) => line.kind === "service",
-    ).length;
-    return `${serviceCount} layanan`;
-  }, [cartLines]);
-
-  const isSubmitPending =
-    action === "edit" ? updateBooking.isPending : createBooking.isPending;
-
   const handleBook = () => {
     const lineItems = cartLines.map((line) =>
       line.kind === "bundle"
@@ -1291,7 +1538,7 @@ export default function BookingModal({
       staff_id: a.staff_id,
     }));
 
-    if (action === "edit" && initialBooking?.id) {
+    if (isEdit && initialBooking?.id) {
       updateBooking.mutate({
         bookingId: Number(initialBooking.id),
         customer_name: form.name,
@@ -1314,6 +1561,21 @@ export default function BookingModal({
     });
   };
 
+  const handleSelectPayment = async () => {
+    if (!createdBooking?.id || createPayment.isPending) return;
+    try {
+      const response = await createPayment.mutateAsync({
+        bookingId: createdBooking.id,
+        idempotency_key: crypto.randomUUID(),
+      });
+      if (response?.data?.payment_url) {
+        window.location.href = response.data.payment_url;
+      }
+    } catch (error) {
+      console.error("Failed to create payment", error);
+    }
+  };
+
   const reset = () => {
     setCartLines([]);
     setForm({
@@ -1330,28 +1592,10 @@ export default function BookingModal({
     setCreatedBooking(null);
     setMobileView("browse");
     setStep("services");
-    // Reset viewingMonth ke bulan sekarang
-    const now = new Date();
-    setViewingMonth(
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
-    );
+    setViewingMonth(getCurrentMonth());
   };
 
-  const handleSelectPayment = async () => {
-    if (!createdBooking?.id || createPayment.isPending) return;
-    try {
-      const response = await createPayment.mutateAsync({
-        bookingId: createdBooking.id,
-        idempotency_key: crypto.randomUUID(),
-      });
-      if (response?.data?.payment_url) {
-        window.location.href = response.data.payment_url;
-      }
-    } catch (error) {
-      console.error("Failed to create payment", error);
-    }
-  };
-
+  // ── Render: loading ────────────────────────────────────────────────────────
   if (variantsLoading && !variantsResp) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -1360,6 +1604,7 @@ export default function BookingModal({
     );
   }
 
+  // ── Render: success ────────────────────────────────────────────────────────
   if (success && action === "create") {
     return (
       <div
@@ -1386,42 +1631,22 @@ export default function BookingModal({
         <p className="text-sm text-[#7A736E] mb-7">
           Appointment has been scheduled successfully.
         </p>
-        <div className="w-full max-w-sm bg-[#F8F4F0] rounded-2xl p-5 text-left mb-6 space-y-0">
-          {[
-            ["Customer", form.name],
-            form.phone ? ["Phone", form.phone] : null,
-            form.staffAssignments.length
-              ? [
-                  "Therapist(s)",
-                  form.staffAssignments
-                    .map((a) => {
-                      const slot = availableSlotsResp?.data?.slots.find(
-                        (s: AvailableSlot) => s.slot_time === form.slotTime,
-                      );
-                      return (
-                        slot?.available_therapists.find(
-                          (t: AvailableTherapist) => t.id === a.staff_id,
-                        )?.name || ""
-                      );
-                    })
-                    .filter(Boolean)
-                    .join(", "),
-                ]
-              : null,
+
+        <div className="w-full max-w-sm bg-[#F8F4F0] rounded-2xl p-5 text-left mb-6">
+          {(
             [
-              "Date & Time",
-              form.date && form.slotTime
-                ? `${form.date} ${form.slotTime}`
-                : "—",
-            ],
-            ["Duration", durFmt(totalDur)],
-            [
-              "Items",
-              cartLines.length === 1 && cartLines[0].kind === "bundle"
-                ? cartLines[0].bundle.name
-                : `${cartLines.filter((line) => line.kind === "service").length} layanan`,
-            ],
-          ]
+              ["Customer", form.name],
+              form.phone ? ["Phone", form.phone] : null,
+              [
+                "Date & Time",
+                form.date && form.slotTime
+                  ? `${form.date} ${form.slotTime}`
+                  : "—",
+              ],
+              ["Duration", durFmt(totalDur)],
+              ["Items", cartSummaryLabel],
+            ] as ([string, string] | null)[]
+          )
             .filter((row): row is [string, string] => row !== null)
             .map(([k, v]) => (
               <div
@@ -1441,6 +1666,7 @@ export default function BookingModal({
             </span>
           </div>
         </div>
+
         <div className="space-y-4 w-full flex items-center justify-center flex-col">
           <button
             onClick={handleSelectPayment}
@@ -1463,11 +1689,13 @@ export default function BookingModal({
     );
   }
 
+  // ── Render: main ───────────────────────────────────────────────────────────
   return (
     <div
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
       className="flex h-full w-full min-h-0 flex-col overflow-hidden"
     >
+      {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#EDE8E3] px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="shrink-0 w-9 h-9 rounded-[10px] bg-[#FEF1F4] flex items-center justify-center">
@@ -1475,7 +1703,7 @@ export default function BookingModal({
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-[15px] font-bold text-[#1A1614] leading-tight truncate">
-              {action === "edit" ? "Edit Booking" : "New Booking"}
+              {isEdit ? "Edit Booking" : "New Booking"}
             </h2>
             <p className="text-[12px] text-[#7A736E] hidden sm:block truncate">
               {step === "services"
@@ -1498,7 +1726,9 @@ export default function BookingModal({
           </div>
         )}
       </div>
+
       <div className="flex min-h-0 flex-1 w-full overflow-hidden">
+        {/* Browse panel */}
         <div
           className={[
             "flex min-h-0 flex-col border-r border-[#EDE8E3]",
@@ -1507,37 +1737,28 @@ export default function BookingModal({
               : "hidden md:flex md:min-w-0 md:flex-1",
           ].join(" ")}
         >
+          {/* Browse controls */}
           <div className="shrink-0 px-4 sm:px-5 py-3 border-b border-[#EDE8E3] space-y-2 min-w-0">
             <div className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden min-w-0">
-              <button
-                onClick={() => {
-                  setBrowseMode("services");
-                  setSearch("");
-                }}
-                className={[
-                  "shrink-0 px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all duration-150",
-                  browseMode === "services"
-                    ? "bg-[#B55368] text-white border-[#B55368]"
-                    : "bg-[#F8F4F0] text-[#7A736E] border-transparent hover:border-[#E8B4C0]",
-                ].join(" ")}
-              >
-                Layanan
-              </button>
-              <button
-                onClick={() => {
-                  setBrowseMode("bundles");
-                  setSearch("");
-                }}
-                className={[
-                  "shrink-0 px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all duration-150",
-                  browseMode === "bundles"
-                    ? "bg-[#B55368] text-white border-[#B55368]"
-                    : "bg-[#F8F4F0] text-[#7A736E] border-transparent hover:border-[#E8B4C0]",
-                ].join(" ")}
-              >
-                Bundle Promo
-              </button>
+              {(["services", "bundles"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    setBrowseMode(mode);
+                    setSearch("");
+                  }}
+                  className={[
+                    "shrink-0 px-3.5 py-1.5 rounded-full border text-[13px] font-medium cursor-pointer transition-all duration-150",
+                    browseMode === mode
+                      ? "bg-[#B55368] text-white border-[#B55368]"
+                      : "bg-[#F8F4F0] text-[#7A736E] border-transparent hover:border-[#E8B4C0]",
+                  ].join(" ")}
+                >
+                  {mode === "services" ? "Layanan" : "Bundle Promo"}
+                </button>
+              ))}
             </div>
+
             {browseMode === "services" && (
               <div className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden min-w-0">
                 {CATS.map((c) => (
@@ -1559,6 +1780,7 @@ export default function BookingModal({
                 ))}
               </div>
             )}
+
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 <IconSearch />
@@ -1575,6 +1797,8 @@ export default function BookingModal({
               />
             </div>
           </div>
+
+          {/* Browse content */}
           <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-5 py-4 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#D5CFC9] [&::-webkit-scrollbar-thumb]:rounded-full">
             {browseMode === "bundles" ? (
               bundlesLoading ? (
@@ -1592,19 +1816,23 @@ export default function BookingModal({
                     <BundlePromoCard
                       key={bundle.id}
                       bundle={bundle}
-                      selected={selectedBundleId === bundle.id}
+                      selected={cartLines.some(
+                        (l) => l.kind === "bundle" && l.bundle.id === bundle.id,
+                      )}
                       onToggle={() => toggleBundle(bundle)}
                     />
                   ))}
                 </div>
               )
-            ) : Object.keys(grouped).length === 0 ? (
+            ) : Object.keys(groupedVariants).length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-[#B5AFA9]">
                 <IconSearch color="#D5CFC9" />
-                <p className="text-sm">No services found for {`"${search}"`}</p>
+                <p className="text-sm">
+                  No services found{search ? ` for "${search}"` : ""}
+                </p>
               </div>
             ) : (
-              Object.entries(grouped).map(([subCat, vars]) => (
+              Object.entries(groupedVariants).map(([subCat, vars]) => (
                 <div key={subCat} className="mb-6">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-[11px] font-bold text-[#B5AFA9] uppercase tracking-[0.07em] shrink-0">
@@ -1627,6 +1855,8 @@ export default function BookingModal({
             )}
           </div>
         </div>
+
+        {/* Order panel */}
         <div
           className={[
             "flex min-h-0 flex-col",
@@ -1649,13 +1879,14 @@ export default function BookingModal({
             availableDates={availableDatesResp?.data?.available_dates ?? []}
             availableSlots={availableSlotsResp?.data?.slots ?? null}
             availableVariants={availableVariants}
+            existingTherapists={existingTherapists}
             onBook={handleBook}
             submitLabel={
               isSubmitPending
-                ? action === "edit"
+                ? isEdit
                   ? "Updating..."
                   : "Creating..."
-                : action === "edit"
+                : isEdit
                   ? "Update Booking"
                   : "Create Booking"
             }
@@ -1664,15 +1895,13 @@ export default function BookingModal({
             selectedBundle={selectedBundle}
             customerBookingCount={customerBookingCount}
             isSubmitPending={isSubmitPending}
-            excludeBookingId={
-              initialBooking?.id ? Number(initialBooking.id) : undefined
-            }
-            // ✅ FIX: pass viewingMonth dan setViewingMonth ke OrderPanel
             viewingMonth={viewingMonth}
             setViewingMonth={setViewingMonth}
           />
         </div>
       </div>
+
+      {/* Mobile bottom bar */}
       {mobileView === "browse" && cartLines.length > 0 && (
         <div className="md:hidden shrink-0 flex items-center gap-3 px-4 py-3 border-t border-[#EDE8E3] bg-white w-full">
           <div className="flex-1 min-w-0">
