@@ -95,6 +95,11 @@ function BookingsPageInner() {
     { bookingId: number; idempotency_key: string }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
+  const payCash = usePost<
+    { data: { booking_code: string; status: string } },
+    { bookingId: number; idempotency_key: string }
+  >((payload) => `/master/bookings/${payload.bookingId}/cash-payment`, {});
+
   const bookings = useMemo(() => data?.data ?? [], [data]);
 
   const totalAmount = useMemo(
@@ -153,6 +158,23 @@ function BookingsPageInner() {
       window.location.href = paymentUrl;
     } catch {
       toast.warning("Gagal membuat payment link");
+    }
+  };
+
+  const handlePayCash = async () => {
+    if (!selectedBooking?.id || payCash.isPending) return;
+    try {
+      const response = await payCash.mutateAsync({
+        bookingId: Number(selectedBooking.id),
+        idempotency_key: crypto.randomUUID(),
+      });
+      const bookingCode =
+        response?.data?.booking_code ?? selectedBooking.booking_code;
+      toast.success("Pembayaran cash berhasil");
+      detailDrawer.close();
+      window.location.href = `/payment/${encodeURIComponent(bookingCode)}/result`;
+    } catch {
+      toast.warning("Gagal memproses pembayaran cash");
     }
   };
 
@@ -684,6 +706,14 @@ function BookingsPageInner() {
                             {createPayment.isPending
                               ? "Mengarahkan ke pembayaran..."
                               : "Pilih Metode Pembayaran"}
+                          </Button>
+                          <Button
+                            variant="flat"
+                            className="mt-2 w-full rounded-xl"
+                            onClick={handlePayCash}
+                            isDisabled={payCash.isPending}
+                          >
+                            {payCash.isPending ? "Memproses..." : "Bayar Cash"}
                           </Button>
                         </div>
                       )}

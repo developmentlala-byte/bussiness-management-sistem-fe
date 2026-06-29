@@ -1472,6 +1472,11 @@ export default function BookingModal({
     { bookingId: number; idempotency_key: string }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
+  const payCash = usePost<
+    { data: { booking_code: string; status: string } },
+    { bookingId: number; idempotency_key: string }
+  >((payload) => `/master/bookings/${payload.bookingId}/cash-payment`, {});
+
   const isSubmitPending = isEdit
     ? updateBooking.isPending
     : createBooking.isPending;
@@ -1576,6 +1581,22 @@ export default function BookingModal({
     }
   };
 
+  const handlePayCash = async () => {
+    if (!createdBooking?.id || payCash.isPending) return;
+    try {
+      const response = await payCash.mutateAsync({
+        bookingId: createdBooking.id,
+        idempotency_key: crypto.randomUUID(),
+      });
+      const bookingCode =
+        response?.data?.booking_code ?? createdBooking.booking_code;
+      toast.success("Pembayaran cash berhasil");
+      window.location.href = `/payment/${encodeURIComponent(bookingCode)}/result`;
+    } catch {
+      toast.warning("Gagal memproses pembayaran cash");
+    }
+  };
+
   const reset = () => {
     setCartLines([]);
     setForm({
@@ -1677,6 +1698,13 @@ export default function BookingModal({
             {createPayment.isPending
               ? "Redirecting..."
               : "Select Payment Method"}
+          </button>
+          <button
+            onClick={handlePayCash}
+            disabled={!createdBooking?.id || payCash.isPending}
+            className="w-full max-w-sm py-3 flex items-center justify-center gap-2 rounded-xl border border-[#E8B4C0] bg-white text-[#B55368] text-sm font-semibold hover:bg-[#FEF1F4] transition-colors disabled:cursor-not-allowed disabled:bg-[#EDE8E3] disabled:text-[#B5AFA9] disabled:border-transparent"
+          >
+            {payCash.isPending ? "Processing..." : "Bayar Cash"}
           </button>
           <button
             onClick={reset}
