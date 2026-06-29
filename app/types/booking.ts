@@ -1,7 +1,7 @@
 // types/booking.ts
 
 export type BookingStatus = "Pending" | "Confirmed" | "Completed" | "Cancelled";
-export type PaymentStatus = "Unpaid" | "Paid" | "Refunded";
+export type PaymentStatus = "Unpaid" | "Paid" | "Refunded" | "Expired";
 
 export type BookingLineType = "service_variant" | "bundle_promo";
 

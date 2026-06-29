@@ -2,17 +2,18 @@
 
 import { useApiFetch } from "@/app/libs/use-http";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface PaymentStatusResponse {
   data: {
     booking_code: string;
     booking_status: string;
-    payment_status: "Unpaid" | "Paid" | "Refunded";
+    payment_status: "Unpaid" | "Paid" | "Refunded" | "Expired";
     payment_channel: string | null;
     payment_via: string | null;
     amount: number | null;
     paid_at: string | null;
+    expires_at: string | null;
   };
 }
 
@@ -20,6 +21,7 @@ export default function BookingPaymentResultPage() {
   const params = useParams<{ bookingCode: string }>();
   const router = useRouter();
   const bookingCode = params?.bookingCode ?? "";
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const { data, refetch, isLoading } = useApiFetch<PaymentStatusResponse>(
     ["booking-payment-status", bookingCode],
@@ -29,7 +31,12 @@ export default function BookingPaymentResultPage() {
   );
 
   const status = data?.data?.payment_status;
-  const isFinal = status === "Paid" || status === "Refunded";
+  const expiresAt = data?.data?.expires_at ?? null;
+  const isFinal = status === "Paid" || status === "Refunded" || status === "Expired";
+  const timeLeftMs = useMemo(() => {
+    if (!expiresAt) return null;
+    return new Date(expiresAt).getTime() - nowMs;
+  }, [expiresAt, nowMs]);
 
   useEffect(() => {
     if (!bookingCode || isFinal) return;
@@ -40,6 +47,26 @@ export default function BookingPaymentResultPage() {
 
     return () => clearInterval(timer);
   }, [bookingCode, isFinal, refetch]);
+
+  useEffect(() => {
+    if (!expiresAt || isFinal) return;
+
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [expiresAt, isFinal]);
+
+  const countdownLabel = useMemo(() => {
+    if (timeLeftMs === null || timeLeftMs <= 0) return null;
+
+    const totalSeconds = Math.floor(timeLeftMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }, [timeLeftMs]);
 
   return (
     <div className="min-h-screen bg-background px-4 py-10">
@@ -66,7 +93,18 @@ export default function BookingPaymentResultPage() {
           </>
         )}
 
-        {!isLoading && status !== "Paid" && (
+        {!isLoading && status === "Expired" && (
+          <>
+            <h2 className="mt-6 text-lg font-semibold text-rose-600">
+              Link Pembayaran Expired
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Waktu pembayaran 15 menit sudah habis. Booking otomatis dibatalkan.
+            </p>
+          </>
+        )}
+
+        {!isLoading && status !== "Paid" && status !== "Expired" && (
           <>
             <h2 className="mt-6 text-lg font-semibold text-amber-600">
               Menunggu Konfirmasi Pembayaran
@@ -75,6 +113,11 @@ export default function BookingPaymentResultPage() {
               Status saat ini: {status ?? "Unpaid"}. Halaman ini akan refresh
               otomatis.
             </p>
+            {countdownLabel && (
+              <p className="mt-3 text-sm font-medium text-[#B55368]">
+                Selesaikan pembayaran dalam {countdownLabel}
+              </p>
+            )}
           </>
         )}
 
