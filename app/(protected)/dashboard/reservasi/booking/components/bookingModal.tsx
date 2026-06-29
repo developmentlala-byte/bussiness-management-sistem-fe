@@ -405,7 +405,6 @@ function OrderPanel({
       }
     });
 
-    const usedStaffIds = new Set<number>();
     const newAssignments: BookingStaffAssignment[] = [];
 
     for (const variantId of selectedServiceVariantIds) {
@@ -415,12 +414,16 @@ function OrderPanel({
       const eligibleIds =
         slot.available_therapists_by_category[categoryId] || [];
       let selectedId: number | null = null;
-      for (const id of eligibleIds) {
-        if (!usedStaffIds.has(id)) {
-          selectedId = id;
+
+      // First try to reuse any already selected therapist (if eligible for this category)
+      for (const assignment of newAssignments) {
+        if (eligibleIds.includes(assignment.staff_id)) {
+          selectedId = assignment.staff_id;
           break;
         }
       }
+
+      // If no existing therapist eligible, pick the first one from the eligible list
       if (!selectedId) {
         selectedId = eligibleIds[0];
       }
@@ -429,7 +432,6 @@ function OrderPanel({
         service_variant_id: variantId,
         staff_id: selectedId,
       });
-      usedStaffIds.add(selectedId);
     }
 
     setForm((prev) => ({
