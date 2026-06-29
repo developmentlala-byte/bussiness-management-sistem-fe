@@ -43,6 +43,55 @@ export type BookingLineSnapshot =
   | BookingServiceVariantLine
   | BookingBundlePromoLine;
 
+export interface BookingTherapist {
+  id: number;
+  booking_id: number;
+  staff_id: number;
+  service_variant_id: number;
+  name: string;
+  staff?: {
+    id: number;
+    first_name: string;
+    last_name?: string | null;
+  };
+}
+
+export interface BookingStaffAssignment {
+  service_variant_id: number;
+  staff_id: number;
+}
+
+export interface AvailableTherapist {
+  id: number;
+  name: string;
+}
+
+export interface AvailableSlot {
+  slot_time: string;
+  available_therapists: AvailableTherapist[];
+  available_therapists_by_category: Record<number, number[]>;
+  is_available: boolean;
+}
+
+export interface AvailableSlotsResponseData {
+  date: string;
+  total_duration: number;
+  required_category_ids: number[];
+  slots: AvailableSlot[];
+}
+
+export interface AvailableSlotsResponse {
+  data: AvailableSlotsResponseData;
+}
+
+export interface AvailableDatesResponseData {
+  available_dates: string[];
+}
+
+export interface AvailableDatesResponse {
+  data: AvailableDatesResponseData;
+}
+
 export function isBundlePromoLine(
   line: BookingLineSnapshot,
 ): line is BookingBundlePromoLine {
@@ -64,7 +113,8 @@ export interface SpaBooking {
   customer_phone: string;
   service_name?: string;
   therapist_name?: string;
-  therapists?: string[];
+  therapists?: Array<string | BookingTherapist>;
+  staff_assignments?: BookingStaffAssignment[];
   schedule_date: string;
   duration_minutes: number;
   service_variants: BookingLineSnapshot[];

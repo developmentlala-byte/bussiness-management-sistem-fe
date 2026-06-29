@@ -78,7 +78,7 @@ type BookingItem = {
   service_variants?: BookingLineItem[];
   schedule_date: string;
   total_amount?: number;
-  therapists?: string[];
+  therapists?: Array<{ id: number; name: string } | string>;
   status?: string;
   payment_status?: string;
 };
@@ -712,7 +712,10 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
                           color: "var(--muted)",
                         }}
                       >
-                        by {booking.therapists?.join(", ") || "—"}
+                        by{" "}
+                        {booking.therapists
+                          ?.map((t) => (typeof t === "string" ? t : t.name))
+                          .join(", ") || "—"}
                       </span>
                     </div>
                   </td>

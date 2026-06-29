@@ -92,15 +92,15 @@ export function BundlePromoCard({
             <span className="text-[#1A1614] truncate">
               {item.quantity > 1 ? `${item.quantity}× ` : ""}
               {item.service_variant?.name ?? "Layanan"}
-              {item.service_variant?.duration_minutes ? (
+              {item.duration_minutes ? (
                 <span className="text-[#B5AFA9]">
                   {" "}
-                  · {formatDuration(item.service_variant.duration_minutes)}
+                  · {formatDuration(item.duration_minutes)}
                 </span>
               ) : null}
             </span>
             <span className="shrink-0 text-[#7A736E]">
-              {idr(Number(item.service_variant?.retail_price ?? 0) * item.quantity)}
+              {idr(Number(item.price ?? 0) * item.quantity)}
             </span>
           </div>
         ))}

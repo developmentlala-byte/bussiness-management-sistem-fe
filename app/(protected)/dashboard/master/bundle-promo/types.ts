@@ -26,6 +26,8 @@ export interface BundlePromoItem {
   bms_ms_bundle_promo_id: number;
   bms_ms_service_variant_id: number;
   quantity: number;
+  duration_minutes: number;
+  price: string | number;
   sort_order: number;
   service_variant?: {
     id: number;
@@ -68,6 +70,8 @@ export interface BundlePromo {
 export interface BundleItemInput {
   bms_ms_service_variant_id: number;
   quantity: number;
+  duration_minutes: number;
+  price: number;
   sort_order?: number;
 }
 

@@ -467,12 +467,9 @@ export default function BundlePromoPage() {
                             <td className="px-4 py-3">
                               <p className="font-medium">
                                 {item.service_variant?.name || "—"}
-                                {item.service_variant?.duration_minutes ? (
+                                {item.duration_minutes ? (
                                   <span className="ml-1.5 text-xs font-semibold text-accent">
-                                    ·{" "}
-                                    {formatDuration(
-                                      item.service_variant.duration_minutes,
-                                    )}
+                                    · {formatDuration(item.duration_minutes)}
                                   </span>
                                 ) : null}
                               </p>
@@ -481,17 +478,12 @@ export default function BundlePromoPage() {
                               </p>
                             </td>
                             <td className="px-4 py-3 text-muted">
-                              {item.service_variant?.duration_minutes
-                                ? formatDuration(
-                                    item.service_variant.duration_minutes,
-                                  )
+                              {item.duration_minutes
+                                ? formatDuration(item.duration_minutes)
                                 : "—"}
                             </td>
                             <td className="px-4 py-3">
-                              Rp{" "}
-                              {formatRupiah(
-                                item.service_variant?.retail_price || 0,
-                              )}
+                              Rp {formatRupiah(item.price || 0)}
                             </td>
                             <td className="px-4 py-3 text-right font-semibold">
                               {item.quantity}x

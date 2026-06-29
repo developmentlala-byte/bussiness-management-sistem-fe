@@ -24,7 +24,7 @@ export function calcBundlePricing(bundle: BundlePromo): BundlePricing {
   const items = normalizeBundleItems(bundle);
 
   const subtotal = items.reduce((sum, item) => {
-    const price = Number(item.service_variant?.retail_price ?? 0);
+    const price = Number(item.price ?? item.service_variant?.retail_price ?? 0);
     return sum + price * item.quantity;
   }, 0);
 
@@ -36,7 +36,7 @@ export function calcBundlePricing(bundle: BundlePromo): BundlePricing {
 
   const finalPrice = Math.max(0, subtotal - discountAmount);
   const totalDuration = items.reduce((sum, item) => {
-    const duration = item.service_variant?.duration_minutes ?? 0;
+    const duration = item.duration_minutes ?? item.service_variant?.duration_minutes ?? 0;
     return sum + duration * item.quantity;
   }, 0);
 

@@ -1,14 +1,16 @@
+// attendance-selfie-modal.tsx — fixed cropping + cleaned up controls
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Camera,
   X,
   ArrowCounterClockwise,
   CircleNotch,
   ArrowClockwise,
+  Check,
 } from "@phosphor-icons/react";
-import Image from "next/image";
 
 interface AttendanceSelfieModalProps {
   isOpen: boolean;
@@ -35,22 +37,26 @@ export const AttendanceSelfieModal = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const previewUrlRef = useRef<string | null>(null);
-  // Ref untuk track apakah komponen masih mounted / modal masih open
   const isMountedRef = useRef(false);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraLoading, setIsCameraLoading] = useState(false);
+  // Portal target only exists on the client — document.body isn't available
+  // during SSR, so we delay rendering the portal until after mount.
+  const [isClientMounted, setIsClientMounted] = useState(false);
 
-  // --- HELPER: Stop semua track & release stream ---
+  useEffect(() => {
+    setIsClientMounted(true);
+  }, []);
+
   const stopStream = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
   }, []);
 
-  // --- HELPER: Revoke object URL preview ---
   const revokePreview = useCallback(() => {
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
@@ -58,366 +64,317 @@ export const AttendanceSelfieModal = ({
     }
   }, []);
 
-  // --- CORE: Start kamera dengan fallback ---
   const startCamera = useCallback(async () => {
-    // Jangan jalankan kalau modal sudah ditutup
     if (!isMountedRef.current) return;
-
-    // Stop stream lama dulu sebelum minta yang baru
     stopStream();
-
     setCameraError(null);
     setIsCameraLoading(true);
-
     try {
       let stream: MediaStream;
-
       try {
-        // Prioritas 1: kamera depan (ideal untuk mobile)
+        // `ideal` constraints let the browser pick the closest native ratio
+        // instead of forcing a crop — actual fit is handled by object-contain
+        // below, so we don't fight the device's real aspect ratio here.
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1080 },
+            height: { ideal: 1440 },
           },
           audio: false,
         });
-      } catch (initialError: any) {
-        // Prioritas 2: fallback ke kamera default (laptop/PC)
-        if (
-          initialError.name === "NotFoundError" ||
-          initialError.name === "OverconstrainedError"
-        ) {
+      } catch (e: any) {
+        if (e.name === "NotFoundError" || e.name === "OverconstrainedError") {
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: false,
           });
-        } else {
-          throw initialError;
-        }
+        } else throw e;
       }
-
-      // Guard: kalau modal sudah ditutup saat await, langsung buang stream
       if (!isMountedRef.current) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
-
       streamRef.current = stream;
-
       const video = videoRef.current;
       if (!video) {
-        // Harusnya tidak terjadi, tapi guard saja
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
-
       video.srcObject = stream;
-
-      // KEY FIX: tunggu loadedmetadata sebelum play()
-      // Ini yang mencegah layar hitam / kamera tidak keload
       await new Promise<void>((resolve) => {
-        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-          // Sudah siap, langsung resolve
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA)
+          return resolve();
+        const onMeta = () => {
+          video.removeEventListener("loadedmetadata", onMeta);
           resolve();
-        } else {
-          const onMeta = () => {
-            video.removeEventListener("loadedmetadata", onMeta);
-            resolve();
-          };
-          video.addEventListener("loadedmetadata", onMeta);
-
-          // Safety timeout 4 detik — kalau event tidak pernah fire
-          setTimeout(() => {
-            video.removeEventListener("loadedmetadata", onMeta);
-            resolve();
-          }, 4000);
-        }
+        };
+        video.addEventListener("loadedmetadata", onMeta);
+        setTimeout(() => {
+          video.removeEventListener("loadedmetadata", onMeta);
+          resolve();
+        }, 4000);
       });
-
       if (!isMountedRef.current) return;
-
       await video.play();
     } catch (error: any) {
-      console.error("Camera error:", error);
-
       if (!isMountedRef.current) return;
-
-      if (error.name === "NotAllowedError") {
+      if (error.name === "NotAllowedError")
         setCameraError(
-          "Akses kamera ditolak. Mohon izinkan kamera melalui pengaturan browser Anda.",
+          "Akses kamera ditolak. Izinkan melalui pengaturan browser.",
         );
-      } else if (error.name === "NotFoundError") {
-        setCameraError("Tidak ada kamera yang terdeteksi di perangkat ini.");
-      } else if (error.name === "AbortError") {
-        setCameraError("Akses kamera dibatalkan. Silakan coba lagi.");
-      } else {
-        setCameraError(
-          "Kamera sedang digunakan oleh aplikasi lain atau tidak tersedia.",
-        );
-      }
+      else if (error.name === "NotFoundError")
+        setCameraError("Tidak ada kamera yang terdeteksi.");
+      else setCameraError("Kamera tidak tersedia. Silakan coba lagi.");
     } finally {
-      if (isMountedRef.current) {
-        setIsCameraLoading(false);
-      }
+      if (isMountedRef.current) setIsCameraLoading(false);
     }
   }, [stopStream]);
 
-  // --- EFFECT: Buka / tutup kamera sesuai state isOpen ---
   useEffect(() => {
     if (!isOpen) {
       isMountedRef.current = false;
       stopStream();
       revokePreview();
-      // Reset state saat modal ditutup
       setPreviewUrl(null);
       setCameraError(null);
       setIsCameraLoading(false);
       return;
     }
-
     isMountedRef.current = true;
     void startCamera();
-
     return () => {
       isMountedRef.current = false;
       stopStream();
     };
   }, [isOpen, startCamera, stopStream, revokePreview]);
 
-  // --- ACTION: Ambil foto dari video frame ---
   const handleCapture = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-
     if (!video || !canvas) return;
-
-    // Guard: pastikan video benar-benar sudah ada frame-nya
     if (
       video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA ||
       video.videoWidth === 0
-    ) {
-      console.warn("Video belum siap untuk di-capture.");
+    )
       return;
-    }
 
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    canvas.width = width;
-    canvas.height = height;
-
+    // Capture at the video's own native resolution/ratio — no cropping here,
+    // so the saved photo always matches exactly what the preview showed.
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    ctx.drawImage(video, 0, 0, width, height);
-
+    ctx.drawImage(video, 0, 0);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
-
         revokePreview();
-
-        const nextPreviewUrl = URL.createObjectURL(blob);
-        previewUrlRef.current = nextPreviewUrl;
-        setPreviewUrl(nextPreviewUrl);
-
+        const url = URL.createObjectURL(blob);
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
         const file = new File([blob], `attendance-selfie-${Date.now()}.jpg`, {
           type: "image/jpeg",
         });
-
-        onCapture(file, nextPreviewUrl);
+        // Upload fires immediately on capture (existing behavior, kept as-is).
+        onCapture(file, url);
       },
       "image/jpeg",
       0.9,
     );
   };
 
-  // --- ACTION: Ambil ulang — reset preview, restart kamera ---
   const handleRetake = () => {
     revokePreview();
     setPreviewUrl(null);
     setCameraError(null);
-    // Re-start kamera karena stream mungkin sudah mati
     void startCamera();
   };
 
-  // --- ACTION: Tutup modal ---
-  const handleClose = () => {
-    setPreviewUrl(null);
-    setCameraError(null);
-    onClose();
-  };
+  if (!isOpen || !isClientMounted) return null;
 
-  if (!isOpen) return null;
+  // Rendered via portal directly into document.body so `fixed inset-0` is
+  // always relative to the real viewport — protects against any ancestor
+  // (e.g. the dashboard's Sidebar layout) that sets a transform/filter/contain,
+  // which would otherwise turn this into a fixed-within-that-ancestor box
+  // and visually "crop" the camera to the dashboard's content area.
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+      {/* ── KAMERA / PREVIEW — letterboxed, never cropped ── */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+        {previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- object-contain on
+          // an unknown-ratio blob URL; next/image's fill+cover would crop it again.
+          <img
+            src={previewUrl}
+            alt="Preview selfie"
+            className="h-full w-full object-contain"
+            style={{ transform: "scaleX(-1)" }}
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-contain"
+            style={{ transform: "scaleX(-1)" }}
+          />
+        )}
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-        onClick={handleClose}
-      />
+        {/* Vignette overlay for legibility — doesn't affect layout/sizing */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/60 pointer-events-none" />
+      </div>
 
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-[24px] sm:rounded-[28px] border border-border bg-surface shadow-2xl flex flex-col max-h-[90svh]">
-        {/* Header */}
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-linear-to-r from-accent/15 via-accent/8 to-transparent px-5 py-4 sm:px-6 sm:py-5">
-          <div>
-            <p className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.28em] text-accent">
-              Attendance Camera
-            </p>
-            <h3 className="mt-1 text-lg sm:text-xl font-black text-foreground">
-              {title}
-            </h3>
-            <p className="mt-1 text-xs sm:text-sm text-muted">{description}</p>
+      {/* ── FACE GUIDE FRAME ── */}
+      {!previewUrl && !cameraError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div className="w-[170px] h-[215px] rounded-[50%] border-2 border-white/40 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+          <p className="mt-5 text-[12px] text-white/55 tracking-wide text-center px-8">
+            Pastikan wajah terlihat jelas dalam bingkai
+          </p>
+        </div>
+      )}
+
+      {/* ── HEADER — floating top bar ── */}
+      <div className="relative z-10 flex items-center justify-between px-4 pt-14 pb-4">
+        <button
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 border border-white/20 text-white backdrop-blur-sm active:scale-95 transition-transform"
+          aria-label="Tutup"
+        >
+          <X weight="bold" className="h-4 w-4" />
+        </button>
+
+        {/* Center info chip */}
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
+            {title}
+          </span>
+          <div className="flex items-center gap-1.5 rounded-full bg-white/12 border border-white/20 px-3 py-1.5 backdrop-blur-sm">
+            <div className="h-5 w-5 rounded-full bg-accent/30 flex items-center justify-center text-[10px] font-bold text-accent">
+              {description.charAt(0)}
+            </div>
+            <span className="text-[13px] font-semibold text-white">
+              {description}
+            </span>
           </div>
+        </div>
 
+        {/* Spacer to keep the chip centered now that the flip button is gone */}
+        <div className="h-9 w-9" />
+      </div>
+
+      {/* ── STATUS PILL ── */}
+      {!previewUrl && !cameraError && !isCameraLoading && (
+        <div className="relative z-10 flex justify-center">
+          <div className="flex items-center gap-1.5 rounded-full bg-black/40 border border-white/15 px-3 py-1.5 backdrop-blur-sm">
+            <span className="h-[7px] w-[7px] rounded-full bg-green-400 animate-pulse" />
+            <span className="text-[11px] font-semibold text-white/80">
+              Kamera aktif
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CAMERA LOADING OVERLAY ── */}
+      {isCameraLoading && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 text-white">
+            <CircleNotch className="h-8 w-8 animate-spin" />
+            <span className="text-xs font-bold uppercase tracking-wider">
+              Membuka kamera...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CAMERA ERROR ── */}
+      {cameraError && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 px-8 text-center bg-black/70">
+          <div className="h-14 w-14 rounded-full bg-red-500/20 flex items-center justify-center">
+            <Camera className="h-7 w-7 text-red-400" />
+          </div>
+          <p className="text-sm font-medium text-white/80">{cameraError}</p>
           <button
-            onClick={handleClose}
-            className="rounded-full border border-border bg-background/70 p-2 text-muted transition-colors hover:text-foreground active:scale-95"
+            onClick={() => void startCamera()}
+            className="flex items-center gap-2 rounded-xl bg-white/12 border border-white/20 px-5 py-2.5 text-sm font-bold text-white active:scale-95 transition-transform"
           >
-            <X weight="bold" className="h-4 w-4" />
+            <ArrowClockwise weight="bold" className="h-4 w-4" />
+            Coba Lagi
           </button>
         </div>
+      )}
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide">
-          <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-            {/* Viewport Kamera */}
-            <div className="relative overflow-hidden rounded-[20px] sm:rounded-[24px] border border-border bg-black aspect-[4/3] lg:aspect-auto">
-              {previewUrl ? (
-                <Image
-                  src={previewUrl}
-                  alt="Preview selfie"
-                  width={1280}
-                  height={720}
-                  unoptimized
-                  style={{
-                    transform: "scaleX(-1)",
-                    WebkitTransform: "scaleX(-1)",
-                  }}
-                  className="h-full w-full object-cover lg:h-105"
-                />
-              ) : (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{
-                    transform: "scaleX(-1)",
-                    WebkitTransform: "scaleX(-1)",
-                  }}
-                  className="h-full w-full object-cover lg:h-105"
-                />
-              )}
-
-              {/* Overlay: Uploading */}
-              {isUploading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-                  <div className="flex items-center gap-2 rounded-full bg-background/90 px-4 py-2 text-sm font-bold text-foreground shadow-lg">
-                    <CircleNotch className="h-4 w-4 animate-spin" />
-                    Menyimpan...
-                  </div>
-                </div>
-              )}
-
-              {/* Overlay: Camera loading */}
-              {isCameraLoading && !cameraError && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                  <div className="flex flex-col items-center gap-2 text-white">
-                    <CircleNotch className="h-6 w-6 animate-spin" />
-                    <span className="text-xs font-bold uppercase tracking-wider">
-                      Membuka kamera...
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Overlay: Error dengan tombol retry */}
-              {cameraError && (
-                <div className="absolute inset-0 flex items-end justify-center p-4">
-                  <div className="w-full rounded-xl border border-red-500/20 bg-red-500/90 backdrop-blur-md px-4 py-3 text-center shadow-lg space-y-2">
-                    <p className="text-xs sm:text-sm font-medium text-white">
-                      {cameraError}
-                    </p>
-                    <button
-                      onClick={() => void startCamera()}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 hover:bg-white/30 px-3 py-1.5 text-xs font-bold text-white transition-colors"
-                    >
-                      <ArrowClockwise weight="bold" className="h-3.5 w-3.5" />
-                      Coba Lagi
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Badge: Kamera aktif */}
-              {!previewUrl && !cameraError && !isCameraLoading && (
-                <div className="absolute left-4 top-4 rounded-full bg-black/45 backdrop-blur-sm px-3 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/90">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-2 animate-pulse" />
-                  Kamera aktif
-                </div>
-              )}
-
-              <canvas ref={canvasRef} className="hidden" />
-            </div>
-
-            {/* Panel Aksi */}
-            <div className="flex flex-col justify-between gap-4 rounded-[20px] sm:rounded-[24px] border border-border/70 bg-background/50 p-4 sm:p-5 h-fit lg:h-full">
-              <div className="space-y-3">
-                <div className="rounded-xl sm:rounded-2xl border border-border bg-surface px-4 py-3">
-                  <p className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.24em] text-muted">
-                    Status
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {isCameraLoading
-                      ? "Membuka kamera..."
-                      : cameraError
-                        ? "Kamera tidak tersedia"
-                        : previewUrl
-                          ? "Foto berhasil diambil"
-                          : "Siap mengambil selfie"}
-                  </p>
-                  {statusMessage && (
-                    <p className="mt-1 text-xs font-medium text-muted">
-                      {statusMessage}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleCapture}
-                  disabled={
-                    isUploading ||
-                    !!cameraError ||
-                    isCameraLoading ||
-                    !!previewUrl
-                  }
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl sm:rounded-2xl bg-accent px-4 py-3.5 text-xs sm:text-sm font-bold text-accent-foreground transition-opacity hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Camera weight="bold" className="h-4 w-4 shrink-0" />
-                  {actionLabel}
-                </button>
-
-                {previewUrl && (
-                  <button
-                    onClick={handleRetake}
-                    disabled={isUploading}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl sm:rounded-2xl border border-border px-4 py-3 text-xs sm:text-sm font-bold text-foreground transition-colors hover:bg-surface-secondary active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <ArrowCounterClockwise
-                      weight="bold"
-                      className="h-4 w-4 shrink-0"
-                    />
-                    Ambil Ulang
-                  </button>
-                )}
-              </div>
-            </div>
+      {/* ── UPLOADING OVERLAY ── */}
+      {isUploading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-background/90 px-8 py-6 shadow-xl">
+            <CircleNotch className="h-7 w-7 animate-spin text-accent" />
+            <p className="text-sm font-bold text-foreground">
+              {statusMessage ?? "Menyimpan..."}
+            </p>
           </div>
         </div>
+      )}
+
+      {/* ── SPACER (pushes bottom bar down) ── */}
+      <div className="flex-1" />
+
+      {/* ── BOTTOM CONTROLS ── */}
+      <div className="relative z-10 px-6 pb-14 pt-6">
+        {!previewUrl ? (
+          /* Capture state — single, unambiguous action: take the photo */
+          <div className="flex flex-col items-center gap-5">
+            <button
+              onClick={handleCapture}
+              disabled={!!cameraError || isCameraLoading}
+              className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-white border-4 border-white/30 text-black disabled:opacity-40 active:scale-95 transition-transform shadow-[0_0_0_4px_rgba(255,255,255,0.12)]"
+              aria-label={actionLabel}
+            >
+              <Camera weight="fill" className="h-7 w-7" />
+            </button>
+            <p className="text-[11px] text-white/40 tracking-wide">
+              Ketuk untuk ambil foto
+            </p>
+          </div>
+        ) : (
+          /* Captured state — photo already uploaded on capture; this just
+             confirms success and lets the user retake or close. */
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-center mb-1">
+              <div className="flex items-center gap-2 rounded-full bg-emerald-500/20 border border-emerald-500/30 px-4 py-2">
+                <Check weight="bold" className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-[12px] font-semibold text-emerald-300">
+                  {isUploading ? "Mengirim foto..." : "Foto berhasil dikirim"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleRetake}
+                disabled={isUploading}
+                className="flex-1 flex items-center justify-center gap-2 h-[50px] rounded-[14px] bg-white/12 border border-white/20 text-white text-sm font-semibold disabled:opacity-40 active:scale-95 transition-transform backdrop-blur-sm"
+              >
+                <ArrowCounterClockwise weight="bold" className="h-4 w-4" />
+                Ambil ulang
+              </button>
+              <button
+                onClick={onClose}
+                disabled={isUploading}
+                className="flex-[1.4] flex items-center justify-center gap-2 h-[50px] rounded-[14px] bg-white text-black text-sm font-semibold disabled:opacity-40 active:scale-95 transition-transform"
+              >
+                <Check weight="bold" className="h-4 w-4" />
+                Selesai
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+
+      <canvas ref={canvasRef} className="hidden" />
+    </div>,
+    document.body,
   );
 };

@@ -1,25 +1,31 @@
 "use client";
 
-import { ClockTimePicker } from "@/app/components/clockTimerPicker";
-import { formatDate } from "@/app/libs/date-format";
+// tambahkan ke import @heroui/react yang sudah ada
 import {
   Calendar,
   Dropdown,
-  Autocomplete,
   EmptyState,
   Label,
   ListBox,
   SearchField,
   useFilter,
 } from "@heroui/react";
-
 import { parseDate } from "@internationalized/date";
 import { CalendarBlank, CreditCardIcon } from "@phosphor-icons/react";
 import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePost, useApiFetch, usePut } from "@/app/libs/use-http";
 import { toast } from "@heroui/react";
-import { SpaBooking, isBundlePromoLine } from "@/app/types/booking";
+import {
+  SpaBooking,
+  BookingTherapist,
+  isBundlePromoLine,
+  AvailableSlot,
+  AvailableTherapist,
+  AvailableSlotsResponse,
+  AvailableDatesResponse,
+  BookingStaffAssignment,
+} from "@/app/types/booking";
 import type { BundlePromo } from "@/app/(protected)/dashboard/master/bundle-promo/types";
 import {
   calcBundlePricing,
@@ -32,22 +38,12 @@ import {
 } from "@/app/libs/bundle-pricing";
 import { BundlePromoCard } from "./bundlePromoCard";
 
-const THERAPISTS = [
-  "Nurul Aziz",
-  "Sari Dewi",
-  "Maya Putri",
-  "Rini Wulandari",
-  "Dewi Sartika",
-];
-
 const idr = (n: number): string => `Rp ${n.toLocaleString("id-ID")}`;
 
 const durFmt = (m: number): string => {
   if (m < 60) return `${m} min`;
-
   const h = Math.floor(m / 60),
     rm = m % 60;
-
   return rm ? `${h}h ${rm}m` : `${h}h`;
 };
 
@@ -72,7 +68,7 @@ const IconCalendar = () => (
   </svg>
 );
 
-const IconSearch = ({ color = "#B5AFA9" }) => (
+const IconSearch = ({ color = "#B5AFA9" }: { color?: string }) => (
   <svg
     width="14"
     height="14"
@@ -97,6 +93,7 @@ const IconClock = () => (
     stroke="#B5AFA9"
     strokeWidth="2"
     strokeLinecap="round"
+    strokeLinejoin="round"
   >
     <circle cx="12" cy="12" r="10" />
     <polyline points="12 6 12 12 16 14" />
@@ -127,6 +124,7 @@ const IconBag = () => (
     stroke="#B5AFA9"
     strokeWidth="1.5"
     strokeLinecap="round"
+    strokeLinejoin="round"
   >
     <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
     <line x1="3" y1="6" x2="21" y2="6" />
@@ -149,8 +147,6 @@ const IconBack = () => (
   </svg>
 );
 
-// Type definitions
-
 interface Variant {
   id: number;
   catKey: string;
@@ -158,6 +154,7 @@ interface Variant {
   name: string;
   duration: number;
   price: number;
+  categoryId: number;
 }
 
 interface ApiVariantRow {
@@ -167,8 +164,8 @@ interface ApiVariantRow {
   duration?: number;
   final_price?: number | string;
   retail_price?: number | string;
-  category?: { slug?: string; name?: string };
-  service?: { name?: string };
+  category?: { slug?: string; name?: string; id?: number };
+  service?: { name?: string; bms_ms_service_category_id?: number };
 }
 
 interface ApiStaffRow {
@@ -192,7 +189,6 @@ function ServiceCard({ v, selected, onToggle }: ServiceCardProps) {
       onClick={onToggle}
       className={[
         "relative text-left w-full rounded-xl border p-3 transition-all duration-150 cursor-pointer min-w-0",
-
         selected
           ? "border-[#B55368] bg-[#FEF1F4]"
           : "border-[#EDE8E3] bg-white hover:border-[#E8B4C0]",
@@ -203,18 +199,15 @@ function ServiceCard({ v, selected, onToggle }: ServiceCardProps) {
           <IconCheck />
         </span>
       )}
-
       <p
         className={`text-[13px] font-semibold mb-1 leading-tight break-words ${selected ? "text-[#B55368] pr-6" : "text-[#1A1614]"}`}
       >
         {v.name}
       </p>
-
       <div className="flex items-center gap-1 mb-2">
         <IconClock />
         <span className="text-[11px] text-[#B5AFA9]">{durFmt(v.duration)}</span>
       </div>
-
       <p
         className={`text-[13px] font-bold ${selected ? "text-[#B55368]" : "text-[#1A1614]"}`}
       >
@@ -238,14 +231,12 @@ function CartRow({ v, onRemove }: CartRowProps) {
         </p>
         <p className="text-[11px] text-[#B5AFA9]">{durFmt(v.duration)}</p>
       </div>
-
       <span className="text-[13px] font-semibold text-[#1A1614] shrink-0">
         {idr(v.price)}
       </span>
-
       <button
         onClick={onRemove}
-        className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-none hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
+        className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-loose hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
         aria-label="Remove"
       >
         ×
@@ -275,14 +266,13 @@ function BundleCartRow({ bundle, pricing, onRemove }: BundleCartRowProps) {
             {formatBundleDiscountLabel(
               bundle.bundle_type,
               bundle.discount_value,
-            )}
-            {" · "}Hemat {idr(pricing.discountAmount)}
+            )}{" "}
+            · Hemat {idr(pricing.discountAmount)}
           </p>
           <p className="text-[11px] text-[#B5AFA9] mt-1">
             {durFmt(pricing.totalDuration)} · {pricing.itemCount} layanan
           </p>
         </div>
-
         <div className="text-right shrink-0">
           <p className="text-[10px] text-[#B5AFA9] line-through">
             {idr(pricing.subtotal)}
@@ -291,10 +281,9 @@ function BundleCartRow({ bundle, pricing, onRemove }: BundleCartRowProps) {
             {idr(pricing.finalPrice)}
           </p>
         </div>
-
         <button
           onClick={onRemove}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-none hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-loose hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
           aria-label="Remove bundle"
         >
           ×
@@ -307,20 +296,16 @@ function BundleCartRow({ bundle, pricing, onRemove }: BundleCartRowProps) {
 interface FormState {
   name: string;
   phone: string;
-  therapists: string[];
+  staffAssignments: BookingStaffAssignment[];
   date: string;
-  time: string;
+  slotTime: string;
 }
 
-interface StaffOption {
-  id: number;
-  full_name: string;
-  is_available: boolean;
-  available_until: string | null;
-  unavailable_reason: string | null;
-}
+type BookingStep = "customer" | "services" | "datetime" | "confirm";
 
 interface OrderPanelProps {
+  step: BookingStep;
+  setStep: (step: BookingStep) => void;
   form: FormState;
   setForm: (updater: (prev: FormState) => FormState) => void;
   cartLines: CartLine[];
@@ -328,17 +313,26 @@ interface OrderPanelProps {
   onClearCart: () => void;
   totalAmt: number;
   totalDur: number;
-  canBook: boolean;
+  selectedServiceVariantIds: number[];
+  availableDates: string[];
+  availableSlots: AvailableSlot[] | null;
+  availableVariants: Variant[];
   onBook: () => void;
   submitLabel: string;
   onBack: () => void;
   isMobile: boolean;
-  staffOptions: StaffOption[];
   selectedBundle: BundlePromo | null;
   customerBookingCount: number | null;
+  isSubmitPending: boolean;
+  excludeBookingId?: number;
+  // ✅ FIX: track which month the calendar is showing
+  viewingMonth: string;
+  setViewingMonth: (month: string) => void;
 }
 
 function OrderPanel({
+  step,
+  setStep,
   form,
   setForm,
   cartLines,
@@ -346,14 +340,20 @@ function OrderPanel({
   onClearCart,
   totalAmt,
   totalDur,
-  canBook,
+  selectedServiceVariantIds,
+  availableDates,
+  availableSlots,
+  availableVariants,
   onBook,
   submitLabel,
   onBack,
   isMobile,
-  staffOptions,
   selectedBundle,
   customerBookingCount,
+  isSubmitPending,
+  // ✅ FIX: destructure new props
+  viewingMonth,
+  setViewingMonth,
 }: OrderPanelProps) {
   const { contains } = useFilter({ sensitivity: "base" });
 
@@ -361,31 +361,104 @@ function OrderPanel({
     ? getBundleCalendarBounds(selectedBundle)
     : null;
 
-  // Draft date/time state so the popover commits only when the user taps
-  // "Apply" — it no longer relies on click-outside as the only way to close.
-  const [isDateTimeOpen, setIsDateTimeOpen] = useState(false);
-  const [draftDate, setDraftDate] = useState(form.date);
-  const [draftTime, setDraftTime] = useState(form.time);
-
-  const draftBundleTimeBounds =
-    selectedBundle && draftDate
-      ? getBundleTimeBounds(selectedBundle, draftDate)
-      : null;
-
-  const openDateTimePicker = () => {
-    setDraftDate(form.date);
-    setDraftTime(form.time);
-    setIsDateTimeOpen(true);
+  const isDateAvailable = (dateStr: string) => {
+    if (!availableDates.length) return true;
+    return availableDates.includes(dateStr);
   };
 
-  const applyDateTime = () => {
-    setForm((p: FormState) => ({ ...p, date: draftDate, time: draftTime }));
-    setIsDateTimeOpen(false);
+  const therapistAssignmentByVariant = useMemo(() => {
+    const map = new Map<number, AvailableTherapist>();
+    form.staffAssignments.forEach((a) => {
+      const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
+      const therapist = slot?.available_therapists.find(
+        (t) => t.id === a.staff_id,
+      );
+      if (therapist) map.set(a.service_variant_id, therapist);
+    });
+    return map;
+  }, [form.staffAssignments, availableSlots, form.slotTime]);
+
+  const availableTherapistsForSlot = useMemo(() => {
+    if (!availableSlots || !form.slotTime) return [];
+    const slot = availableSlots.find((s) => s.slot_time === form.slotTime);
+    return slot?.available_therapists || [];
+  }, [availableSlots, form.slotTime]);
+
+  const handleDateSelect = (date: { toString: () => string }) => {
+    const dateStr = date.toString();
+    setForm((prev) => ({
+      ...prev,
+      date: dateStr,
+      slotTime: "",
+      staffAssignments: [],
+    }));
   };
 
-  const cancelDateTime = () => {
-    setIsDateTimeOpen(false);
+  const handleSlotSelect = (slot: AvailableSlot) => {
+    if (!slot.is_available) return;
+
+    const variantCategoryMap = new Map<number, number>();
+    selectedServiceVariantIds.forEach((variantId) => {
+      const variant = availableVariants.find((v) => v.id === variantId);
+      if (variant) {
+        variantCategoryMap.set(variantId, variant.categoryId);
+      }
+    });
+
+    const usedStaffIds = new Set<number>();
+    const newAssignments: BookingStaffAssignment[] = [];
+
+    for (const variantId of selectedServiceVariantIds) {
+      const categoryId = variantCategoryMap.get(variantId);
+      if (categoryId === undefined) continue;
+
+      const eligibleIds =
+        slot.available_therapists_by_category[categoryId] || [];
+      let selectedId: number | null = null;
+      for (const id of eligibleIds) {
+        if (!usedStaffIds.has(id)) {
+          selectedId = id;
+          break;
+        }
+      }
+      if (!selectedId) {
+        selectedId = eligibleIds[0];
+      }
+
+      newAssignments.push({
+        service_variant_id: variantId,
+        staff_id: selectedId,
+      });
+      usedStaffIds.add(selectedId);
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      slotTime: slot.slot_time,
+      staffAssignments: newAssignments,
+    }));
+    setStep("confirm");
   };
+
+  const handleTherapistChange = (variantId: number, therapistId: number) => {
+    setForm((prev) => ({
+      ...prev,
+      staffAssignments: prev.staffAssignments.map((a) =>
+        a.service_variant_id === variantId
+          ? { ...a, staff_id: therapistId }
+          : a,
+      ),
+    }));
+  };
+
+  const canProceedFromCustomer = !!form.name.trim();
+  const canProceedFromServices = cartLines.length > 0;
+  const canBook =
+    !!form.name.trim() &&
+    cartLines.length > 0 &&
+    !!form.date &&
+    !!form.slotTime &&
+    form.staffAssignments.length === selectedServiceVariantIds.length;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F8F4F0]">
@@ -394,119 +467,121 @@ function OrderPanel({
           onClick={onBack}
           className="flex shrink-0 items-center gap-1.5 border-b border-[#EDE8E3] bg-white px-4 py-3 text-[13px] font-medium text-[#7A736E] transition-colors hover:text-[#1A1614]"
         >
-          <IconBack /> Back to services
+          <IconBack /> Back
         </button>
       )}
-
       <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#D5CFC9] [&::-webkit-scrollbar-thumb]:rounded-full">
-        {/* Customer */}
-
-        <div className="px-4 py-4 border-b border-[#EDE8E3]">
-          <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
-            Customer
-          </p>
-
-          <input
-            className={`${inputCls} mb-2`}
-            placeholder="Full name *"
-            value={form.name}
-            onChange={(e) => {
-              setForm((p: FormState) => ({ ...p, name: e.target.value }));
-            }}
-            // autoFocus
-          />
-
-          <input
-            className={inputCls}
-            placeholder="Phone number"
-            value={form.phone}
-            onChange={(e) =>
-              setForm((p: FormState) => ({ ...p, phone: e.target.value }))
-            }
-          />
-
-          {customerBookingCount !== null && form.phone.trim().length >= 8 ? (
-            <p className="mt-2 text-[12px] text-[#7A736E]">
-              Klien ini sudah booking{" "}
-              <span className="font-semibold text-[#B55368]">
-                {customerBookingCount}
-              </span>{" "}
-              kali
-            </p>
-          ) : null}
-        </div>
-
-        {/* ── DATE + TIME — disatukan dalam satu dropdown ── */}
-
-        <div className="px-4 py-4 border-b border-[#EDE8E3]">
-          <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
-            Appointment
-          </p>
-
-          {selectedBundle ? (
-            <p className="mb-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
-              {getBundleScheduleHint(selectedBundle)}
-            </p>
-          ) : null}
-
-          <Dropdown
-            isOpen={isDateTimeOpen}
-            onOpenChange={(open) => {
-              if (open) setIsDateTimeOpen(true);
-            }}
-          >
-            <Dropdown.Trigger className="w-full" onClick={openDateTimePicker}>
-              <div className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-[#EDE8E3] bg-white px-4 py-[9px] text-[13px] sm:text-sm font-semibold text-[#1A1614] outline-none transition-colors hover:border-[#E8B4C0]">
-                <CalendarBlank
-                  weight="bold"
-                  className="h-[18px] w-[18px] shrink-0 text-[#B55368]"
-                />
-                <span className="truncate">
-                  {form.date && form.time
-                    ? formatDate(new Date(`${form.date}T${form.time}:00`), {
-                        withTime: true,
-
-                        simpleFormat: true,
-                      })
-                    : "Select Date & Time"}
-                </span>
-              </div>
-            </Dropdown.Trigger>
-
-            <Dropdown.Popover
-              placement="bottom"
-              className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[13px] font-bold text-[#1A1614]">
-                  Pilih Tanggal & Waktu
+        {step === "customer" && (
+          <div className="px-4 py-4 space-y-4">
+            <div>
+              <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                Customer
+              </p>
+              <input
+                className={`${inputCls} mb-2`}
+                placeholder="Full name *"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, name: e.target.value }))
+                }
+              />
+              <input
+                className={inputCls}
+                placeholder="Phone number"
+                value={form.phone}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, phone: e.target.value }))
+                }
+              />
+              {customerBookingCount !== null &&
+              form.phone.trim().length >= 8 ? (
+                <p className="mt-2 text-[12px] text-[#7A736E]">
+                  Klien ini sudah booking{" "}
+                  <span className="font-semibold text-[#B55368]">
+                    {customerBookingCount}
+                  </span>{" "}
+                  kali
                 </p>
-                <button
-                  type="button"
-                  onClick={cancelDateTime}
-                  aria-label="Tutup"
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[#B5AFA9] transition-colors hover:bg-[#F8F4F0] hover:text-[#B55368]"
-                >
-                  ×
-                </button>
-              </div>
+              ) : null}
+            </div>
+          </div>
+        )}
 
+        {(step === "services" || step === "datetime" || step === "confirm") && (
+          <div className="px-4 py-4 border-b border-[#EDE8E3]">
+            <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+              Selected Items
+            </p>
+            {cartLines.length === 0 ? (
+              <div className="py-6 flex flex-col items-center gap-2 text-center">
+                <div className="w-11 h-11 rounded-full bg-[#EDE8E3] flex items-center justify-center">
+                  <IconBag />
+                </div>
+                <p className="text-[13px] text-[#B5AFA9]">
+                  Pilih layanan atau bundle promo
+                </p>
+              </div>
+            ) : (
+              cartLines.map((line, index) =>
+                line.kind === "bundle" ? (
+                  <BundleCartRow
+                    key={`bundle-${line.bundle.id}`}
+                    bundle={line.bundle}
+                    pricing={line.pricing}
+                    onRemove={() => onRemoveLine(index)}
+                  />
+                ) : (
+                  <CartRow
+                    key={`service-${line.variant.id}`}
+                    v={line.variant}
+                    onRemove={() => onRemoveLine(index)}
+                  />
+                ),
+              )
+            )}
+          </div>
+        )}
+
+        {step === "datetime" && cartLines.length > 0 && (
+          <>
+            <div className="px-4 py-4 border-b border-[#EDE8E3]">
+              <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                Pilih Tanggal
+              </p>
               <Calendar
                 aria-label="Event date"
-                value={draftDate ? parseDate(draftDate) : undefined}
+                value={form.date ? parseDate(form.date) : undefined}
                 minValue={bundleCalendarBounds?.minValue}
                 maxValue={bundleCalendarBounds?.maxValue}
-                onChange={(d: { toString: () => string }) => {
-                  setDraftDate(d.toString());
-                  setDraftTime("");
+                onChange={handleDateSelect}
+                // ✅ FIX: pakai onFocusChange (bukan onFocusedChange yang tidak ada)
+                // fires setiap kali user klik prev/next bulan atau navigasi keyboard
+                onFocusChange={(date) => {
+                  if (date) {
+                    const newMonth = `${date.year}-${String(date.month).padStart(2, "0")}`;
+                    if (newMonth !== viewingMonth) {
+                      setViewingMonth(newMonth);
+                    }
+                  }
+                }}
+                isDateUnavailable={(date) => {
+                  const dateStr = date.toString();
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  if (new Date(dateStr) < today) return true;
+                  if (availableDates.length > 0 && !isDateAvailable(dateStr))
+                    return true;
+                  return false;
                 }}
               >
                 <Calendar.Header>
-                  <Calendar.Heading />
+                  <Calendar.YearPickerTrigger>
+                    <Calendar.YearPickerTriggerHeading />
+                    <Calendar.YearPickerTriggerIndicator />
+                  </Calendar.YearPickerTrigger>
                   <Calendar.NavButton slot="previous" />
                   <Calendar.NavButton slot="next" />
                 </Calendar.Header>
-
                 <Calendar.Grid>
                   <Calendar.GridHeader>
                     {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
@@ -515,246 +590,229 @@ function OrderPanel({
                     {(date) => <Calendar.Cell date={date} />}
                   </Calendar.GridBody>
                 </Calendar.Grid>
+                <Calendar.YearPickerGrid>
+                  <Calendar.YearPickerGridBody>
+                    {({ year }) => <Calendar.YearPickerCell year={year} />}
+                  </Calendar.YearPickerGridBody>
+                </Calendar.YearPickerGrid>
               </Calendar>
-
-              <div className="mt-4 pt-4 border-t border-[#EDE8E3]">
-                <ClockTimePicker
-                  value={draftTime}
-                  minTime={draftBundleTimeBounds?.minTime}
-                  maxTime={draftBundleTimeBounds?.maxTime}
-                  disabled={!draftDate}
-                  onChange={(t: string) => setDraftTime(t)}
-                />
-              </div>
-
-              <div className="mt-4 flex gap-2 border-t border-[#EDE8E3] pt-4">
-                <button
-                  type="button"
-                  onClick={cancelDateTime}
-                  className="flex-1 rounded-xl border border-[#EDE8E3] bg-white py-2.5 text-[13px] font-semibold text-[#7A736E] transition-colors hover:bg-[#F8F4F0]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={applyDateTime}
-                  disabled={!draftDate || !draftTime}
-                  className={`flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition-colors duration-150 ${
-                    draftDate && draftTime
-                      ? "bg-[#B55368] text-white hover:bg-[#C96480]"
-                      : "cursor-not-allowed bg-[#EDE8E3] text-[#B5AFA9]"
-                  }`}
-                >
-                  Terapkan
-                </button>
-              </div>
-            </Dropdown.Popover>
-          </Dropdown>
-        </div>
-
-        {/* Therapists Autocomplete */}
-
-        <div className="px-4 py-4 border-b border-[#EDE8E3]">
-          <Label className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2 block">
-            Therapists (Multiple)
-          </Label>
-
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {form.therapists.map((therapist: string) => (
-              <div
-                key={therapist}
-                className="bg-[#FEF1F4] text-[#B55368] border-none text-[11px] font-semibold px-2 py-1 rounded-md flex items-center gap-1"
-              >
-                <span>{therapist}</span>
-
-                <button
-                  onClick={() =>
-                    setForm((p: FormState) => ({
-                      ...p,
-
-                      therapists: p.therapists.filter(
-                        (t: string) => t !== therapist,
-                      ),
-                    }))
-                  }
-                  className="ml-1 hover:text-[#B55368]"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <Autocomplete
-            className="w-full"
-            placeholder="Search therapists..."
-            onChange={(value: string | number | null) => {
-              const newTherapist = value?.toString();
-
-              if (newTherapist && !form.therapists.includes(newTherapist)) {
-                setForm((p: FormState) => ({
-                  ...p,
-
-                  therapists: [...p.therapists, newTherapist],
-                }));
-              }
-            }}
-            aria-label="Select therapists"
-          >
-            <Autocomplete.Trigger className="flex min-h-[38px] w-full items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-white px-3 py-1.5 text-[13px] text-[#1A1614] transition-colors hover:border-[#E8B4C0]">
-              <Autocomplete.Value>
-                {({ isPlaceholder }: { isPlaceholder: boolean }) =>
-                  isPlaceholder ? (
-                    <span className="text-[#B5AFA9]">Select therapists...</span>
-                  ) : null
-                }
-              </Autocomplete.Value>
-              <Autocomplete.Indicator className="text-[#B5AFA9]" />
-            </Autocomplete.Trigger>
-
-            <Autocomplete.Popover className="rounded-2xl border border-[#EDE8E3] bg-white p-2 shadow-xl">
-              <Autocomplete.Filter filter={contains}>
-                <SearchField name="search" className="mb-2">
-                  <SearchField.Group className="flex items-center gap-2 rounded-lg bg-[#F8F4F0] px-3 py-2 border border-transparent focus-within:border-[#E8B4C0] transition-colors">
-                    <SearchField.SearchIcon className="text-[#B5AFA9] w-4 h-4 shrink-0" />
-
-                    <SearchField.Input
-                      placeholder="Search name..."
-                      className="flex-1 bg-transparent text-[13px] text-[#1A1614] outline-none placeholder:text-[#B5AFA9]"
-                    />
-
-                    <SearchField.ClearButton className="text-[#B5AFA9] hover:text-[#B55368]" />
-                  </SearchField.Group>
-                </SearchField>
-
-                <ListBox
-                  className="max-h-[220px] overflow-y-auto outline-none [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#D5CFC9] [&::-webkit-scrollbar-thumb]:rounded-full"
-                  renderEmptyState={() => (
-                    <EmptyState className="py-6 text-center text-[13px] text-[#B5AFA9]">
-                      No therapist found
-                    </EmptyState>
-                  )}
-                >
-                  {staffOptions.map((staff) => (
-                    <ListBox.Item
-                      key={staff.full_name}
-                      id={staff.full_name}
-                      textValue={staff.full_name}
-                      isDisabled={!staff.is_available}
-                      className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer outline-none transition-colors data-[selected=true]:bg-[#FEF1F4] data-[selected=true]:text-[#B55368] data-[disabled=true]:opacity-50 data-[disabled=true]:cursor-not-allowed"
+            </div>
+            {form.date && (
+              <div className="px-4 py-4">
+                <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                  Pilih Waktu
+                </p>
+                <div className="space-y-2">
+                  {availableSlots?.map((slot) => (
+                    <button
+                      key={slot.slot_time}
+                      onClick={() => handleSlotSelect(slot)}
+                      disabled={!slot.is_available}
+                      className={`w-full text-left rounded-xl border p-3 transition-all duration-150 ${
+                        slot.is_available
+                          ? "border-[#EDE8E3] bg-white hover:border-[#E8B4C0]"
+                          : "border-[#EDE8E3] bg-[#EDE8E3] opacity-50 cursor-not-allowed"
+                      } ${form.slotTime === slot.slot_time ? "border-[#B55368] bg-[#FEF1F4]" : ""}`}
                     >
-                      <div className="flex flex-col gap-0.5">
-                        <span>{staff.full_name}</span>
-                        {!staff.is_available && staff.unavailable_reason ? (
-                          <span className="text-[10px] font-normal text-amber-700">
-                            {staff.unavailable_reason}
-                            {staff.available_until
-                              ? ` · tersedia ${new Date(staff.available_until).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`
-                              : ""}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] font-semibold text-[#1A1614]">
+                          {slot.slot_time}
+                        </span>
+                        {slot.is_available && (
+                          <div className="flex gap-1 flex-wrap justify-end">
+                            {slot.available_therapists.map((t) => (
+                              <span
+                                key={t.id}
+                                className="bg-[#EDE8E3] text-[#1A1614] text-[10px] px-2 py-0.5 rounded-full"
+                              >
+                                {t.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {!slot.is_available && (
+                          <span className="text-[11px] text-[#B5AFA9]">
+                            Tidak tersedia
                           </span>
-                        ) : null}
+                        )}
                       </div>
-                    </ListBox.Item>
+                    </button>
                   ))}
-                </ListBox>
-              </Autocomplete.Filter>
-            </Autocomplete.Popover>
-          </Autocomplete>
-        </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
-        {/* Cart items */}
-
-        <div className="px-4 py-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em]">
-              Selected Items
-            </p>
-
-            {cartLines.length > 0 && (
+        {step === "confirm" && (
+          <div className="px-4 py-4 space-y-4">
+            <div>
+              <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                Appointment
+              </p>
+              <div className="bg-white rounded-xl border border-[#EDE8E3] p-3">
+                <p className="text-[13px] text-[#1A1614]">
+                  {form.date
+                    ? new Date(form.date + "T00:00:00").toLocaleDateString(
+                        "id-ID",
+                        {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        },
+                      )
+                    : "—"}{" "}
+                  · {form.slotTime} · {durFmt(totalDur)}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                Therapist
+              </p>
+              <div className="space-y-2">
+                {selectedServiceVariantIds.map((variantId) => {
+                  const variant = availableVariants.find(
+                    (v: Variant) => v.id === variantId,
+                  );
+                  const currentSlot = availableSlots?.find(
+                    (s) => s.slot_time === form.slotTime,
+                  );
+                  const categoryId = variant?.categoryId ?? 0;
+                  const eligibleTherapistIds =
+                    currentSlot?.available_therapists_by_category[categoryId] ||
+                    [];
+                  const eligibleTherapists = availableTherapistsForSlot.filter(
+                    (t) => eligibleTherapistIds.includes(t.id),
+                  );
+                  const selectedTherapist =
+                    therapistAssignmentByVariant.get(variantId);
+                  return (
+                    <div
+                      key={variantId}
+                      className="bg-white rounded-xl border border-[#EDE8E3] p-3"
+                    >
+                      <p className="text-[12px] text-[#7A736E] mb-1">
+                        {variant?.name}
+                      </p>
+                      <Dropdown>
+                        <Dropdown.Trigger className="w-full">
+                          <div className="flex items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-white px-3 py-2 text-[13px] text-[#1A1614] cursor-pointer hover:border-[#E8B4C0]">
+                            <span>
+                              {selectedTherapist?.name || "Pilih therapist"}
+                            </span>
+                          </div>
+                        </Dropdown.Trigger>
+                        <Dropdown.Popover className="rounded-2xl border border-[#EDE8E3] bg-white p-2 shadow-xl">
+                          <Dropdown.Menu
+                            onAction={(key) =>
+                              handleTherapistChange(variantId, Number(key))
+                            }
+                          >
+                            {eligibleTherapists.map((t) => (
+                              <Dropdown.Item
+                                key={t.id}
+                                id={String(t.id)}
+                                textValue={t.name}
+                                className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
+                              >
+                                <Label>{t.name}</Label>
+                              </Dropdown.Item>
+                            ))}
+                          </Dropdown.Menu>
+                        </Dropdown.Popover>
+                      </Dropdown>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 border-t border-[#EDE8E3] bg-white px-4 py-3">
+        {(step === "services" || step === "datetime" || step === "confirm") &&
+          cartLines.length > 0 && (
+            <div className="mb-3 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-[#7A736E]">Total duration</span>
+                <span className="font-medium text-[#1A1614]">
+                  {durFmt(totalDur)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm font-semibold text-[#1A1614]">
+                  Total
+                </span>
+                <span className="text-base font-bold text-[#B55368]">
+                  {idr(totalAmt)}
+                </span>
+              </div>
+            </div>
+          )}
+        {step === "customer" && (
+          <button
+            onClick={() => setStep("services")}
+            disabled={!canProceedFromCustomer}
+            className={`w-full rounded-xl py-2.5 text-[13px] font-semibold transition-colors duration-150 ${
+              canProceedFromCustomer
+                ? "bg-[#B55368] text-white hover:bg-[#C96480]"
+                : "cursor-not-allowed bg-[#EDE8E3] text-[#B5AFA9]"
+            }`}
+          >
+            Next →
+          </button>
+        )}
+        {step === "services" && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStep("customer")}
+              className="flex-1 rounded-xl border border-[#EDE8E3] bg-white py-2.5 text-[13px] font-semibold text-[#7A736E] transition-colors hover:bg-[#F8F4F0]"
+            >
+              Back
+            </button>
+            {canProceedFromServices && (
               <button
-                onClick={onClearCart}
-                className="text-[11px] text-[#7A736E] hover:text-[#B55368] transition-colors"
+                onClick={() => setStep("datetime")}
+                className="flex-1 rounded-xl bg-[#B55368] text-white py-2.5 text-[13px] font-semibold hover:bg-[#C96480] transition-colors"
               >
-                Clear all
+                Next →
               </button>
             )}
           </div>
-
-          {cartLines.length === 0 ? (
-            <div className="py-6 flex flex-col items-center gap-2 text-center">
-              <div className="w-11 h-11 rounded-full bg-[#EDE8E3] flex items-center justify-center">
-                <IconBag />
-              </div>
-
-              <p className="text-[13px] text-[#B5AFA9]">
-                Pilih layanan atau bundle promo
-              </p>
-            </div>
-          ) : (
-            cartLines.map((line, index) =>
-              line.kind === "bundle" ? (
-                <BundleCartRow
-                  key={`bundle-${line.bundle.id}`}
-                  bundle={line.bundle}
-                  pricing={line.pricing}
-                  onRemove={() => onRemoveLine(index)}
-                />
-              ) : (
-                <CartRow
-                  key={`service-${line.variant.id}`}
-                  v={line.variant}
-                  onRemove={() => onRemoveLine(index)}
-                />
-              ),
-            )
-          )}
-        </div>
-      </div>
-
-      {/* Sticky footer — always visible at the bottom of the panel */}
-
-      <div className="shrink-0 border-t border-[#EDE8E3] bg-white px-4 py-3">
-        {cartLines.length > 0 && (
-          <div className="mb-3 space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-[#7A736E]">Total duration</span>
-
-              <span className="font-medium text-[#1A1614]">
-                {durFmt(totalDur)}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span className="text-sm font-semibold text-[#1A1614]">
-                Total
-              </span>
-
-              <span className="text-base font-bold text-[#B55368]">
-                {idr(totalAmt)}
-              </span>
-            </div>
+        )}
+        {step === "datetime" && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStep("services")}
+              className="flex-1 rounded-xl border border-[#EDE8E3] bg-white py-2.5 text-[13px] font-semibold text-[#7A736E] transition-colors hover:bg-[#F8F4F0]"
+            >
+              Back
+            </button>
           </div>
         )}
-
-        {!canBook && (
-          <p className="text-[11px] text-[#B5AFA9] text-center mb-2">
-            {cartLines.length === 0
-              ? "Tambahkan layanan atau bundle promo"
-              : "Lengkapi nama, tanggal, waktu, dan terapis"}
-          </p>
+        {step === "confirm" && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStep("datetime")}
+              className="flex-1 rounded-xl border border-[#EDE8E3] bg-white py-2.5 text-[13px] font-semibold text-[#7A736E] transition-colors hover:bg-[#F8F4F0]"
+            >
+              Back
+            </button>
+            <button
+              onClick={onBook}
+              disabled={!canBook || isSubmitPending}
+              className={`flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition-colors duration-150 ${
+                canBook && !isSubmitPending
+                  ? "bg-[#B55368] text-white hover:bg-[#C96480]"
+                  : "cursor-not-allowed bg-[#EDE8E3] text-[#B5AFA9]"
+              }`}
+            >
+              {submitLabel}
+            </button>
+          </div>
         )}
-
-        <button
-          onClick={onBook}
-          disabled={!canBook}
-          className={`w-full py-3 rounded-xl text-sm font-semibold transition-colors duration-150 ${
-            canBook
-              ? "bg-[#B55368] text-white cursor-pointer hover:bg-[#C96480]"
-              : "bg-[#EDE8E3] text-[#B5AFA9] cursor-not-allowed"
-          }`}
-        >
-          {submitLabel}
-        </button>
       </div>
     </div>
   );
@@ -798,22 +856,14 @@ export default function BookingModal({
     document.head.appendChild(lk);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const timer = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ["staff-availability"] });
-    }, 60_000);
-    return () => clearInterval(timer);
-  }, [isOpen, queryClient]);
-
   const initialEditCartLines: CartLine[] =
     action === "edit" && initialBooking
-      ? (initialBooking.service_variants ?? []).map((line) => {
+      ? (initialBooking.service_variants ?? []).map((line: any) => {
           if (isBundlePromoLine(line)) {
             return {
               kind: "bundle" as const,
               bundle: {
-                id: line.bundle_promo_id,
+                id: line.bundle_promo_id as any,
                 name: line.name,
                 slug: line.slug,
                 description: null,
@@ -824,11 +874,14 @@ export default function BookingModal({
                 end_date: "",
                 is_active: true,
                 max_quantity: null,
-                bundle_items: line.items.map((item) => ({
+                used_count: 0,
+                bundle_items: line.items.map((item: any) => ({
                   id: item.id,
                   bms_ms_bundle_promo_id: line.bundle_promo_id,
                   bms_ms_service_variant_id: item.id,
                   quantity: item.quantity,
+                  duration_minutes: item.duration_minutes,
+                  price: item.retail_price,
                   sort_order: 0,
                   service_variant: {
                     id: item.id,
@@ -844,22 +897,22 @@ export default function BookingModal({
                 finalPrice: line.retail_price,
                 totalDuration: line.duration_minutes,
                 itemCount: line.items.reduce(
-                  (sum, item) => sum + item.quantity,
+                  (sum: number, item: any) => sum + item.quantity,
                   0,
                 ),
               },
             };
           }
-
           return {
             kind: "service" as const,
             variant: {
-              id: line.id,
+              id: line.id as number,
               catKey: (line.slug ?? "other").toLowerCase().replace(/\s+/g, "_"),
               subCat: "Selected Service",
               name: line.name,
               duration: line.duration_minutes ?? 0,
               price: Number(line.retail_price ?? 0),
+              categoryId: 0,
             },
           };
         })
@@ -877,17 +930,46 @@ export default function BookingModal({
   );
   const [cat, setCat] = useState(
     initialEditCartLines.find((line) => line.kind === "service")?.variant
-      .catKey ?? "spa-wellness-6a2fcbbcc7d02",
+      .catKey ?? "spa-wellness-6a3cd52cd23c2",
   );
   const [search, setSearch] = useState("");
   const [cartLines, setCartLines] = useState<CartLine[]>(initialEditCartLines);
+  const [step, setStep] = useState<BookingStep>(
+    action === "edit" ? "confirm" : "customer",
+  );
   const [form, setForm] = useState<FormState>({
     name: action === "edit" ? (initialBooking?.customer_name ?? "") : "",
     phone: action === "edit" ? (initialBooking?.customer_phone ?? "") : "",
-    therapists: action === "edit" ? (initialBooking?.therapists ?? []) : [],
+    staffAssignments:
+      action === "edit" && initialBooking?.staff_assignments
+        ? initialBooking.staff_assignments
+        : [],
     date: initialEditDateTime.date,
-    time: initialEditDateTime.time,
+    slotTime: initialEditDateTime.time,
   });
+
+  // ✅ FIX: viewingMonth adalah state TERSENDIRI — tidak diturunkan dari form.date.
+  // Ini yang dikirim ke API available-dates, dan diupdate setiap kali user
+  // navigasi bulan di kalender (via onFocusChange di Calendar).
+  const [viewingMonth, setViewingMonth] = useState<string>(() => {
+    // Inisialisasi dari tanggal yang sudah ada (edit mode) atau bulan sekarang
+    const dateStr = initialEditDateTime.date;
+    if (dateStr) return dateStr.slice(0, 7); // "YYYY-MM"
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  // Sync viewingMonth jika user memilih tanggal di bulan berbeda
+  // (supaya kalau user pilih tanggal → back → buka lagi, bulan tetap sesuai)
+  useEffect(() => {
+    if (form.date) {
+      const newMonth = form.date.slice(0, 7);
+      setViewingMonth((prev) => (prev === newMonth ? prev : newMonth));
+    }
+  }, [form.date]);
+
+  console.log("🚀 ~ BookingModal ~ form:", form);
+  console.log("🚀 ~ BookingModal ~ viewingMonth:", viewingMonth);
 
   const [success, setSuccess] = useState(false);
   const [createdBooking, setCreatedBooking] = useState<CreatedBooking | null>(
@@ -900,8 +982,21 @@ export default function BookingModal({
   );
   const [mobileView, setMobileView] = useState("browse");
 
-  // Fetch variants and staff from backend
+  const selectedServiceVariantIds = useMemo(() => {
+    const ids = new Set<number>();
+    cartLines.forEach((line) => {
+      if (line.kind === "service") {
+        ids.add(line.variant.id);
+      } else if (line.kind === "bundle") {
+        line.bundle.bundle_items?.forEach((item: any) => {
+          ids.add(item.bms_ms_service_variant_id);
+        });
+      }
+    });
+    return Array.from(ids);
+  }, [cartLines]);
 
+  // Fetch variants, bundles, available dates and slots
   const { data: variantsResp, isLoading: variantsLoading } = useApiFetch<{
     data: ApiVariantRow[];
   }>(["variants"], "/master/variants", undefined, isOpen);
@@ -910,13 +1005,61 @@ export default function BookingModal({
     data: BundlePromo[];
   }>(["bundle-promo-active"], "/master/bundle-promo/active", undefined, isOpen);
 
-  const { data: staffsResp, isLoading: staffsLoading } = useApiFetch<{
-    data: ApiStaffRow[];
-  }>(["staffs"], "/master/staffs", undefined, isOpen);
+  // ✅ FIX: gunakan viewingMonth (bukan form.date) untuk fetch available-dates
+  // Sebelumnya pakai selectedMonth yang diturunkan dari form.date → hanya fetch
+  // bulan yang sudah dipilih user, bukan bulan yang sedang dilihat di kalender.
+  const availableDatesUrl = useMemo(() => {
+    if (selectedServiceVariantIds.length === 0) return null;
+    const params = new URLSearchParams();
+    params.set("month", viewingMonth);
+    selectedServiceVariantIds.forEach((id) =>
+      params.append("variant_ids[]", String(id)),
+    );
+    if (action === "edit" && initialBooking?.id) {
+      params.set("exclude_booking_id", String(initialBooking.id));
+    }
+    return `/master/bookings/available-dates?${params.toString()}`;
+  }, [viewingMonth, selectedServiceVariantIds, action, initialBooking?.id]);
+
+  const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
+    [
+      "available-dates",
+      viewingMonth, // ✅ key berubah setiap ganti bulan → query baru
+      JSON.stringify(selectedServiceVariantIds),
+      String(initialBooking?.id ?? ""),
+    ] as string[],
+    availableDatesUrl || "",
+    undefined,
+    isOpen && !!availableDatesUrl,
+  );
+
+  const availableSlotsUrl = useMemo(() => {
+    if (selectedServiceVariantIds.length === 0 || !form.date) return null;
+    const params = new URLSearchParams();
+    params.set("date", form.date);
+    selectedServiceVariantIds.forEach((id) =>
+      params.append("variant_ids[]", String(id)),
+    );
+    if (action === "edit" && initialBooking?.id) {
+      params.set("exclude_booking_id", String(initialBooking.id));
+    }
+    return `/master/bookings/available-slots?${params.toString()}`;
+  }, [form.date, selectedServiceVariantIds, action, initialBooking?.id]);
+
+  const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
+    [
+      "available-slots",
+      form.date,
+      JSON.stringify(selectedServiceVariantIds),
+      String(initialBooking?.id ?? ""),
+    ] as string[],
+    availableSlotsUrl || "",
+    undefined,
+    isOpen && !!availableSlotsUrl,
+  );
 
   const availableVariants: Variant[] = useMemo(() => {
     const list = variantsResp?.data ?? [];
-
     return list.map((v) => ({
       id: v.id,
       catKey:
@@ -926,6 +1069,7 @@ export default function BookingModal({
       name: v.name,
       duration: v.duration_minutes ?? v.duration ?? 0,
       price: Number(v.final_price ?? v.retail_price ?? 0),
+      categoryId: v.category?.id ?? v.service?.bms_ms_service_category_id ?? 0,
     }));
   }, [variantsResp]);
 
@@ -950,26 +1094,12 @@ export default function BookingModal({
       const key =
         v.category?.slug ??
         (v.service?.name ?? "other").toLowerCase().replace(/\s+/g, "_");
-
       const label = v.category?.name ?? v.service?.name ?? key;
-
       if (!map.has(key)) map.set(key, { key, label });
     });
-
-    // Fallback to a default if empty
-    if (map.size === 0) {
-      map.set("spa", { key: "spa", label: "Spa & Wellness" });
-    }
-
+    if (map.size === 0) map.set("spa", { key: "spa", label: "Spa & Wellness" });
     return Array.from(map.values());
   }, [variantsResp]);
-
-  const staffList: string[] = useMemo(() => {
-    const s = staffsResp?.data ?? [];
-    if (!s.length) return THERAPISTS;
-
-    return s.map((x) => [x.first_name, x.last_name].filter(Boolean).join(" "));
-  }, [staffsResp]);
 
   const totalAmt = cartLines.reduce((sum, line) => {
     if (line.kind === "bundle") return sum + line.pricing.finalPrice;
@@ -986,59 +1116,13 @@ export default function BookingModal({
     [cartLines],
   );
 
-  const scheduleIso = useMemo(() => {
-    if (!form.date || !form.time) return null;
-    return new Date(`${form.date}T${form.time}:00`).toISOString();
-  }, [form.date, form.time]);
-
-  const staffAvailabilityUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (scheduleIso && totalDur > 0) {
-      params.set("schedule_date", scheduleIso);
-      params.set("duration_minutes", String(totalDur));
-    }
-    if (action === "edit" && initialBooking?.id) {
-      params.set("exclude_booking_id", String(initialBooking.id));
-    }
-    const query = params.toString();
-    return `/master/staffs/for-booking/availability${query ? `?${query}` : ""}`;
-  }, [scheduleIso, totalDur, action, initialBooking]);
-
-  const { data: staffAvailabilityResp } = useApiFetch<{ data: StaffOption[] }>(
-    [
-      "staff-availability",
-      scheduleIso ?? "",
-      String(totalDur),
-      initialBooking?.id != null ? String(initialBooking.id) : "",
-    ],
-    staffAvailabilityUrl,
-    undefined,
-    isOpen,
-  );
-
-  const staffOptions: StaffOption[] = useMemo(() => {
-    const fromApi = staffAvailabilityResp?.data ?? [];
-    if (fromApi.length > 0) return fromApi;
-
-    return staffList.map((name, index) => ({
-      id: index,
-      full_name: name,
-      is_available: true,
-      available_until: null,
-      unavailable_reason: null,
-    }));
-  }, [staffAvailabilityResp, staffList]);
-
   const customerLookupUrl =
     form.phone.trim().length >= 8
       ? `/customer/lookup?phone=${encodeURIComponent(form.phone.trim())}`
       : "";
 
   const { data: customerLookupResp } = useApiFetch<{
-    data: {
-      customer: { name: string } | null;
-      total_bookings: number;
-    };
+    data: { customer: { name: string } | null; total_bookings: number };
   }>(
     ["customer-lookup", form.phone],
     customerLookupUrl,
@@ -1054,14 +1138,11 @@ export default function BookingModal({
   const createBooking = usePost<
     { data: CreatedBooking },
     {
-      customerName: string;
-      customerPhone: string;
-      therapists: string[];
-      scheduleDate: string | null;
-      durationMinutes: number;
-      status: string;
-      paymentStatus: string;
-      totalAmount: number;
+      customer_name: string;
+      customer_phone?: string;
+      schedule_date: string;
+      slot_time: string;
+      service_variants: Array<{ variant_id: number; staff_id: number }>;
       line_items: Array<
         | { type: "service_variant"; service_variant_id: number }
         | { type: "bundle_promo"; bundle_promo_id: number }
@@ -1069,12 +1150,10 @@ export default function BookingModal({
     }
   >("/master/bookings", {
     invalidate: [["bookings"]],
-
     onSuccess: (response) => {
       setCreatedBooking(response?.data ?? null);
       setSuccess(true);
     },
-
     onError: (error) => {
       console.error("Booking creation failed", error);
     },
@@ -1084,12 +1163,11 @@ export default function BookingModal({
     unknown,
     {
       bookingId: number;
-      customerName: string;
-      customerPhone: string;
-      therapists: string[];
-      scheduleDate: string | null;
-      durationMinutes: number;
-      totalAmount: number;
+      customer_name: string;
+      customer_phone?: string;
+      schedule_date: string;
+      slot_time: string;
+      service_variants: Array<{ variant_id: number; staff_id: number }>;
       line_items: Array<
         | { type: "service_variant"; service_variant_id: number }
         | { type: "bundle_promo"; bundle_promo_id: number }
@@ -1107,11 +1185,7 @@ export default function BookingModal({
   });
 
   const createPayment = usePost<
-    {
-      data: {
-        payment_url: string;
-      };
-    },
+    { data: { payment_url: string } },
     { bookingId: number; idempotency_key: string }
   >((payload) => `/master/bookings/${payload.bookingId}/payment`, {});
 
@@ -1124,7 +1198,6 @@ export default function BookingModal({
             v.name.toLowerCase().includes(search.toLowerCase()) ||
             v.subCat.toLowerCase().includes(search.toLowerCase())),
       ),
-
     [cat, search, availableVariants],
   );
 
@@ -1134,18 +1207,14 @@ export default function BookingModal({
         (acc[v.subCat] = acc[v.subCat] || []).push(v);
         return acc;
       }, {}),
-
     [filtered],
   );
 
   const updateForm = (updater: (prev: FormState) => FormState) => {
     setForm((prev) => {
       const next = updater(prev);
-
       if (!selectedBundle) return next;
-
       const bounds = getBundleCalendarBounds(selectedBundle);
-
       if (next.date) {
         const picked = parseDate(next.date);
         if (picked.compare(bounds.minValue) < 0) {
@@ -1155,19 +1224,6 @@ export default function BookingModal({
           next.date = bounds.maxValue.toString();
         }
       }
-
-      if (next.date && next.time) {
-        const timeBounds = getBundleTimeBounds(selectedBundle, next.date);
-        if (timeBounds) {
-          if (next.time < timeBounds.minTime) next.time = timeBounds.minTime;
-          if (next.time > timeBounds.maxTime) next.time = timeBounds.maxTime;
-        }
-
-        if (!isDateTimeWithinBundle(selectedBundle, next.date, next.time)) {
-          next.time = "";
-        }
-      }
-
       return next;
     });
   };
@@ -1182,11 +1238,9 @@ export default function BookingModal({
     setCartLines((prev) => {
       const services = prev.filter((line) => line.kind === "service");
       const exists = services.some((line) => line.variant.id === v.id);
-
       if (exists) {
         return services.filter((line) => line.variant.id !== v.id);
       }
-
       return [...services, { kind: "service", variant: v }];
     });
   };
@@ -1198,20 +1252,8 @@ export default function BookingModal({
         prev.length === 1 &&
         prev[0].kind === "bundle" &&
         prev[0].bundle.id === bundle.id;
-
       if (isSelected) return [];
       return [{ kind: "bundle", bundle, pricing }];
-    });
-
-    setForm((prev) => {
-      if (
-        prev.date &&
-        prev.time &&
-        !isDateTimeWithinBundle(bundle, prev.date, prev.time)
-      ) {
-        return { ...prev, date: "", time: "" };
-      }
-      return prev;
     });
   };
 
@@ -1229,32 +1271,10 @@ export default function BookingModal({
     return `${serviceCount} layanan`;
   }, [cartLines]);
 
-  const bundleScheduleValid =
-    !selectedBundle ||
-    (!!form.date &&
-      !!form.time &&
-      isDateTimeWithinBundle(selectedBundle, form.date, form.time));
-
-  const therapistsAvailable = form.therapists.every((name) => {
-    const staff = staffOptions.find((s) => s.full_name === name);
-    return !staff || staff.is_available;
-  });
-
-  const canBook =
-    !!form.name.trim() &&
-    !!form.date &&
-    !!form.time &&
-    form.therapists.length > 0 &&
-    cartLines.length > 0 &&
-    bundleScheduleValid &&
-    therapistsAvailable;
-
   const isSubmitPending =
     action === "edit" ? updateBooking.isPending : createBooking.isPending;
 
   const handleBook = () => {
-    if (!canBook || isSubmitPending) return;
-
     const lineItems = cartLines.map((line) =>
       line.kind === "bundle"
         ? { type: "bundle_promo" as const, bundle_promo_id: line.bundle.id }
@@ -1264,54 +1284,64 @@ export default function BookingModal({
           },
     );
 
-    const booking = {
-      customerName: form.name,
-      customerPhone: form.phone,
-      therapists: form.therapists,
-      scheduleDate:
-        form.date && form.time
-          ? new Date(`${form.date}T${form.time}:00`).toISOString()
-          : null,
-      durationMinutes: totalDur,
-      totalAmount: totalAmt,
-      line_items: lineItems,
-    };
+    const serviceVariants = form.staffAssignments.map((a) => ({
+      variant_id: a.service_variant_id,
+      staff_id: a.staff_id,
+    }));
 
     if (action === "edit" && initialBooking?.id) {
       updateBooking.mutate({
         bookingId: Number(initialBooking.id),
-        ...booking,
+        customer_name: form.name,
+        customer_phone: form.phone,
+        schedule_date: form.date,
+        slot_time: form.slotTime,
+        service_variants: serviceVariants,
+        line_items: lineItems,
       });
       return;
     }
 
     createBooking.mutate({
-      ...booking,
-      status: "Pending",
-      paymentStatus: "Unpaid",
+      customer_name: form.name,
+      customer_phone: form.phone,
+      schedule_date: form.date,
+      slot_time: form.slotTime,
+      service_variants: serviceVariants,
+      line_items: lineItems,
     });
   };
 
   const reset = () => {
     setCartLines([]);
-    setForm({ name: "", phone: "", therapists: [], date: "", time: "" });
+    setForm({
+      name: "",
+      phone: "",
+      staffAssignments: [],
+      date: "",
+      slotTime: "",
+    });
     setSearch("");
     setBrowseMode("services");
     setCat("spa");
     setSuccess(false);
     setCreatedBooking(null);
     setMobileView("browse");
+    setStep("services");
+    // Reset viewingMonth ke bulan sekarang
+    const now = new Date();
+    setViewingMonth(
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
+    );
   };
 
   const handleSelectPayment = async () => {
     if (!createdBooking?.id || createPayment.isPending) return;
-
     try {
       const response = await createPayment.mutateAsync({
         bookingId: createdBooking.id,
         idempotency_key: crypto.randomUUID(),
       });
-
       if (response?.data?.payment_url) {
         window.location.href = response.data.payment_url;
       }
@@ -1320,7 +1350,7 @@ export default function BookingModal({
     }
   };
 
-  if (variantsLoading && !variantsResp && staffsLoading) {
+  if (variantsLoading && !variantsResp) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-[13px] text-[#B5AFA9]">Loading...</p>
@@ -1355,30 +1385,41 @@ export default function BookingModal({
           Appointment has been scheduled successfully.
         </p>
         <div className="w-full max-w-sm bg-[#F8F4F0] rounded-2xl p-5 text-left mb-6 space-y-0">
-          {(
-            [
-              ["Customer", form.name],
-              form.phone ? ["Phone", form.phone] : null,
-              form.therapists.length
-                ? ["Therapist(s)", form.therapists.join(", ")]
-                : null,
-              [
-                "Date & Time",
-                form.date && form.time
-                  ? formatDate(new Date(`${form.date}T${form.time}:00`), {
-                      withTime: true,
+          {[
+            ["Customer", form.name],
+            form.phone ? ["Phone", form.phone] : null,
+            form.staffAssignments.length
+              ? [
+                  "Therapist(s)",
+                  form.staffAssignments
+                    .map((a) => {
+                      const slot = availableSlotsResp?.data?.slots.find(
+                        (s: AvailableSlot) => s.slot_time === form.slotTime,
+                      );
+                      return (
+                        slot?.available_therapists.find(
+                          (t: AvailableTherapist) => t.id === a.staff_id,
+                        )?.name || ""
+                      );
                     })
-                  : "—",
-              ],
-              ["Duration", durFmt(totalDur)],
-              [
-                "Items",
-                cartLines.length === 1 && cartLines[0].kind === "bundle"
-                  ? cartLines[0].bundle.name
-                  : `${cartLines.filter((line) => line.kind === "service").length} layanan`,
-              ],
-            ] as (string[] | null)[]
-          )
+                    .filter(Boolean)
+                    .join(", "),
+                ]
+              : null,
+            [
+              "Date & Time",
+              form.date && form.slotTime
+                ? `${form.date} ${form.slotTime}`
+                : "—",
+            ],
+            ["Duration", durFmt(totalDur)],
+            [
+              "Items",
+              cartLines.length === 1 && cartLines[0].kind === "bundle"
+                ? cartLines[0].bundle.name
+                : `${cartLines.filter((line) => line.kind === "service").length} layanan`,
+            ],
+          ]
             .filter((row): row is [string, string] => row !== null)
             .map(([k, v]) => (
               <div
@@ -1386,22 +1427,18 @@ export default function BookingModal({
                 className="flex justify-between py-2 border-b border-[#EDE8E3] last:border-0"
               >
                 <span className="text-[13px] text-[#7A736E]">{k}</span>
-
                 <span className="text-[13px] font-medium text-[#1A1614] text-right">
                   {v}
                 </span>
               </div>
             ))}
-
           <div className="flex justify-between pt-3">
             <span className="text-sm font-semibold text-[#1A1614]">Total</span>
-
             <span className="text-base font-bold text-[#B55368]">
               {idr(totalAmt)}
             </span>
           </div>
         </div>
-
         <div className="space-y-4 w-full flex items-center justify-center flex-col">
           <button
             onClick={handleSelectPayment}
@@ -1413,7 +1450,6 @@ export default function BookingModal({
               ? "Redirecting..."
               : "Select Payment Method"}
           </button>
-
           <button
             onClick={reset}
             className="w-full max-w-sm py-3 rounded-xl bg-[#B55368] text-white text-sm font-semibold hover:bg-[#C96480] transition-colors"
@@ -1430,49 +1466,40 @@ export default function BookingModal({
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
       className="flex h-full w-full min-h-0 flex-col overflow-hidden"
     >
-      {/* HEADER */}
-
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#EDE8E3] px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="shrink-0 w-9 h-9 rounded-[10px] bg-[#FEF1F4] flex items-center justify-center">
             <IconCalendar />
           </div>
-
           <div className="min-w-0 flex-1">
             <h2 className="text-[15px] font-bold text-[#1A1614] leading-tight truncate">
               {action === "edit" ? "Edit Booking" : "New Booking"}
             </h2>
-
             <p className="text-[12px] text-[#7A736E] hidden sm:block truncate">
-              Pilih layanan atau bundle promo, lalu isi detail appointment
+              {step === "services"
+                ? "Pilih layanan atau bundle promo"
+                : step === "datetime"
+                  ? "Pilih tanggal dan waktu"
+                  : "Konfirmasi booking"}
             </p>
           </div>
         </div>
-
         {cartLines.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FEF1F4] rounded-full shrink-0">
             <span className="text-[13px] text-[#B55368] font-semibold">
               {cartSummaryLabel}
             </span>
-
             <span className="text-[11px] text-[#E8B4C0]">·</span>
-
             <span className="text-[13px] text-[#B55368] font-bold">
               {idr(totalAmt)}
             </span>
           </div>
         )}
       </div>
-
-      {/* BODY — fills remaining height, splits into browser + order panel */}
-
       <div className="flex min-h-0 flex-1 w-full overflow-hidden">
-        {/* LEFT: Service Browser */}
-
         <div
           className={[
             "flex min-h-0 flex-col border-r border-[#EDE8E3]",
-
             mobileView === "browse"
               ? "flex w-full min-w-0 flex-1"
               : "hidden md:flex md:min-w-0 md:flex-1",
@@ -1509,7 +1536,6 @@ export default function BookingModal({
                 Bundle Promo
               </button>
             </div>
-
             {browseMode === "services" && (
               <div className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden min-w-0">
                 {CATS.map((c) => (
@@ -1531,12 +1557,10 @@ export default function BookingModal({
                 ))}
               </div>
             )}
-
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 <IconSearch />
               </span>
-
               <input
                 className={`${inputCls} pl-9`}
                 placeholder={
@@ -1549,7 +1573,6 @@ export default function BookingModal({
               />
             </div>
           </div>
-
           <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-5 py-4 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#D5CFC9] [&::-webkit-scrollbar-thumb]:rounded-full">
             {browseMode === "bundles" ? (
               bundlesLoading ? (
@@ -1576,7 +1599,6 @@ export default function BookingModal({
             ) : Object.keys(grouped).length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-[#B5AFA9]">
                 <IconSearch color="#D5CFC9" />
-
                 <p className="text-sm">No services found for {`"${search}"`}</p>
               </div>
             ) : (
@@ -1586,10 +1608,8 @@ export default function BookingModal({
                     <span className="text-[11px] font-bold text-[#B5AFA9] uppercase tracking-[0.07em] shrink-0">
                       {subCat}
                     </span>
-
                     <div className="flex-1 h-px bg-[#EDE8E3]" />
                   </div>
-
                   <div className="grid grid-cols-1 min-[450px]:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
                     {vars.map((v) => (
                       <ServiceCard
@@ -1605,19 +1625,17 @@ export default function BookingModal({
             )}
           </div>
         </div>
-
-        {/* RIGHT: Order Panel */}
-
         <div
           className={[
             "flex min-h-0 flex-col",
-
             mobileView === "order"
               ? "flex w-full min-w-0 flex-1"
-              : "hidden md:flex md:w-[300px] md:shrink-0 lg:w-[340px]",
+              : "hidden md:flex md:w-[340px] md:shrink-0",
           ].join(" ")}
         >
           <OrderPanel
+            step={step}
+            setStep={setStep}
             form={form}
             setForm={updateForm}
             cartLines={cartLines}
@@ -1625,7 +1643,10 @@ export default function BookingModal({
             onClearCart={() => setCartLines([])}
             totalAmt={totalAmt}
             totalDur={totalDur}
-            canBook={canBook}
+            selectedServiceVariantIds={selectedServiceVariantIds}
+            availableDates={availableDatesResp?.data?.available_dates ?? []}
+            availableSlots={availableSlotsResp?.data?.slots ?? null}
+            availableVariants={availableVariants}
             onBook={handleBook}
             submitLabel={
               isSubmitPending
@@ -1638,41 +1659,34 @@ export default function BookingModal({
             }
             onBack={() => setMobileView("browse")}
             isMobile={mobileView === "order"}
-            staffOptions={staffOptions}
             selectedBundle={selectedBundle}
             customerBookingCount={customerBookingCount}
+            isSubmitPending={isSubmitPending}
+            excludeBookingId={
+              initialBooking?.id ? Number(initialBooking.id) : undefined
+            }
+            // ✅ FIX: pass viewingMonth dan setViewingMonth ke OrderPanel
+            viewingMonth={viewingMonth}
+            setViewingMonth={setViewingMonth}
           />
         </div>
       </div>
-
-      {/* MOBILE BOTTOM BAR */}
-
-      {mobileView === "browse" && (
+      {mobileView === "browse" && cartLines.length > 0 && (
         <div className="md:hidden shrink-0 flex items-center gap-3 px-4 py-3 border-t border-[#EDE8E3] bg-white w-full">
-          {cartLines.length > 0 ? (
-            <>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-[#1A1614] truncate">
-                  {cartSummaryLabel}
-                </p>
-
-                <p className="text-[13px] font-bold text-[#B55368]">
-                  {idr(totalAmt)}
-                </p>
-              </div>
-
-              <button
-                onClick={() => setMobileView("order")}
-                className="shrink-0 px-5 py-2.5 rounded-xl bg-[#B55368] text-white text-[13px] font-semibold hover:bg-[#C96480] transition-colors"
-              >
-                Next →
-              </button>
-            </>
-          ) : (
-            <p className="w-full text-center text-[13px] text-[#B5AFA9]">
-              Pilih layanan atau bundle promo untuk lanjut
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-[#1A1614] truncate">
+              {cartSummaryLabel}
             </p>
-          )}
+            <p className="text-[13px] font-bold text-[#B55368]">
+              {idr(totalAmt)}
+            </p>
+          </div>
+          <button
+            onClick={() => setMobileView("order")}
+            className="shrink-0 px-5 py-2.5 rounded-xl bg-[#B55368] text-white text-[13px] font-semibold hover:bg-[#C96480] transition-colors"
+          >
+            Next →
+          </button>
         </div>
       )}
     </div>

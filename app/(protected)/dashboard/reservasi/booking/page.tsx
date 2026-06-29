@@ -188,15 +188,24 @@ function BookingsPageInner() {
             ? lines.map((line) => getBookingLineLabel(line)).join(", ")
             : "Spa Service";
 
+        const therapistNames =
+          info.row.original.therapists
+            ?.map((t) => {
+              if (typeof t === "string") return t;
+              return t.name;
+            })
+            .filter(Boolean)
+            .join(", ") || "—";
+
         if (isBundle) {
           return (
             <div className="flex flex-col">
               <span className="text-sm">
-                {info.row.original?.booking_bundle_promos?.[0]?.bundle_name ||
+                {info.row.original?.booking_bundle_promos?.[0]?.bundle_name ??
                   ""}
               </span>
               <span className="text-xs text-muted-foreground">
-                by {info.row.original.therapists?.join(", ") || "—"}
+                by {therapistNames}
               </span>
             </div>
           );
@@ -205,7 +214,7 @@ function BookingsPageInner() {
           <div className="flex flex-col">
             <span className="text-sm">{serviceName}</span>
             <span className="text-xs text-muted-foreground">
-              by {info.row.original.therapists?.join(", ") || "—"}
+              by {therapistNames}
             </span>
           </div>
         );
@@ -596,7 +605,13 @@ function BookingsPageInner() {
                             Therapists
                           </p>
                           <p className="font-semibold">
-                            {selectedBooking.therapists?.join(", ") || "—"}
+                            {selectedBooking.therapists
+                              ?.map((t) => {
+                                if (typeof t === "string") return t;
+                                return t.name;
+                              })
+                              .filter(Boolean)
+                              .join(", ") || "—"}
                           </p>
                         </div>
                       </div>

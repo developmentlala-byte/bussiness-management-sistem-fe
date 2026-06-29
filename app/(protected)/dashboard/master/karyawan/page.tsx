@@ -9,6 +9,7 @@ import {
   CaretRight,
   PlusCircle,
   Clock,
+  Sparkle,
 } from "@phosphor-icons/react";
 import { Description, Dropdown, Header, Label } from "@heroui/react";
 
@@ -17,11 +18,14 @@ import { CreateShiftModal } from "./modal/create-shift-modal";
 import JamKerjaView from "./components/jam-kerja-view";
 import AnggotaStaffView from "./components/anggota-staff-view";
 import KehadiranStaffView from "./components/kehadiran-staff-view-redesign";
+import StaffCapabilitiesView from "./components/staff-capabilities-view";
 
 const TABS = [
   { id: "kehadiran", label: "Kehadiran", icon: ClockClockwise },
   { id: "staf", label: "Anggota Staf", icon: Users },
-  { id: "komisi", label: "Aturan Komisi", icon: Money },
+  { id: "jam_kerja", label: "Shift Kerja", icon: Clock },
+  { id: "capabilities", label: "Kemampuan", icon: Sparkle },
+  // { id: "komisi", label: "Aturan Komisi", icon: Money },
 ];
 
 export default function MasterKaryawanPage() {
@@ -236,6 +240,7 @@ export default function MasterKaryawanPage() {
             {activeTab === "jam_kerja" && <JamKerjaView />}
             {activeTab === "kehadiran" && <KehadiranStaffView />}
             {activeTab === "staf" && <AnggotaStaffView />}
+            {activeTab === "capabilities" && <StaffCapabilitiesView />}
             {activeTab === "komisi" && (
               <PlaceholderView
                 title="Aturan Komisi"

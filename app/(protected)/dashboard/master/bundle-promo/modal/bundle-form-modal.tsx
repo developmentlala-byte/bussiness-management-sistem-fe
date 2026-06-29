@@ -1,5 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { X, Plus, Trash, Percent, CurrencyCircleDollar } from "@phosphor-icons/react";
+import {
+  X,
+  Plus,
+  Trash,
+  Percent,
+  CurrencyCircleDollar,
+} from "@phosphor-icons/react";
 import {
   toast,
   Select,
@@ -38,6 +44,8 @@ interface BundleFormModalProps {
 const emptyItem = (): BundleItemInput => ({
   bms_ms_service_variant_id: 0,
   quantity: 1,
+  duration_minutes: 0,
+  price: 0,
 });
 
 export function BundleFormModal({
@@ -65,6 +73,8 @@ export function BundleFormModal({
       ? bundle.bundle_items.map((item) => ({
           bms_ms_service_variant_id: item.bms_ms_service_variant_id,
           quantity: item.quantity,
+          duration_minutes: item.duration_minutes,
+          price: Number(item.price),
           sort_order: item.sort_order,
         }))
       : [emptyItem()],
@@ -85,6 +95,10 @@ export function BundleFormModal({
       Object.fromEntries(
         variantOptions.map((v) => [v.id, formatVariantOptionLabel(v)]),
       ),
+    [variantOptions],
+  );
+  const variantOptionMap = useMemo(
+    () => Object.fromEntries(variantOptions.map((v) => [v.id, v])),
     [variantOptions],
   );
 
@@ -123,12 +137,14 @@ export function BundleFormModal({
       toast.danger("Validasi", { description: "Nama bundle wajib diisi." });
       return;
     }
-    if (!discountValue || Number(discountValue) <= 0) {
-      toast.danger("Validasi", { description: "Nilai diskon bundle wajib diisi." });
-      return;
-    }
+    // if (!discountValue || Number(discountValue) <= 0) {
+    //   toast.danger("Validasi", { description: "Nilai diskon bundle wajib diisi." });
+    //   return;
+    // }
 
-    const validItems = items.filter((item) => item.bms_ms_service_variant_id > 0);
+    const validItems = items.filter(
+      (item) => item.bms_ms_service_variant_id > 0,
+    );
     if (validItems.length === 0) {
       toast.danger("Validasi", {
         description: "Tambahkan minimal satu layanan ke bundle.",
@@ -140,6 +156,20 @@ export function BundleFormModal({
     if (new Set(variantIds).size !== variantIds.length) {
       toast.danger("Validasi", {
         description: "Varian layanan yang sama tidak boleh dipilih dua kali.",
+      });
+      return;
+    }
+    if (
+      validItems.some(
+        (item) =>
+          item.duration_minutes < 1 ||
+          Number(item.price) < 0 ||
+          item.quantity < 1,
+      )
+    ) {
+      toast.danger("Validasi", {
+        description:
+          "Durasi minimal 1 menit, qty minimal 1, dan harga tidak boleh negatif.",
       });
       return;
     }
@@ -199,7 +229,9 @@ export function BundleFormModal({
 
         <div className="p-6 overflow-y-auto space-y-5">
           <TextField className="w-full">
-            <Label className="text-sm text-foreground mb-1.5">Nama Bundle</Label>
+            <Label className="text-sm text-foreground mb-1.5">
+              Nama Bundle
+            </Label>
             <InputGroup className="w-full border border-border rounded-md">
               <InputGroup.Input
                 value={name}
@@ -228,7 +260,9 @@ export function BundleFormModal({
               value={bundleType}
               onChange={(key) => setBundleType(key)}
             >
-              <Label className="text-sm text-foreground mb-1.5">Tipe Diskon Bundle</Label>
+              <Label className="text-sm text-foreground mb-1.5">
+                Tipe Diskon Bundle
+              </Label>
               <Select.Trigger className="w-full border border-border rounded-md px-3 py-2 text-sm">
                 <Select.Value />
                 <Select.Indicator />
@@ -248,7 +282,9 @@ export function BundleFormModal({
             </Select>
 
             <TextField className="w-full">
-              <Label className="text-sm text-foreground mb-1.5">Nilai Diskon</Label>
+              <Label className="text-sm text-foreground mb-1.5">
+                Nilai Diskon
+              </Label>
               <InputGroup className="w-full border border-border rounded-md">
                 <InputGroup.Input
                   type="number"
@@ -313,7 +349,7 @@ export function BundleFormModal({
             {items.map((item, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 sm:grid-cols-[1fr_100px_40px] gap-2 items-end border border-border rounded-lg p-3"
+                className="grid grid-cols-1 sm:grid-cols-[1fr_88px_120px_120px_40px] gap-2 items-end border border-border rounded-lg p-3"
               >
                 <Autocomplete
                   aria-label="Pilih layanan"
@@ -325,9 +361,16 @@ export function BundleFormModal({
                   }
                   onSelectionChange={(key) => {
                     const next = [...items];
+                    const selectedVariant = variantOptionMap[Number(key)];
                     next[index] = {
                       ...next[index],
                       bms_ms_service_variant_id: Number(key),
+                      duration_minutes:
+                        selectedVariant?.duration_minutes ??
+                        next[index].duration_minutes,
+                      price: Number(
+                        selectedVariant?.retail_price ?? next[index].price,
+                      ),
                     };
                     setItems(next);
                   }}
@@ -397,6 +440,52 @@ export function BundleFormModal({
                   </InputGroup>
                 </TextField>
 
+                <TextField>
+                  <Label className="text-xs text-muted mb-1">
+                    Durasi (menit)
+                  </Label>
+                  <InputGroup className="border border-border rounded-md">
+                    <InputGroup.Input
+                      type="number"
+                      min={1}
+                      value={String(item.duration_minutes)}
+                      onChange={(e) => {
+                        const next = [...items];
+                        next[index] = {
+                          ...next[index],
+                          duration_minutes: Math.max(
+                            1,
+                            Number(e.target.value) || 1,
+                          ),
+                        };
+                        setItems(next);
+                      }}
+                      className="w-full px-3 py-2 text-sm outline-none bg-transparent"
+                    />
+                  </InputGroup>
+                </TextField>
+
+                <TextField>
+                  <Label className="text-xs text-muted mb-1">Harga (Rp)</Label>
+                  <InputGroup className="border border-border rounded-md">
+                    <InputGroup.Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={String(item.price)}
+                      onChange={(e) => {
+                        const next = [...items];
+                        next[index] = {
+                          ...next[index],
+                          price: Math.max(0, Number(e.target.value) || 0),
+                        };
+                        setItems(next);
+                      }}
+                      className="w-full px-3 py-2 text-sm outline-none bg-transparent"
+                    />
+                  </InputGroup>
+                </TextField>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -424,7 +513,11 @@ export function BundleFormModal({
             disabled={isPending}
             className="px-5 py-2 text-sm font-semibold bg-accent text-accent-foreground rounded-md disabled:opacity-50"
           >
-            {isPending ? "Menyimpan..." : isEdit ? "Simpan Perubahan" : "Buat Bundle"}
+            {isPending
+              ? "Menyimpan..."
+              : isEdit
+                ? "Simpan Perubahan"
+                : "Buat Bundle"}
           </button>
         </div>
       </div>

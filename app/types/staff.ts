@@ -1,3 +1,5 @@
+import { Category } from "./product-&-layanan";
+
 export interface Staff {
   id: number;
   user_id: number;
@@ -13,4 +15,5 @@ export interface Staff {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  capabilityCategories?: Category[];
 }

@@ -20,18 +20,31 @@ import { useApiFetch } from "@/app/libs/use-http";
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
-const START_HOUR = 8;
-const END_HOUR = 20;
+const START_HOUR = 11;
+const END_HOUR = 22;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_WIDTH = 136; // px per hour
 const MIN_WIDTH = HOUR_WIDTH / 60;
 const Y_AXIS_W = 150;
-const LANE_H = 82; // px per overlap lane
-const LANE_PAD = 8; // top & bottom padding within a lane
+const LANE_H = 82;
+const LANE_PAD = 8;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
+interface BookingTherapist {
+  id: number;
+  booking_id: number;
+  bms_ms_staff_id: number;
+  bms_ms_service_variant_id: number;
+  name: string;
+  staff?: {
+    id: number;
+    first_name: string;
+    last_name?: string | null;
+  };
+}
+
 interface SpaBooking {
   id: string;
   booking_code: string;
@@ -39,7 +52,7 @@ interface SpaBooking {
   customer_phone: string;
   service_name: string;
   therapist_name: string;
-  therapists?: string[];
+  therapists?: Array<string | BookingTherapist>;
   schedule_date: string;
   duration_minutes: number;
   service_variants: {
@@ -67,13 +80,32 @@ const toDateStr = (d: Date) =>
     d.getDate(),
   ).padStart(2, "0")}`;
 
-const parseISO = (iso: string) => {
-  const d = new Date(iso);
+// ── TIMEZONE-SAFE PARSING ───────────────────────────────────────────────────
+// The API returns schedule_date as e.g. "2026-06-29T16:00:00.000000Z".
+// That trailing "Z" tells `new Date(...)` to treat 16:00 as UTC and convert
+// it to the browser's local timezone — in WIB (UTC+7) that becomes
+// 2026-06-29 23:00 *local*, or even rolls over to the next calendar day.
+// But these timestamps are actually wall-clock spa hours (08:00–20:00),
+// not real UTC instants — they were just serialized with a "Z" suffix by
+// the backend without an actual timezone conversion.
+//
+// So instead of letting `new Date()` reinterpret the time, we read the
+// date/time digits directly out of the string with a regex and use them
+// as-is. No Date object, no timezone math, no shifting.
+const SCHEDULE_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
+
+const parseSchedule = (raw: string) => {
+  const m = SCHEDULE_RE.exec(raw);
+  if (!m) {
+    // Fallback for unexpected formats — best effort, may be off by
+    // timezone, but at least doesn't crash.
+    const d = new Date(raw);
+    return { dateStr: toDateStr(d), timeStr: "00:00" };
+  }
+  const [, y, mo, da, h, mi] = m;
   return {
-    dateStr: toDateStr(d),
-    timeStr: `${String(d.getHours()).padStart(2, "0")}:${String(
-      d.getMinutes(),
-    ).padStart(2, "0")}`,
+    dateStr: `${y}-${mo}-${da}`,
+    timeStr: `${h}:${mi}`,
   };
 };
 
@@ -113,6 +145,19 @@ const CAT_ICONS: Record<Cat, React.ReactNode> = {
   nail: <Hand weight="duotone" className="size-3" />,
   facial: <Sparkle weight="duotone" className="size-3" />,
   spa: <Drop weight="duotone" className="size-3" />,
+};
+
+const getTherapistNames = (event: SpaBooking): string => {
+  const therapists = event.therapists ?? [event.therapist_name];
+  return (
+    therapists
+      .map((t) => {
+        if (typeof t === "string") return t;
+        return t.name;
+      })
+      .filter(Boolean)
+      .join(", ") || "—"
+  );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,10 +418,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
               const endTime = addMin(event.timeStr, event.duration_minutes);
               const cat = toCat(event.service_name);
               const th = STATUS[event.status] ?? STATUS.Confirmed;
-              const therapists =
-                (event.therapists ?? [event.therapist_name])
-                  .filter(Boolean)
-                  .join(", ") || "—";
+              const therapists = getTherapistNames(event);
 
               return (
                 <div
@@ -534,6 +576,9 @@ export default function GanttChartBookings() {
     events: (SpaBooking & { timeStr: string })[];
   } | null>(null);
 
+  // `today` is only used to build the local-date label grid (Date object is
+  // fine here — it's purely for rendering "this is today's column", not for
+  // interpreting the API's schedule_date strings).
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
 
@@ -555,7 +600,9 @@ export default function GanttChartBookings() {
   const byDate = useMemo(() => {
     const map = new Map<string, (SpaBooking & { timeStr: string })[]>();
     bookings.forEach((b) => {
-      const { dateStr, timeStr } = parseISO(b.schedule_date);
+      // Timezone-safe: reads digits straight out of the string instead of
+      // letting `new Date()` reinterpret the trailing "Z" and shift the day.
+      const { dateStr, timeStr } = parseSchedule(b.schedule_date);
       const list = map.get(dateStr) ?? [];
       list.push({ ...b, timeStr });
       map.set(dateStr, list);
@@ -781,11 +828,7 @@ export default function GanttChartBookings() {
                           title={[
                             event.customer_name,
                             event.service_name,
-                            `Therapist: ${
-                              (event.therapists ?? [event.therapist_name]).join(
-                                ", ",
-                              ) || "—"
-                            }`,
+                            `Therapist: ${getTherapistNames(event)}`,
                             `${event.timeStr} – ${endTime}`,
                             `Durasi: ${fmtDur(event.duration_minutes)}`,
                             `Status: ${event.status}`,
@@ -878,9 +921,7 @@ export default function GanttChartBookings() {
                                     th.metaTx,
                                   )}
                                 >
-                                  {(
-                                    event.therapists ?? [event.therapist_name]
-                                  ).join(", ") || "—"}
+                                  {getTherapistNames(event)}
                                 </span>
                               </div>
                             )}

@@ -3,9 +3,11 @@ export function formatDate(
   {
     withTime = false,
     simpleFormat = false,
+    dateStyle,
   }: {
     withTime?: boolean;
     simpleFormat?: boolean;
+    dateStyle?: "short" | "medium" | "long" | "full";
   } = {},
 ) {
   if (!dateInput) return "-";
@@ -13,7 +15,9 @@ export function formatDate(
   const date = new Date(dateInput);
   if (isNaN(date.getTime())) return "-";
 
-  // const { withTime = false, onlyTime = false } = options;
+  if (dateStyle) {
+    return new Intl.DateTimeFormat("id-ID", { dateStyle }).format(date);
+  }
 
   const hari = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
   const bulan = [
@@ -37,11 +41,6 @@ export function formatDate(
   const tahun = date.getFullYear();
   const jam = String(date.getHours()).padStart(2, "0");
   const menit = String(date.getMinutes()).padStart(2, "0");
-
-  // ⏱️ hanya jam:menit
-  // if (onlyTime) {
-  //   return `${jam}:${menit}`;
-  // }
 
   if (simpleFormat && withTime) {
     return `${tanggal} ${namaBulan} ${tahun} Pukul ${jam}:${menit}`;
