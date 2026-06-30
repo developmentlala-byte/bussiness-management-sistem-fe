@@ -70,6 +70,7 @@ type DailySalesReport = {
     booking_code: string;
     payment_via: string;
     paid_at: string | null;
+    source?: "ads" | "direct";
   }>;
   totals: { total: number; cash: number; transfer: number };
   meta: { paid_count: number; line_count: number };
@@ -153,7 +154,10 @@ function BookingsPageInner() {
     const lines =
       report.lines.length > 0
         ? report.lines
-            .map((l, idx) => `${idx + 1}. ${l.label} : ${fmtRp(l.amount)}`)
+            .map((l, idx) => {
+              const suffix = l.source === "ads" ? " (IKLAN)" : "";
+              return `${idx + 1}. ${l.label} : ${fmtRp(l.amount)}${suffix}`;
+            })
             .join("\n")
         : "-";
 
