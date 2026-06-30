@@ -19,6 +19,7 @@ const itemSchema = z.object({
   name: z.string().min(1, "Nama varian wajib diisi"),
   duration_minutes: z.coerce.number().min(1, "Durasi harus dipilih"),
   retail_price: z.string().min(1, "Harga wajib diisi"),
+  is_active: z.boolean().optional(),
 });
 
 type ItemFormValues = z.infer<typeof itemSchema>;
@@ -58,6 +59,7 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({
       name: variant.name,
       duration_minutes: variant.duration_minutes,
       retail_price: String(variant.retail_price),
+      is_active: Boolean(variant.is_active),
     },
   });
 
@@ -94,6 +96,7 @@ const onSubmit = (data: ItemFormValues) => {
     name: data.name,
     duration_minutes: data.duration_minutes,
     retail_price: Number(data.retail_price),
+    is_active: Boolean(data.is_active),
   };
 
   updateItem(payload);
@@ -241,6 +244,29 @@ const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
                   {errors.retail_price.message}
                 </span>
               )}
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-2">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-foreground">
+                  Active
+                </span>
+                <span className="text-[11px] text-muted">
+                  Nonaktifkan varian agar tidak bisa dipilih saat booking.
+                </span>
+              </div>
+              <Controller
+                name="is_active"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    type="checkbox"
+                    checked={Boolean(field.value)}
+                    onChange={(e) => field.onChange(e.target.checked)}
+                    className="h-5 w-5 accent-[var(--accent)]"
+                  />
+                )}
+              />
             </div>
           </div>
 

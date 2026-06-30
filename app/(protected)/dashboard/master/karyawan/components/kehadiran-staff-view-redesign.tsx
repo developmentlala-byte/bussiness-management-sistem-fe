@@ -32,7 +32,7 @@ import { parseWallClockDate } from "@/app/libs/date-format";
 interface Attendance {
   id: number;
   bms_ms_staff_id: number;
-  date: string;
+  date: string;  
   clock_in: string | null;
   clock_out: string | null;
   status: "present" | "late" | "absent" | "half_day" | "on_leave";

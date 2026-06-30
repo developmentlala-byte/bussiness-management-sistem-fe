@@ -26,6 +26,7 @@ import {
   Plus,
   CaretLeft,
   CaretRight,
+  DownloadIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -43,6 +44,7 @@ import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
+import { apiGet } from "@/app/services/api";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -58,6 +60,20 @@ const getBookingStatusColor = (status: BookingStatus) => {
 };
 
 const columnHelper = createColumnHelper<SpaBooking>();
+
+type DailySalesReport = {
+  date: string;
+  lines: Array<{
+    label: string;
+    amount: number;
+    type: string;
+    booking_code: string;
+    payment_via: string;
+    paid_at: string | null;
+  }>;
+  totals: { total: number; cash: number; transfer: number };
+  meta: { paid_count: number; line_count: number };
+};
 
 function BookingsPageInner() {
   const timeZone = getLocalTimeZone();
@@ -112,6 +128,96 @@ function BookingsPageInner() {
     () => bookings.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0),
     [bookings],
   );
+
+  const resolveReportDate = () => {
+    const start = dateRange.start.toString();
+    const end = dateRange.end.toString();
+    return start === end ? start : end;
+  };
+
+  const formatReportDate = (dateStr: string) => {
+    const dt = new Date(`${dateStr}T00:00:00`);
+    const formatted = new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(dt);
+    return formatted.toUpperCase();
+  };
+
+  const fmtRp = (amount: number) =>
+    `Rp. ${Math.trunc(Number(amount || 0)).toLocaleString("id-ID")}`;
+
+  const buildReportText = (report: DailySalesReport) => {
+    const header = `REPORT SALES TANGGAL ${formatReportDate(report.date)}`;
+    const lines =
+      report.lines.length > 0
+        ? report.lines
+            .map((l, idx) => `${idx + 1}. ${l.label} : ${fmtRp(l.amount)}`)
+            .join("\n")
+        : "-";
+
+    const cash = report.totals.cash > 0 ? fmtRp(report.totals.cash) : "-";
+    const transfer =
+      report.totals.transfer > 0 ? fmtRp(report.totals.transfer) : "-";
+
+    return [
+      header,
+      "",
+      lines,
+      "",
+      `Total : ${fmtRp(report.totals.total)}`,
+      `Cash : ${cash}`,
+      `Transfer : ${transfer}`,
+    ].join("\n");
+  };
+
+  const fetchDailySalesReport = async (dateStr: string) => {
+    const res = await apiGet("/master/reports/daily-sales", {
+      date: dateStr,
+    });
+    return res?.data as DailySalesReport;
+  };
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadDailyReport = async () => {
+    const dateStr = resolveReportDate();
+    try {
+      const report = await fetchDailySalesReport(dateStr);
+      const text = buildReportText(report);
+      downloadTextFile(`report-sales-${dateStr}.txt`, text);
+    } catch (e: any) {
+      toast.danger("Gagal membuat report", {
+        description:
+          e?.response?.data?.message || "Tidak bisa mengambil data report.",
+      });
+    }
+  };
+
+  const handleSendDailyReportToWhatsApp = async () => {
+    const dateStr = resolveReportDate();
+    try {
+      const report = await fetchDailySalesReport(dateStr);
+      const text = buildReportText(report);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    } catch (e: any) {
+      toast.danger("Gagal membuat report", {
+        description:
+          e?.response?.data?.message || "Tidak bisa mengambil data report.",
+      });
+    }
+  };
 
   useEffect(() => {
     const paymentRef = searchParams.get("payment_ref");
@@ -496,7 +602,47 @@ function BookingsPageInner() {
           </button>
         </div>
 
-        <Button
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            variant="secondary"
+            style={{
+              borderRadius: "var(--radius-xl)",
+              border: "1px solid var(--border)",
+              padding: "var(--space-2) var(--space-4)",
+              fontSize: "var(--text-sm)",
+            }}
+            className="ml-auto sm:ml-0"
+            onClick={() => setIsChartVisible(!isChartVisible)}
+          >
+            <CalendarBlank
+              style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
+            />
+            <span className="hidden sm:inline">
+              {isChartVisible ? "Hide Timeline" : "Show Timeline"}
+            </span>
+            <span className="sm:hidden">Timeline</span>
+            {isChartVisible ? (
+              <CaretUp
+                style={{
+                  width: "var(--icon-xs)",
+                  height: "var(--icon-xs)",
+                  marginLeft: "var(--space-1)",
+                  color: "var(--muted)",
+                }}
+              />
+            ) : (
+              <CaretDown
+                style={{
+                  width: "var(--icon-xs)",
+                  height: "var(--icon-xs)",
+                  marginLeft: "var(--space-1)",
+                  color: "var(--muted)",
+                }}
+              />
+            )}
+          </Button>
+
+          {/* <Button
           variant="secondary"
           style={{
             borderRadius: "var(--radius-xl)",
@@ -504,36 +650,24 @@ function BookingsPageInner() {
             padding: "var(--space-2) var(--space-4)",
             fontSize: "var(--text-sm)",
           }}
-          className="ml-auto sm:ml-0"
-          onClick={() => setIsChartVisible(!isChartVisible)}
+          onClick={() => void handleDownloadDailyReport()}
         >
-          <CalendarBlank
-            style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
-          />
-          <span className="hidden sm:inline">
-            {isChartVisible ? "Hide Timeline" : "Show Timeline"}
-          </span>
-          <span className="sm:hidden">Timeline</span>
-          {isChartVisible ? (
-            <CaretUp
-              style={{
-                width: "var(--icon-xs)",
-                height: "var(--icon-xs)",
-                marginLeft: "var(--space-1)",
-                color: "var(--muted)",
-              }}
-            />
-          ) : (
-            <CaretDown
-              style={{
-                width: "var(--icon-xs)",
-                height: "var(--icon-xs)",
-                marginLeft: "var(--space-1)",
-                color: "var(--muted)",
-              }}
-            />
-          )}
-        </Button>
+          Download Report
+        </Button> */}
+
+          <Button
+            variant="secondary"
+            style={{
+              borderRadius: "var(--radius-xl)",
+              border: "1px solid var(--border)",
+              padding: "var(--space-2) var(--space-4)",
+              fontSize: "var(--text-sm)",
+            }}
+            onClick={() => void handleSendDailyReportToWhatsApp()}
+          >
+            <DownloadIcon className="size-5" /> Download Report
+          </Button>
+        </div>
       </div>
 
       {/* GANTT CHART */}
