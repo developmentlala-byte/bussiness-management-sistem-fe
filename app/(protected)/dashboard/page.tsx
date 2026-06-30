@@ -30,6 +30,7 @@ import { PaginatedApiResponse, SingleApiResponse } from "@/app/types/api";
 import { useApiFetch } from "@/app/libs/use-http";
 import { IDR } from "@/app/libs/idr";
 import { formatNumber } from "@/app/libs/formatNumber";
+import { formatWallClockDate } from "@/app/libs/date-format";
 import WeeklyBookingCard from "./components/dashboardWeeklyBooking";
 
 type DateRange = { start: DateValue; end: DateValue } | null;
@@ -741,10 +742,7 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
                       verticalAlign: "middle",
                     }}
                   >
-                    {new Date(booking.schedule_date).toLocaleDateString(
-                      "id-ID",
-                      { day: "numeric", month: "short", year: "numeric" },
-                    )}
+                    {formatWallClockDate(booking.schedule_date)}
                   </td>
                   <td
                     style={{

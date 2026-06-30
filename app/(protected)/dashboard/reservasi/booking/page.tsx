@@ -39,7 +39,7 @@ import {
 import GanttChartBookings from "./components/ganttChartBookings";
 import BookingModal from "./components/bookingModal";
 import { useApiFetch, usePost } from "@/app/libs/use-http";
-import { formatDate } from "@/app/libs/date-format";
+import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
@@ -218,13 +218,16 @@ function BookingsPageInner() {
             : "Spa Service";
 
         const therapistNames =
-          info.row.original.therapists
-            ?.map((t) => {
-              if (typeof t === "string") return t;
-              return t.name;
-            })
-            .filter(Boolean)
-            .join(", ") || "—";
+          Array.from(
+            new Set(
+              (info.row.original.therapists ?? [])
+                .map((t) => {
+                  if (typeof t === "string") return t;
+                  return t.name;
+                })
+                .filter(Boolean),
+            ),
+          ).join(", ") || "—";
 
         if (isBundle) {
           return (
@@ -252,11 +255,12 @@ function BookingsPageInner() {
     columnHelper.accessor("schedule_date", {
       header: "Schedule",
       cell: (info) => {
-        const date = new Date(info.row.original.schedule_date);
         return (
           <div className="flex flex-col">
             <span className="text-sm">
-              {formatDate(date, { withTime: true })}
+              {formatWallClockDate(info.row.original.schedule_date, {
+                withTime: true,
+              })}
             </span>
             <span className="text-xs text-muted-foreground">
               ({info.row.original.duration_minutes} min)
@@ -606,8 +610,8 @@ function BookingsPageInner() {
                             Schedule
                           </p>
                           <p className="font-semibold">
-                            {formatDate(
-                              new Date(selectedBooking.schedule_date),
+                            {formatWallClockDate(
+                              selectedBooking.schedule_date,
                               {
                                 withTime: true,
                               },

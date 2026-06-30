@@ -1,5 +1,7 @@
 "use client";
 
+import { formatWallClockDate } from "@/app/libs/date-format";
+
 import { useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
@@ -131,26 +133,16 @@ export interface Payment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const fmtDate = (iso: string) =>
-  new Intl.DateTimeFormat("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(iso));
+  formatWallClockDate(iso, { dateStyle: "medium" });
 
 export const fmtDateTime = (iso: string) =>
-  new Intl.DateTimeFormat("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
+  formatWallClockDate(iso, { withTime: true });
 
-export const fmtTime = (iso: string) =>
-  new Intl.DateTimeFormat("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
+export const fmtTime = (iso: string) => {
+  const formatted = formatWallClockDate(iso, { withTime: true });
+  const match = /Pukul (\d{2}:\d{2})$/.exec(formatted);
+  return match?.[1] ?? "-";
+};
 
 export const channelLabel: Record<string, string> = {
   bca: "BCA Virtual Account",

@@ -24,6 +24,7 @@ import {
   getBundleCalendarBounds,
   type BundlePricing,
 } from "@/app/libs/bundle-pricing";
+import { formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { BundlePromoCard } from "./bundlePromoCard";
 
@@ -48,10 +49,16 @@ const durFmt = (m: number): string => {
  * Bukan → { date: "2026-06-29", time: "00:00" } (salah timezone UTC+7)
  */
 const toFormDateTime = (isoString: string): { date: string; time: string } => {
-  const [datePart, timePart] = isoString.split("T");
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(
+    isoString ?? "",
+  );
+  if (!match) return { date: "", time: "" };
+
+  const [, datePart, hh, mm] = match;
+  const timePart = hh && mm ? `${hh}:${mm}` : "";
   return {
     date: datePart ?? "",
-    time: timePart ? timePart.substring(0, 5) : "",
+    time: timePart,
   };
 };
 
@@ -213,6 +220,106 @@ type BookingStep = "customer" | "services" | "datetime" | "confirm";
 interface CreatedBooking {
   id: number;
   booking_code: string;
+}
+
+function buildVariantUnitKeysFromBooking(
+  booking: SpaBooking,
+): Array<{ key: string; variantId: number; unitIndex: number }> {
+  const counts = new Map<number, number>();
+
+  (booking.service_variants ?? []).forEach((line) => {
+    if (isBundlePromoLine(line)) {
+      line.items.forEach((item) => {
+        const variantId = Number(item.id);
+        const qty = Math.max(1, Number(item.quantity ?? 1));
+        counts.set(variantId, (counts.get(variantId) ?? 0) + qty);
+      });
+      return;
+    }
+
+    counts.set(line.id, (counts.get(line.id) ?? 0) + 1);
+  });
+
+  const units: Array<{ key: string; variantId: number; unitIndex: number }> =
+    [];
+
+  Array.from(counts.entries())
+    .sort((a, b) => a[0] - b[0])
+    .forEach(([variantId, qty]) => {
+      for (let i = 0; i < qty; i++) {
+        units.push({
+          key: `${variantId}:${i + 1}`,
+          variantId,
+          unitIndex: i + 1,
+        });
+      }
+    });
+
+  return units;
+}
+
+function buildInitialLocalStaffAssignments(
+  booking: SpaBooking,
+): LocalStaffAssignment[] {
+  const units = buildVariantUnitKeysFromBooking(booking);
+  const therapistRows = (booking.therapists ?? []).filter(
+    (t): t is BookingTherapist => typeof t !== "string",
+  );
+
+  const therapistQueueByVariant = new Map<number, number[]>();
+  therapistRows.forEach((row) => {
+    const queue =
+      therapistQueueByVariant.get(row.service_variant_id) ?? ([] as number[]);
+    queue.push(row.staff_id);
+    therapistQueueByVariant.set(row.service_variant_id, queue);
+  });
+
+  const assignmentQueueByVariant = new Map<number, number[]>();
+  (booking.staff_assignments ?? []).forEach((row) => {
+    const queue =
+      assignmentQueueByVariant.get(row.service_variant_id) ?? ([] as number[]);
+    queue.push(row.staff_id);
+    assignmentQueueByVariant.set(row.service_variant_id, queue);
+  });
+
+  return units
+    .map((unit) => {
+      const therapistQueue = therapistQueueByVariant.get(unit.variantId) ?? [];
+      const assignmentQueue =
+        assignmentQueueByVariant.get(unit.variantId) ?? [];
+      const staffId = therapistQueue.shift() ?? assignmentQueue.shift() ?? 0;
+
+      return {
+        client_key: unit.key,
+        service_variant_id: unit.variantId,
+        staff_id: staffId,
+      };
+    })
+    .filter((row) => row.staff_id > 0);
+}
+
+function eligibleTherapistIdsForCategory(
+  slot: AvailableSlot,
+  categoryId: number | undefined,
+): number[] {
+  const byCategory =
+    categoryId && categoryId > 0
+      ? slot.available_therapists_by_category?.[categoryId]
+      : undefined;
+
+  if (Array.isArray(byCategory) && byCategory.length > 0) return byCategory;
+
+  return Array.isArray(slot.available_therapists)
+    ? slot.available_therapists.map((t) => t.id)
+    : [];
+}
+
+function requiredCountByVariantFromUnits(
+  units: Array<{ variantId: number }>,
+): Map<number, number> {
+  const map = new Map<number, number>();
+  units.forEach((u) => map.set(u.variantId, (map.get(u.variantId) ?? 0) + 1));
+  return map;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -439,25 +546,32 @@ function OrderPanel({
    */
   const therapistAssignmentByKey = useMemo(() => {
     const map = new Map<string, { id: number; name: string }>();
+    const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
+    const slotTherapists = slot?.available_therapists ?? [];
+    const existingTherapistsById = new Map(
+      existingTherapists.map(
+        (t) => [t.id, { id: t.id, name: t.name }] as const,
+      ),
+    );
 
     form.staffAssignments.forEach((assignment) => {
-      const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
-      const fromSlot = slot?.available_therapists.find(
-        (t) => t.id === assignment.staff_id,
-      );
+      const fromSlot = slotTherapists.find((t) => t.id === assignment.staff_id);
 
       if (fromSlot) {
         map.set(assignment.client_key, fromSlot);
         return;
       }
 
-      const fromExisting = existingTherapists.find(
-        (t) => t.service_variant_id === assignment.service_variant_id,
-      );
+      const fromExisting = existingTherapistsById.get(assignment.staff_id);
       if (fromExisting) {
+        map.set(assignment.client_key, fromExisting);
+        return;
+      }
+
+      if (assignment.staff_id > 0) {
         map.set(assignment.client_key, {
-          id: fromExisting.id,
-          name: fromExisting.name,
+          id: assignment.staff_id,
+          name: `Therapist #${assignment.staff_id}`,
         });
       }
     });
@@ -511,18 +625,17 @@ function OrderPanel({
       if (variant) variantCategoryMap.set(variantId, variant.categoryId);
     });
 
-    const used: Record<number, true> = {};
+    const usedByVariant = new Map<number, Record<number, true>>();
     const newAssignments: LocalStaffAssignment[] = [];
 
     for (const unit of selectedServiceVariantUnits) {
       const categoryId = variantCategoryMap.get(unit.variantId);
-      if (categoryId === undefined) continue;
-
-      const eligibleIds =
-        slot.available_therapists_by_category[categoryId] ?? [];
+      const eligibleIds = eligibleTherapistIdsForCategory(slot, categoryId);
+      const usedForVariant =
+        usedByVariant.get(unit.variantId) ?? ({} as Record<number, true>);
       let selectedId: number | null = null;
       for (const id of eligibleIds) {
-        if (!used[id]) {
+        if (!usedForVariant[id]) {
           selectedId = id;
           break;
         }
@@ -535,7 +648,8 @@ function OrderPanel({
           service_variant_id: unit.variantId,
           staff_id: selectedId,
         });
-        used[selectedId] = true;
+        usedForVariant[selectedId] = true;
+        usedByVariant.set(unit.variantId, usedForVariant);
       }
     }
 
@@ -586,19 +700,25 @@ function OrderPanel({
       );
       if (missingUnits.length === 0) return prev;
 
-      const used: Record<number, true> = {};
+      const usedByVariant = new Map<number, Record<number, true>>();
       prev.staffAssignments.forEach((a) => {
-        if (a.staff_id > 0) used[a.staff_id] = true;
+        if (a.staff_id <= 0) return;
+        const used = usedByVariant.get(a.service_variant_id) ?? {};
+        used[a.staff_id] = true;
+        usedByVariant.set(a.service_variant_id, used);
       });
 
       const newAssignments = missingUnits.map((unit) => {
         const variant = availableVariants.find((v) => v.id === unit.variantId);
         const categoryId = variant?.categoryId ?? 0;
-        const eligibleIds =
-          slot.available_therapists_by_category[categoryId] ?? [];
+        const eligibleIds = eligibleTherapistIdsForCategory(slot, categoryId);
+        const usedForVariant = usedByVariant.get(unit.variantId) ?? {};
         let staffId =
-          eligibleIds.find((id) => !used[id]) ?? eligibleIds[0] ?? 0;
-        if (staffId > 0) used[staffId] = true;
+          eligibleIds.find((id) => !usedForVariant[id]) ?? eligibleIds[0] ?? 0;
+        if (staffId > 0) {
+          usedForVariant[staffId] = true;
+          usedByVariant.set(unit.variantId, usedForVariant);
+        }
         return {
           client_key: unit.key,
           service_variant_id: unit.variantId,
@@ -639,6 +759,50 @@ function OrderPanel({
     form.staffAssignments.length > 0 &&
     form.staffAssignments.every((a) => a.staff_id > 0);
 
+  const requiredCountsByVariant = useMemo(() => {
+    return requiredCountByVariantFromUnits(selectedServiceVariantUnits);
+  }, [selectedServiceVariantUnits]);
+
+  const variantTherapistCountErrors = useMemo(() => {
+    const errors: Array<{
+      variantId: number;
+      variantName: string;
+      requiredCount: number;
+      selectedUniqueCount: number;
+    }> = [];
+
+    const assignedUniqueCounts = new Map<number, number>();
+    const assignedByVariant = new Map<number, Set<number>>();
+    form.staffAssignments.forEach((a) => {
+      if (a.staff_id <= 0) return;
+      const set = assignedByVariant.get(a.service_variant_id) ?? new Set();
+      set.add(a.staff_id);
+      assignedByVariant.set(a.service_variant_id, set);
+    });
+    assignedByVariant.forEach((set, variantId) =>
+      assignedUniqueCounts.set(variantId, set.size),
+    );
+
+    requiredCountsByVariant.forEach((requiredCount, variantId) => {
+      const selectedUniqueCount = assignedUniqueCounts.get(variantId) ?? 0;
+      if (selectedUniqueCount < requiredCount) {
+        const name =
+          availableVariants.find((v) => v.id === variantId)?.name ??
+          `Layanan #${variantId}`;
+        errors.push({
+          variantId,
+          variantName: name,
+          requiredCount,
+          selectedUniqueCount,
+        });
+      }
+    });
+
+    return errors;
+  }, [form.staffAssignments, requiredCountsByVariant, availableVariants]);
+
+  const meetsVariantTherapistCounts = variantTherapistCountErrors.length === 0;
+
   const allUnitsAssigned =
     selectedServiceVariantUnits.length === 0
       ? allAssignmentsValid
@@ -663,7 +827,8 @@ function OrderPanel({
     hasItems &&
     !!form.date &&
     !!form.slotTime &&
-    allUnitsAssigned;
+    allUnitsAssigned &&
+    meetsVariantTherapistCounts;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F8F4F0]">
@@ -874,15 +1039,7 @@ function OrderPanel({
               <div className="bg-white rounded-xl border border-[#EDE8E3] p-3">
                 <p className="text-[13px] text-[#1A1614]">
                   {form.date
-                    ? new Date(`${form.date}T00:00:00`).toLocaleDateString(
-                        "id-ID",
-                        {
-                          weekday: "long",
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        },
-                      )
+                    ? formatWallClockDate(form.date, { dateStyle: "full" })
                     : "—"}{" "}
                   · {form.slotTime} · {durFmt(totalDur)}
                 </p>
@@ -894,6 +1051,15 @@ function OrderPanel({
               <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
                 Therapist
               </p>
+              {variantTherapistCountErrors.length > 0 && (
+                <div className="mb-2 rounded-xl border border-[#F2D7DE] bg-[#FEF1F4] px-3 py-2 text-[12px] text-[#7A736E]">
+                  {variantTherapistCountErrors.map((e) => (
+                    <div key={e.variantId}>
+                      {e.variantName}: pilih {e.requiredCount} therapist berbeda
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Loading state: slots masih di-fetch dan belum ada fallback */}
               {!availableSlots && existingTherapists.length === 0 && (
@@ -914,17 +1080,28 @@ function OrderPanel({
                   const currentSlot = availableSlots?.find(
                     (s) => s.slot_time === form.slotTime,
                   );
-                  const eligibleIds =
-                    currentSlot?.available_therapists_by_category[categoryId] ??
-                    [];
+                  const eligibleIds = currentSlot
+                    ? eligibleTherapistIdsForCategory(currentSlot, categoryId)
+                    : [];
 
                   // Kalau slots sudah loaded → filter berdasarkan eligibility
                   // Kalau slots belum loaded → tampilkan semua dari existingTherapists
                   const therapistOptions: AvailableTherapist[] = availableSlots
-                    ? availableTherapistsForSlot.filter((t) =>
-                        eligibleIds.includes(t.id),
-                      )
+                    ? eligibleIds.length > 0
+                      ? availableTherapistsForSlot.filter((t) =>
+                          eligibleIds.includes(t.id),
+                        )
+                      : availableTherapistsForSlot
                     : availableTherapistsForSlot;
+
+                  const requiredCount =
+                    requiredCountsByVariant.get(unit.variantId) ?? 1;
+                  const usedForSameVariant = new Set<number>();
+                  form.staffAssignments.forEach((a) => {
+                    if (a.service_variant_id !== unit.variantId) return;
+                    if (a.client_key === unit.key) return;
+                    if (a.staff_id > 0) usedForSameVariant.add(a.staff_id);
+                  });
 
                   const selectedTherapist = therapistAssignmentByKey.get(
                     unit.key,
@@ -936,7 +1113,7 @@ function OrderPanel({
                       className="bg-white rounded-xl border border-[#EDE8E3] p-3"
                     >
                       <p className="text-[12px] text-[#7A736E] mb-1">
-                        {variant?.name}
+                        {variant?.name ?? `Layanan #${unit.variantId}`}
                         {unit.unitIndex > 0 ? ` · #${unit.unitIndex}` : ""}
                       </p>
                       <Dropdown>
@@ -969,16 +1146,29 @@ function OrderPanel({
                                 <Label>Tidak ada therapist tersedia</Label>
                               </Dropdown.Item>
                             ) : (
-                              therapistOptions.map((t) => (
-                                <Dropdown.Item
-                                  key={t.id}
-                                  id={String(t.id)}
-                                  textValue={t.name}
-                                  className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
-                                >
-                                  <Label>{t.name}</Label>
-                                </Dropdown.Item>
-                              ))
+                              therapistOptions.map((t) =>
+                                (() => {
+                                  const isDisabled =
+                                    requiredCount > 1 &&
+                                    usedForSameVariant.has(t.id);
+                                  return (
+                                    <Dropdown.Item
+                                      key={t.id}
+                                      id={String(t.id)}
+                                      textValue={t.name}
+                                      isDisabled={isDisabled}
+                                      className={[
+                                        "rounded-xl px-3 py-2 text-[13px] font-medium",
+                                        isDisabled
+                                          ? "text-[#B5AFA9] cursor-not-allowed"
+                                          : "text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer",
+                                      ].join(" ")}
+                                    >
+                                      <Label>{t.name}</Label>
+                                    </Dropdown.Item>
+                                  );
+                                })(),
+                              )
                             )}
                           </Dropdown.Menu>
                         </Dropdown.Popover>
@@ -1212,7 +1402,10 @@ export default function BookingModal({
   const [form, setForm] = useState<FormState>({
     name: isEdit ? (initialBooking?.customer_name ?? "") : "",
     phone: isEdit ? (initialBooking?.customer_phone ?? "") : "",
-    staffAssignments: isEdit ? (initialBooking?.staff_assignments ?? []) : [],
+    staffAssignments:
+      isEdit && initialBooking
+        ? buildInitialLocalStaffAssignments(initialBooking)
+        : [],
     date: initialEditDateTime.date,
     slotTime: initialEditDateTime.time,
   });
@@ -1603,7 +1796,7 @@ export default function BookingModal({
         bookingId: Number(initialBooking.id),
         customer_name: form.name,
         customer_phone: form.phone,
-        schedule_date: form.date,
+        schedule_date: (form.date ?? "").slice(0, 10),
         slot_time: form.slotTime,
         service_variants: serviceVariants,
         line_items: lineItems,
@@ -1614,7 +1807,7 @@ export default function BookingModal({
     createBooking.mutate({
       customer_name: form.name,
       customer_phone: form.phone,
-      schedule_date: form.date,
+      schedule_date: (form.date ?? "").slice(0, 10),
       slot_time: form.slotTime,
       service_variants: serviceVariants,
       line_items: lineItems,
