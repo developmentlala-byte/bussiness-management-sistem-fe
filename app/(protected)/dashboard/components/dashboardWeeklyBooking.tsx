@@ -25,7 +25,7 @@ export default function WeeklyBookingCard({
 
   const counts = useMemo(() => {
     if (data.length === 0) return Array(7).fill(0) as number[];
-    return data.map((d) => d.count);
+    return data.map((d) => Number(d.count));
   }, [data]);
 
   const total = counts.reduce((a, b) => a + b, 0);

@@ -36,10 +36,13 @@ import WeeklyBookingCard from "./components/dashboardWeeklyBooking";
 type DateRange = { start: DateValue; end: DateValue } | null;
 
 type BookingSummaryResponse = {
-  total_bookings: { value: number; trend: number };
-  total_paid_bookings: { value: number; trend: number };
-  total_unpaid_bookings: { value: number; trend: number };
-  total_cancelled_bookings: { value: number; trend: number };
+  data: {
+    total_bookings: { value: number; trend: number };
+    total_paid_bookings: { value: number; trend: number };
+    total_unpaid_bookings: { value: number; trend: number };
+    total_cancelled_bookings: { value: number; trend: number };
+  };
+
   meta: { compared_days: number };
 };
 
@@ -892,10 +895,12 @@ export default function DashboardOverviewPage() {
     return [
       {
         label: "Total Booking",
-        value: formatNumber(totalBookingsResponse?.total_bookings?.value ?? 0),
-        trend: `${Math.abs(totalBookingsResponse?.total_bookings?.trend ?? 0)}%`,
+        value: formatNumber(
+          totalBookingsResponse?.data?.total_bookings?.value ?? 0,
+        ),
+        trend: `${Math.abs(totalBookingsResponse?.data?.total_bookings?.trend ?? 0)}%`,
         trendDirection:
-          (totalBookingsResponse?.total_bookings?.trend ?? 0) >= 0
+          (totalBookingsResponse?.data?.total_bookings?.trend ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
         context: `vs last ${subLabel}`,
@@ -1002,6 +1007,10 @@ export default function DashboardOverviewPage() {
       setDateRange({ start: end.set({ month: 1, day: 1 }), end });
   };
 
+  console.log(
+    "🚀 ~ DashboardOverviewPage ~ weeklyBookingResponse:",
+    weeklyBookingResponse,
+  );
   return (
     <div
       ref={contentRef}
