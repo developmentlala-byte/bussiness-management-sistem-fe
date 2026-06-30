@@ -28,7 +28,7 @@ import { AttendanceSelfieModal } from "@/app/components/modal/attendance-selfie-
 import { formatLateTime } from "@/app/libs/format-late-time";
 import { parseWallClockDate } from "@/app/libs/date-format";
 
-// --- TYPES & CONSTANTS ---
+// --- TYPES & CONSTANTS --
 interface Attendance {
   id: number;
   bms_ms_staff_id: number;
@@ -130,6 +130,15 @@ const submitSelfie = async (
   return apiPost(endpoint, formData);
 };
 
+const parseAttendanceDateTime = (datetimeStr: string | null) => {
+  if (!datetimeStr) return null;
+  if (/[zZ]$/.test(datetimeStr) || /[+-]\d{2}:\d{2}$/.test(datetimeStr)) {
+    const parsed = new Date(datetimeStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return parseWallClockDate(datetimeStr);
+};
+
 const syncQueuedUploads = async (onSynced?: () => void) => {
   const queue = readQueue();
   if (!queue.length) return;
@@ -151,7 +160,7 @@ const syncQueuedUploads = async (onSynced?: () => void) => {
 
 const formatTime = (datetimeStr: string | null) => {
   if (!datetimeStr) return "—";
-  const parsed = parseWallClockDate(datetimeStr);
+  const parsed = parseAttendanceDateTime(datetimeStr);
   if (!parsed) return "—";
   return new Intl.DateTimeFormat("id-ID", {
     hour: "2-digit",
