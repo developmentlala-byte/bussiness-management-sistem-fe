@@ -67,6 +67,19 @@ const APP_BASE_URL =
 const resolvePhotoUrl = (path?: string | null) =>
   path ? `${APP_BASE_URL}${path}` : null;
 
+const normalizeAttendanceDateKey = (dateInput: string) => {
+  if (!dateInput) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) return dateInput;
+  const parsed = new Date(dateInput);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return dateInput.split("T")[0];
+};
+
 const readQueue = (): QueueItem[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -573,7 +586,7 @@ export default function KehadiranStaffView() {
   const attendanceMap = useMemo(() => {
     const map: Record<number, Record<string, Attendance>> = {};
     attendances.forEach((att) => {
-      const key = att.date.split("T")[0];
+      const key = normalizeAttendanceDateKey(att.date);
       if (!map[att.bms_ms_staff_id]) map[att.bms_ms_staff_id] = {};
       map[att.bms_ms_staff_id][key] = att;
     });
