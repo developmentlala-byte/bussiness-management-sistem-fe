@@ -26,6 +26,7 @@ import { apiPost } from "@/app/services/api";
 import { Staff } from "@/app/types/staff";
 import { AttendanceSelfieModal } from "@/app/components/modal/attendance-selfie-modal";
 import { formatLateTime } from "@/app/libs/format-late-time";
+import { parseWallClockDate } from "@/app/libs/date-format";
 
 // --- TYPES & CONSTANTS ---
 interface Attendance {
@@ -58,7 +59,9 @@ type SheetView = "action" | "detail";
 
 const QUEUE_KEY = "attendance-selfie-queue-v1";
 const APP_BASE_URL =
-  process.env.NEXT_PUBLIC_API_STORAGE_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_STORAGE_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, "") ??
+  "http://localhost:8000";
 
 // --- HELPER FUNCTIONS ---
 const resolvePhotoUrl = (path?: string | null) =>
@@ -135,10 +138,12 @@ const syncQueuedUploads = async (onSynced?: () => void) => {
 
 const formatTime = (datetimeStr: string | null) => {
   if (!datetimeStr) return "—";
+  const parsed = parseWallClockDate(datetimeStr);
+  if (!parsed) return "—";
   return new Intl.DateTimeFormat("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(datetimeStr));
+  }).format(parsed);
 };
 
 const getStatusConfig = (attendance?: Attendance) => {
