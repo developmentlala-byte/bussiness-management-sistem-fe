@@ -73,6 +73,15 @@ type DailySalesReport = {
     source?: "ads" | "direct";
   }>;
   totals: { total: number; cash: number; transfer: number };
+  totals_by_source?: {
+    ads?: { total: number; cash: number; transfer: number; paid_count: number };
+    direct?: {
+      total: number;
+      cash: number;
+      transfer: number;
+      paid_count: number;
+    };
+  };
   meta: { paid_count: number; line_count: number };
 };
 
@@ -165,6 +174,13 @@ function BookingsPageInner() {
     const transfer =
       report.totals.transfer > 0 ? fmtRp(report.totals.transfer) : "-";
 
+    const adsTotal = report.totals_by_source?.ads?.total ?? 0;
+    const adsCash = report.totals_by_source?.ads?.cash ?? 0;
+    const adsTransfer = report.totals_by_source?.ads?.transfer ?? 0;
+    const directTotal = report.totals_by_source?.direct?.total ?? 0;
+    const directCash = report.totals_by_source?.direct?.cash ?? 0;
+    const directTransfer = report.totals_by_source?.direct?.transfer ?? 0;
+
     return [
       header,
       "",
@@ -173,6 +189,13 @@ function BookingsPageInner() {
       `Total : ${fmtRp(report.totals.total)}`,
       `Cash : ${cash}`,
       `Transfer : ${transfer}`,
+      "",
+      `Iklan : ${adsTotal > 0 ? fmtRp(adsTotal) : "-"}`,
+      `  Cash : ${adsCash > 0 ? fmtRp(adsCash) : "-"}`,
+      `  Transfer : ${adsTransfer > 0 ? fmtRp(adsTransfer) : "-"}`,
+      `Direct : ${directTotal > 0 ? fmtRp(directTotal) : "-"}`,
+      `  Cash : ${directCash > 0 ? fmtRp(directCash) : "-"}`,
+      `  Transfer : ${directTransfer > 0 ? fmtRp(directTransfer) : "-"}`,
     ].join("\n");
   };
 
