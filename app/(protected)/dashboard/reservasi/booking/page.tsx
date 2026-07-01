@@ -27,6 +27,8 @@ import {
   CaretLeft,
   CaretRight,
   DownloadIcon,
+  Trash,
+  PaperPlaneRight,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -39,12 +41,13 @@ import {
 } from "@internationalized/date";
 import GanttChartBookings from "./components/ganttChartBookings";
 import BookingModal from "./components/bookingModal";
-import { useApiFetch, usePost } from "@/app/libs/use-http";
+import { useApiFetch, usePost, useRemove } from "@/app/libs/use-http";
 import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
+import { AlertDialog } from "@heroui/react";
 import StatusFilterDropdown from "./components/status-filter-dropdown";
 
 const getBookingStatusColor = (status: BookingStatus) => {
@@ -82,11 +85,13 @@ type DailySalesReport = {
 
 type CreatedBookingsReport = {
   date: string;
+  statuses?: string[] | null;
   bookings: SpaBooking[];
   totals: {
     total_count: number;
     total_amount: number;
     by_status: Record<string, number>;
+    by_source?: Record<string, number>;
   };
 };
 
@@ -164,7 +169,6 @@ function BookingsPageInner() {
     [filteredBookings],
   );
 
-
   const formatReportDate = (dateStr: string) => {
     const dt = new Date(`${dateStr}T00:00:00`);
     const formatted = new Intl.DateTimeFormat("id-ID", {
@@ -239,8 +243,12 @@ function BookingsPageInner() {
 
   const fetchCreatedBookingsReport = async (
     dateStr: string,
+    statuses: string[],
   ): Promise<CreatedBookingsReport> => {
-    const res = await apiGet("/master/reports/bookings-created", { date: dateStr });
+    const res = await apiGet("/master/reports/bookings-created", {
+      date: dateStr,
+      statuses,
+    });
     return res?.data as CreatedBookingsReport;
   };
 
@@ -257,7 +265,8 @@ function BookingsPageInner() {
                   : "Spa Service";
 
               const amount = `Rp. ${Math.trunc(Number(b.total_amount || 0)).toLocaleString("id-ID")}`;
-              return `${idx + 1}. ${b.booking_code} · ${b.customer_name} · ${serviceLabel} : ${amount}`;
+              const source = (b.source ?? "direct").toUpperCase();
+              return `${idx + 1}. ${b.booking_code} · ${b.customer_name} · ${serviceLabel} · ${source} : ${amount}`;
             })
             .join("\n")
         : "-";
@@ -266,6 +275,13 @@ function BookingsPageInner() {
     const statusLines = Object.entries(report.totals.by_status ?? {}).map(
       ([k, v]) => `${k} : ${v}`,
     );
+    const bySource = report.totals.by_source ?? {};
+    const adsCount = bySource.ads ?? 0;
+    const directCount = bySource.direct ?? 0;
+    const filterStatusLine =
+      report.statuses && report.statuses.length
+        ? `Filter Status : ${report.statuses.join(", ")}`
+        : null;
 
     return [
       header,
@@ -274,6 +290,9 @@ function BookingsPageInner() {
       "",
       `Total Booking : ${report.totals.total_count}`,
       `Total Amount : ${totalAmountText}`,
+      `Booking Ads : ${adsCount}`,
+      `Booking Direct : ${directCount}`,
+      ...(filterStatusLine ? [filterStatusLine] : []),
       ...(statusLines.length ? ["", ...statusLines] : []),
     ].join("\n");
   };
@@ -281,11 +300,14 @@ function BookingsPageInner() {
   const handleDownloadBookingCreatedReport = async () => {
     const dateStr = currentDateObj.toString();
     try {
-      const report = await fetchCreatedBookingsReport(dateStr);
+      const report = await fetchCreatedBookingsReport(dateStr, activeStatusIds);
       const text = buildCreatedBookingsReportText(report);
       downloadTextFile(`report-booking-created-${dateStr}.txt`, text);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      const err = e as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
       toast.danger("Gagal membuat report booking", {
         description:
           err?.response?.data?.message ||
@@ -295,6 +317,70 @@ function BookingsPageInner() {
     }
   };
 
+  const sendWhatsAppText = async (text: string) => {
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    const openFallback = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success("Teks report disalin", {
+          description: "Buka WhatsApp lalu paste teks report.",
+        });
+      } catch {
+        toast.warning("Teks report terlalu panjang", {
+          description: "Silakan download report, lalu copy paste ke WhatsApp.",
+        });
+      }
+      window.open("https://wa.me/", "_blank");
+    };
+
+    if (url.length > 1800) {
+      await openFallback();
+      return;
+    }
+
+    const opened = window.open(url, "_blank");
+    if (!opened) {
+      await openFallback();
+    }
+  };
+
+  const handleSendBookingCreatedReportToWhatsApp = async () => {
+    const dateStr = currentDateObj.toString();
+    try {
+      const report = await fetchCreatedBookingsReport(dateStr, activeStatusIds);
+      const text = buildCreatedBookingsReportText(report);
+      await sendWhatsAppText(text);
+    } catch (e: unknown) {
+      const err = e as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      toast.danger("Gagal membuat report booking", {
+        description:
+          err?.response?.data?.message ||
+          err?.message ||
+          "Tidak bisa mengambil data report.",
+      });
+    }
+  };
+
+  const { mutateAsync: deleteBooking, isPending: isDeletingBooking } =
+    useRemove<unknown, { id: number }>(
+      (payload) => `/master/bookings/${payload.id}`,
+      {
+        invalidate: [["bookings"]],
+        onError: (err: any) => {
+          toast.warning("Gagal menghapus booking", {
+            description:
+              err?.message ?? "Terjadi kesalahan saat menghapus booking.",
+          });
+        },
+        onSuccess: () => {
+          toast.success("Booking berhasil dihapus");
+        },
+      },
+    );
 
   useEffect(() => {
     const paymentRef = searchParams.get("payment_ref");
@@ -473,6 +559,22 @@ function BookingsPageInner() {
         </div>
       ),
     }),
+    columnHelper.accessor("source", {
+      header: "Source",
+      cell: (info) => {
+        const src = info.row.original.source ?? "direct";
+        const label = src === "ads" ? "ADS" : "DIRECT";
+        return (
+          <Chip
+            size="sm"
+            variant="flat"
+            color={src === "ads" ? "warning" : "default"}
+          >
+            {label}
+          </Chip>
+        );
+      },
+    }),
     columnHelper.accessor("totalAmount", {
       header: "Amount",
       cell: (info) => (
@@ -518,6 +620,51 @@ function BookingsPageInner() {
           >
             <PencilSimple className="size-4" weight="regular" />
           </Button>
+          <AlertDialog>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="danger"
+              aria-label="Delete booking"
+            >
+              <Trash className="size-4" weight="regular" />
+            </Button>
+            <AlertDialog.Backdrop>
+              <AlertDialog.Container>
+                <AlertDialog.Dialog className="sm:max-w-[420px]">
+                  <AlertDialog.CloseTrigger />
+                  <AlertDialog.Header>
+                    <AlertDialog.Icon status="danger" />
+                    <AlertDialog.Heading>
+                      Hapus booking ini?
+                    </AlertDialog.Heading>
+                  </AlertDialog.Header>
+                  <AlertDialog.Body>
+                    <p>
+                      Ini akan menghapus booking{" "}
+                      <strong>{info.row.original.booking_code}</strong> dan
+                      datanya. Aksi ini tidak bisa dibatalkan.
+                    </p>
+                  </AlertDialog.Body>
+                  <AlertDialog.Footer>
+                    <Button slot="close" variant="tertiary">
+                      Cancel
+                    </Button>
+                    <Button
+                      slot="close"
+                      variant="danger"
+                      onClick={() =>
+                        void deleteBooking({ id: Number(info.row.original.id) })
+                      }
+                      isDisabled={isDeletingBooking}
+                    >
+                      {isDeletingBooking ? "Deleting..." : "Delete"}
+                    </Button>
+                  </AlertDialog.Footer>
+                </AlertDialog.Dialog>
+              </AlertDialog.Container>
+            </AlertDialog.Backdrop>
+          </AlertDialog>
         </div>
       ),
       footer: () => null,
@@ -750,6 +897,19 @@ function BookingsPageInner() {
           >
             <DownloadIcon className="size-5" /> Download Report
           </Button>
+
+          <Button
+            variant="secondary"
+            style={{
+              borderRadius: "var(--radius-xl)",
+              border: "1px solid var(--border)",
+              padding: "var(--space-2) var(--space-4)",
+              fontSize: "var(--text-sm)",
+            }}
+            onClick={() => void handleSendBookingCreatedReportToWhatsApp()}
+          >
+            <PaperPlaneRight className="size-5" /> Kirim WA
+          </Button>
         </div>
       </div>
 
@@ -769,7 +929,11 @@ function BookingsPageInner() {
         </div>
       </div>
 
-      <DataTable columns={columns} data={filteredBookings} defaultPageSize={10} />
+      <DataTable
+        columns={columns}
+        data={filteredBookings}
+        defaultPageSize={10}
+      />
 
       {/* DETAIL DRAWER */}
       <Drawer state={detailDrawer}>
