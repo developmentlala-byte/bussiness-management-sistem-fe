@@ -373,7 +373,8 @@ function BookingsPageInner() {
         onError: (err: any) => {
           toast.warning("Gagal menghapus booking", {
             description:
-              err?.message ?? "Terjadi kesalahan saat menghapus booking.",
+              err.response?.data.message ??
+              "Terjadi kesalahan saat menghapus booking.",
           });
         },
         onSuccess: () => {
