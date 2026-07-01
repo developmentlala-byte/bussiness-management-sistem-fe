@@ -45,6 +45,7 @@ import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect"
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
+import StatusFilterDropdown from "./components/status-filter-dropdown";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -77,6 +78,16 @@ type DailySalesReport = {
     direct?: { count: number };
   };
   meta: { paid_count: number; line_count: number };
+};
+
+type CreatedBookingsReport = {
+  date: string;
+  bookings: SpaBooking[];
+  totals: {
+    total_count: number;
+    total_amount: number;
+    by_status: Record<string, number>;
+  };
 };
 
 function BookingsPageInner() {
@@ -128,16 +139,31 @@ function BookingsPageInner() {
 
   const bookings = useMemo(() => data?.data ?? [], [data]);
 
-  const totalAmount = useMemo(
-    () => bookings.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0),
-    [bookings],
+  const BOOKING_STATUS_OPTIONS = useMemo(
+    () => [
+      { id: "Pending", label: "Pending", color: "bg-amber-400" },
+      { id: "Confirmed", label: "Confirmed", color: "bg-indigo-400" },
+      { id: "Completed", label: "Completed", color: "bg-emerald-400" },
+      { id: "Cancelled", label: "Cancelled", color: "bg-red-500" },
+    ],
+    [],
   );
 
-  const resolveReportDate = () => {
-    const start = dateRange.start.toString();
-    const end = dateRange.end.toString();
-    return start === end ? start : end;
-  };
+  const [activeStatusIds, setActiveStatusIds] = useState<string[]>(
+    BOOKING_STATUS_OPTIONS.map((s) => s.id),
+  );
+
+  const filteredBookings = useMemo(() => {
+    const set = new Set(activeStatusIds);
+    return bookings.filter((b) => set.has(b.status));
+  }, [activeStatusIds, bookings]);
+
+  const totalAmount = useMemo(
+    () =>
+      filteredBookings.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0),
+    [filteredBookings],
+  );
+
 
   const formatReportDate = (dateStr: string) => {
     const dt = new Date(`${dateStr}T00:00:00`);
@@ -200,33 +226,75 @@ function BookingsPageInner() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadDailyReport = async () => {
-    const dateStr = resolveReportDate();
+  const formatReportDateLabel = (dateStr: string) => {
+    const dt = new Date(`${dateStr}T00:00:00`);
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+      .format(dt)
+      .toUpperCase();
+  };
+
+  const fetchCreatedBookingsReport = async (
+    dateStr: string,
+  ): Promise<CreatedBookingsReport> => {
+    const res = await apiGet("/master/reports/bookings-created", { date: dateStr });
+    return res?.data as CreatedBookingsReport;
+  };
+
+  const buildCreatedBookingsReportText = (report: CreatedBookingsReport) => {
+    const header = `REPORT BOOKING (CREATED) TANGGAL ${formatReportDateLabel(report.date)}`;
+    const rows =
+      report.bookings.length > 0
+        ? report.bookings
+            .map((b, idx) => {
+              const lines = b.service_variants ?? [];
+              const serviceLabel =
+                lines.length > 0
+                  ? lines.map((line) => getBookingLineLabel(line)).join(", ")
+                  : "Spa Service";
+
+              const amount = `Rp. ${Math.trunc(Number(b.total_amount || 0)).toLocaleString("id-ID")}`;
+              return `${idx + 1}. ${b.booking_code} · ${b.customer_name} · ${serviceLabel} : ${amount}`;
+            })
+            .join("\n")
+        : "-";
+
+    const totalAmountText = `Rp. ${Math.trunc(Number(report.totals.total_amount || 0)).toLocaleString("id-ID")}`;
+    const statusLines = Object.entries(report.totals.by_status ?? {}).map(
+      ([k, v]) => `${k} : ${v}`,
+    );
+
+    return [
+      header,
+      "",
+      rows,
+      "",
+      `Total Booking : ${report.totals.total_count}`,
+      `Total Amount : ${totalAmountText}`,
+      ...(statusLines.length ? ["", ...statusLines] : []),
+    ].join("\n");
+  };
+
+  const handleDownloadBookingCreatedReport = async () => {
+    const dateStr = currentDateObj.toString();
     try {
-      const report = await fetchDailySalesReport(dateStr);
-      const text = buildReportText(report);
-      downloadTextFile(`report-sales-${dateStr}.txt`, text);
-    } catch (e: any) {
-      toast.danger("Gagal membuat report", {
+      const report = await fetchCreatedBookingsReport(dateStr);
+      const text = buildCreatedBookingsReportText(report);
+      downloadTextFile(`report-booking-created-${dateStr}.txt`, text);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      toast.danger("Gagal membuat report booking", {
         description:
-          e?.response?.data?.message || "Tidak bisa mengambil data report.",
+          err?.response?.data?.message ||
+          err?.message ||
+          "Tidak bisa mengambil data report.",
       });
     }
   };
 
-  const handleSendDailyReportToWhatsApp = async () => {
-    const dateStr = resolveReportDate();
-    try {
-      const report = await fetchDailySalesReport(dateStr);
-      const text = buildReportText(report);
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-    } catch (e: any) {
-      toast.danger("Gagal membuat report", {
-        description:
-          e?.response?.data?.message || "Tidak bisa mengambil data report.",
-      });
-    }
-  };
 
   useEffect(() => {
     const paymentRef = searchParams.get("payment_ref");
@@ -612,6 +680,12 @@ function BookingsPageInner() {
         </div>
 
         <div className="flex items-center justify-center gap-3">
+          <StatusFilterDropdown
+            statuses={BOOKING_STATUS_OPTIONS}
+            defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
+            onChange={(ids) => setActiveStatusIds(ids)}
+            className="hidden sm:inline-flex"
+          />
           <Button
             variant="secondary"
             style={{
@@ -672,7 +746,7 @@ function BookingsPageInner() {
               padding: "var(--space-2) var(--space-4)",
               fontSize: "var(--text-sm)",
             }}
-            onClick={() => void handleSendDailyReportToWhatsApp()}
+            onClick={() => void handleDownloadBookingCreatedReport()}
           >
             <DownloadIcon className="size-5" /> Download Report
           </Button>
@@ -695,7 +769,7 @@ function BookingsPageInner() {
         </div>
       </div>
 
-      <DataTable columns={columns} data={bookings} defaultPageSize={10} />
+      <DataTable columns={columns} data={filteredBookings} defaultPageSize={10} />
 
       {/* DETAIL DRAWER */}
       <Drawer state={detailDrawer}>
