@@ -10,6 +10,7 @@ import {
   CircleNotch,
   Camera,
   ArrowLeft,
+  FileArrowDownIcon,
 } from "@phosphor-icons/react";
 import {
   Dropdown,
@@ -17,9 +18,11 @@ import {
   InputGroup,
   Avatar,
   RangeCalendar,
+  Button,
 } from "@heroui/react";
 import { getLocalTimeZone, today } from "@internationalized/date";
 import NextImage from "next/image";
+import * as XLSX from "xlsx";
 
 import { useApiFetch } from "@/app/libs/use-http";
 import { apiPost } from "@/app/services/api";
@@ -32,7 +35,7 @@ import { parseWallClockDate } from "@/app/libs/date-format";
 interface Attendance {
   id: number;
   bms_ms_staff_id: number;
-  date: string;  
+  date: string;
   clock_in: string | null;
   clock_out: string | null;
   status: "present" | "late" | "absent" | "half_day" | "on_leave";
@@ -520,9 +523,15 @@ export default function KehadiranStaffView() {
   const timeZone = getLocalTimeZone();
   const currentDateObj = today(timeZone);
 
+  // Get Monday as first day of week
+  const dayOfWeek = currentDateObj.toDate(timeZone).getDay();
+  // In JavaScript getDay() returns 0 for Sunday, 1 for Monday...6 for Saturday
+  // We want Monday as first day, so adjust
+  const daysToSubtract = (dayOfWeek + 6) % 7;
+
   const [dateRange, setDateRange] = useState({
-    start: currentDateObj.subtract({ days: 6 }),
-    end: currentDateObj,
+    start: currentDateObj.subtract({ days: daysToSubtract }),
+    end: currentDateObj.subtract({ days: daysToSubtract }).add({ days: 6 }),
   });
   const [search, setSearch] = useState("");
   const [selectedCell, setSelectedCell] = useState<{
@@ -713,6 +722,45 @@ export default function KehadiranStaffView() {
       ? `${rangeFormatter.format(dateRange.start.toDate(timeZone))} – ${rangeFormatter.format(dateRange.end.toDate(timeZone))}, ${endYear}`
       : `${rangeFormatter.format(dateRange.start.toDate(timeZone))}, ${startYear} – ${rangeFormatter.format(dateRange.end.toDate(timeZone))}, ${endYear}`;
 
+  // Excel export function
+  const handleExportExcel = useCallback(() => {
+    // Prepare data
+    const data: any[] = [];
+
+    // Header row: Staff Name, followed by each date
+    const headerRow = [
+      "Nama Staf",
+      ...gridDays.map((day) => `${day.name}, ${day.shortDate}`),
+    ];
+    data.push(headerRow);
+
+    // Data rows for each staff
+    displayStaffs.forEach((staff) => {
+      const row: any[] = [
+        `${staff.first_name} ${staff.last_name || ""}`.trim(),
+      ];
+      gridDays.forEach((day) => {
+        const att = attendanceMap[staff.id]?.[day.dateStr];
+        let cellValue = "—";
+        if (att) {
+          const inTime = att.clock_in ? formatTime(att.clock_in) : "—";
+          const outTime = att.clock_out ? formatTime(att.clock_out) : "—";
+          cellValue = `${inTime} / ${outTime}`;
+        }
+        row.push(cellValue);
+      });
+      data.push(row);
+    });
+
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan Kehadiran");
+
+    // Download
+    XLSX.writeFile(wb, `Laporan_Kehadiran_${startDateStr}_${endDateStr}.xlsx`);
+  }, [displayStaffs, gridDays, attendanceMap, startDateStr, endDateStr]);
+
   return (
     <div className="space-y-5">
       {/* FILTER HEADER */}
@@ -731,62 +779,75 @@ export default function KehadiranStaffView() {
           </InputGroup>
         </TextField>
 
-        <div className="flex h-10 w-full items-center justify-between overflow-visible rounded-full border border-border shadow-sm md:w-auto">
-          <button
-            onClick={() => handleDateChange("prev")}
-            className="flex h-full w-10 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent active:scale-95"
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            onPress={handleExportExcel}
+            color="primary"
+            startContent={<FileArrowDownIcon weight="bold" />}
+            className="rounded-full"
           >
-            <CaretLeft weight="bold" className="h-3.5 w-3.5" />
-          </button>
+            Export Excel
+          </Button>
 
-          <Dropdown>
-            <Dropdown.Trigger>
-              <div className="flex flex-1 cursor-pointer items-center justify-center gap-2 px-4 text-[13px] font-semibold text-foreground outline-none hover:bg-surface-secondary/50 md:min-w-52">
-                <CalendarBlank
-                  weight="bold"
-                  className="h-3.5 w-3.5 shrink-0 text-muted"
-                />
-                <span className="truncate">{displayDateText}</span>
-              </div>
-            </Dropdown.Trigger>
-            <Dropdown.Popover
-              placement="bottom"
-              className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
+          <div className="flex h-10 w-full items-center justify-between overflow-visible rounded-full border border-border shadow-sm md:w-auto">
+            <button
+              onClick={() => handleDateChange("prev")}
+              className="flex h-full w-10 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent active:scale-95"
             >
-              <RangeCalendar
-                aria-label="Pilih rentang jadwal"
-                value={dateRange}
-                onChange={(val) => {
-                  setDateRange(val);
-                  setSelectedCell(null);
-                }}
-                className="w-full"
-              >
-                <RangeCalendar.Header>
-                  <RangeCalendar.Heading />
-                  <RangeCalendar.NavButton slot="previous" />
-                  <RangeCalendar.NavButton slot="next" />
-                </RangeCalendar.Header>
-                <RangeCalendar.Grid>
-                  <RangeCalendar.GridHeader>
-                    {(day) => (
-                      <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>
-                    )}
-                  </RangeCalendar.GridHeader>
-                  <RangeCalendar.GridBody>
-                    {(date) => <RangeCalendar.Cell date={date} />}
-                  </RangeCalendar.GridBody>
-                </RangeCalendar.Grid>
-              </RangeCalendar>
-            </Dropdown.Popover>
-          </Dropdown>
+              <CaretLeft weight="bold" className="h-3.5 w-3.5" />
+            </button>
 
-          <button
-            onClick={() => handleDateChange("next")}
-            className="flex h-full w-10 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent active:scale-95"
-          >
-            <CaretRight weight="bold" className="h-3.5 w-3.5" />
-          </button>
+            <Dropdown>
+              <Dropdown.Trigger>
+                <div className="flex flex-1 cursor-pointer items-center justify-center gap-2 px-4 text-[13px] font-semibold text-foreground outline-none hover:bg-surface-secondary/50 md:min-w-52">
+                  <CalendarBlank
+                    weight="bold"
+                    className="h-3.5 w-3.5 shrink-0 text-muted"
+                  />
+                  <span className="truncate">{displayDateText}</span>
+                </div>
+              </Dropdown.Trigger>
+              <Dropdown.Popover
+                placement="bottom"
+                className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
+              >
+                <RangeCalendar
+                  aria-label="Pilih rentang jadwal"
+                  value={dateRange}
+                  onChange={(val) => {
+                    setDateRange(val);
+                    setSelectedCell(null);
+                  }}
+                  className="w-full"
+                >
+                  <RangeCalendar.Header>
+                    <RangeCalendar.Heading />
+                    <RangeCalendar.NavButton slot="previous" />
+                    <RangeCalendar.NavButton slot="next" />
+                  </RangeCalendar.Header>
+                  <RangeCalendar.Grid>
+                    <RangeCalendar.GridHeader>
+                      {(day) => (
+                        <RangeCalendar.HeaderCell>
+                          {day}
+                        </RangeCalendar.HeaderCell>
+                      )}
+                    </RangeCalendar.GridHeader>
+                    <RangeCalendar.GridBody>
+                      {(date) => <RangeCalendar.Cell date={date} />}
+                    </RangeCalendar.GridBody>
+                  </RangeCalendar.Grid>
+                </RangeCalendar>
+              </Dropdown.Popover>
+            </Dropdown>
+
+            <button
+              onClick={() => handleDateChange("next")}
+              className="flex h-full w-10 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent active:scale-95"
+            >
+              <CaretRight weight="bold" className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
