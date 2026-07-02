@@ -6,6 +6,7 @@ import {
   Tag,
   Crown,
   SquaresFour,
+  Ticket,
 } from "@phosphor-icons/react";
 
 const SIDEBAR_DATA = {
@@ -28,6 +29,7 @@ const SIDEBAR_DATA = {
         },
         { title: "Karyawan", url: "/master/karyawan", icon: Users },
         { title: "Bundle Promo", url: "/master/bundle-promo", icon: Tag },
+        { title: "Voucher", url: "/master/voucher", icon: Ticket },
         { title: "Paket Membership", url: "/master/membership", icon: Crown },
       ],
     },

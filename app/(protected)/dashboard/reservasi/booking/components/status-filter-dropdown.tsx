@@ -121,14 +121,14 @@ export default function StatusFilterDropdown({
         />
       </button>
 
-      <button
+      {/* <button
         type="button"
         onClick={onMoreClick}
         aria-label="More actions"
         className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground transition-colors hover:bg-surface-secondary/50 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <MoreHorizontal className="h-4 w-4" />
-      </button>
+      </button> */}
 
       {open && (
         <div

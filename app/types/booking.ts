@@ -21,6 +21,8 @@ export interface BookingServiceVariantLine {
   name: string;
   retail_price: number;
   slug: string;
+  quantity?: number;
+  is_free?: boolean;
 }
 
 export interface BookingBundlePromoLine {
@@ -59,6 +61,18 @@ export interface BookingTherapist {
 export interface BookingStaffAssignment {
   service_variant_id: number;
   staff_id: number;
+}
+
+export interface AppliedVoucherSnapshot {
+  id: number;
+  code: string;
+  name: string;
+  discount_type: "percentage" | "nominal";
+  discount_value: number;
+  min_booking_amount?: number | null;
+  max_discount_amount?: number | null;
+  promo_type?: "bogo" | null;
+  discount_amount: number;
 }
 
 export interface AvailableTherapist {
@@ -108,6 +122,7 @@ export function getBookingLineLabel(line: BookingLineSnapshot): string {
 export interface SpaBooking {
   id: number | string;
   booking_code: string;
+  source?: "ads" | "direct";
   booking_bundle_promos?: BookingBundlePromoLine[];
   customer_name: string;
   customer_phone: string;
@@ -118,6 +133,9 @@ export interface SpaBooking {
   schedule_date: string;
   duration_minutes: number;
   service_variants: BookingLineSnapshot[];
+  subtotal_amount?: number;
+  discount_amount?: number;
+  applied_voucher?: AppliedVoucherSnapshot | null;
   total_amount?: number;
   payment_status: PaymentStatus;
   created_at: string;

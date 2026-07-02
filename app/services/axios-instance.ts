@@ -41,11 +41,11 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("API Error:", {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message,
-    });
+    // console.error("API Error:", {
+    //   status: error.response?.status,
+    //   data: error.response?.data,
+    //   message: error.message,
+    // });
 
     if (error.response?.status === 401) {
       localStorage.setItem("auth_error", "expired");
@@ -56,7 +56,10 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response?.status === 422) {
-      localStorage.setItem("validasi_error", error.response.data.message);
+      localStorage.setItem(
+        "validasi_error",
+        error.response?.data.message || "An error occurred",
+      );
     }
 
     // toast.error(error.response.data.message || "An error occurred");

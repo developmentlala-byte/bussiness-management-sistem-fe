@@ -6,8 +6,10 @@ import { CreditCardIcon } from "@phosphor-icons/react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePost, useApiFetch, usePut } from "@/app/libs/use-http";
+import { apiPost } from "@/app/services/api";
 import { toast } from "@heroui/react";
 import {
+  AppliedVoucherSnapshot,
   SpaBooking,
   BookingTherapist,
   isBundlePromoLine,
@@ -183,6 +185,13 @@ interface Variant {
   categoryId: number;
 }
 
+interface BogoEligibleService {
+  id: number;
+  name: string;
+  duration_minutes: number;
+  retail_price: number;
+}
+
 interface ApiVariantRow {
   id: number;
   name: string;
@@ -195,7 +204,7 @@ interface ApiVariantRow {
 }
 
 type CartLine =
-  | { kind: "service"; variant: Variant }
+  | { kind: "service"; variant: Variant; isFree?: boolean }
   | { kind: "bundle"; bundle: BundlePromo; pricing: BundlePricing };
 
 /** Therapist yang sudah ter-assign di booking existing (edit mode) */
@@ -213,6 +222,7 @@ interface FormState {
   staffAssignments: LocalStaffAssignment[];
   date: string;
   slotTime: string;
+  voucherCode: string;
 }
 
 type BookingStep = "customer" | "services" | "datetime" | "confirm";
@@ -220,6 +230,21 @@ type BookingStep = "customer" | "services" | "datetime" | "confirm";
 interface CreatedBooking {
   id: number;
   booking_code: string;
+  total_amount?: number;
+  subtotal_amount?: number;
+  discount_amount?: number;
+  applied_voucher?: AppliedVoucherSnapshot | null;
+}
+
+interface VoucherPreviewResponse {
+  data: {
+    subtotal_amount: number;
+    discount_amount: number;
+    total_amount: number;
+    applied_voucher: AppliedVoucherSnapshot | null;
+    eligible_free_services?: BogoEligibleService[];
+    bogo_cap_amount?: number | null;
+  };
 }
 
 function buildVariantUnitKeysFromBooking(
@@ -328,17 +353,29 @@ interface ServiceCardProps {
   v: Variant;
   selected: boolean;
   onToggle: () => void;
+  disabled?: boolean;
+  helperText?: string;
+  priceOverride?: number;
 }
 
-function ServiceCard({ v, selected, onToggle }: ServiceCardProps) {
+function ServiceCard({
+  v,
+  selected,
+  onToggle,
+  disabled = false,
+  helperText,
+  priceOverride,
+}: ServiceCardProps) {
   return (
     <button
       onClick={onToggle}
+      disabled={disabled}
       className={[
         "relative text-left w-full rounded-xl border p-3 transition-all duration-150 cursor-pointer min-w-0",
         selected
           ? "border-[#B55368] bg-[#FEF1F4]"
           : "border-[#EDE8E3] bg-white hover:border-[#E8B4C0]",
+        disabled ? "opacity-45 cursor-not-allowed" : "",
       ].join(" ")}
     >
       {selected && (
@@ -358,8 +395,11 @@ function ServiceCard({ v, selected, onToggle }: ServiceCardProps) {
       <p
         className={`text-[13px] font-bold ${selected ? "text-[#B55368]" : "text-[#1A1614]"}`}
       >
-        {idr(v.price)}
+        {idr(priceOverride ?? v.price)}
       </p>
+      {helperText && (
+        <p className="mt-1 text-[11px] text-[#7A736E]">{helperText}</p>
+      )}
     </button>
   );
 }
@@ -367,19 +407,23 @@ function ServiceCard({ v, selected, onToggle }: ServiceCardProps) {
 interface CartRowProps {
   v: Variant;
   onRemove: () => void;
+  isFree?: boolean;
 }
 
-function CartRow({ v, onRemove }: CartRowProps) {
+function CartRow({ v, onRemove, isFree = false }: CartRowProps) {
   return (
     <div className="flex items-center gap-2 py-2 border-b border-[#EDE8E3] last:border-0">
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-[#1A1614] truncate">
           {v.name}
         </p>
-        <p className="text-[11px] text-[#B5AFA9]">{durFmt(v.duration)}</p>
+        <p className="text-[11px] text-[#B5AFA9]">
+          {durFmt(v.duration)}
+          {isFree ? " · Bonus gratis" : ""}
+        </p>
       </div>
       <span className="text-[13px] font-semibold text-[#1A1614] shrink-0">
-        {idr(v.price)}
+        {idr(isFree ? 0 : v.price)}
       </span>
       <button
         onClick={onRemove}
@@ -460,14 +504,23 @@ interface OrderPanelProps {
    *  fallback saat availableSlots belum selesai di-fetch (edit mode). */
   existingTherapists: ExistingTherapist[];
   onBook: () => void;
+  onApplyVoucher: () => void;
   submitLabel: string;
   onBack: () => void;
   isMobile: boolean;
   selectedBundle: BundlePromo | null;
   customerBookingCount: number | null;
   isSubmitPending: boolean;
+  isApplyingVoucher: boolean;
   viewingMonth: string;
   setViewingMonth: (month: string) => void;
+  pricingSummary: {
+    subtotalAmount: number;
+    discountAmount: number;
+    totalAmount: number;
+    appliedVoucher: AppliedVoucherSnapshot | null;
+    isApplied: boolean;
+  };
 }
 
 function OrderPanel({
@@ -485,14 +538,17 @@ function OrderPanel({
   availableVariants,
   existingTherapists,
   onBook,
+  onApplyVoucher,
   submitLabel,
   onBack,
   isMobile,
   selectedBundle,
   customerBookingCount,
   isSubmitPending,
+  isApplyingVoucher,
   viewingMonth,
   setViewingMonth,
+  pricingSummary,
 }: OrderPanelProps) {
   const bundleCalendarBounds = selectedBundle
     ? getBundleCalendarBounds(selectedBundle)
@@ -905,8 +961,9 @@ function OrderPanel({
                   />
                 ) : (
                   <CartRow
-                    key={`service-${line.variant.id}`}
+                    key={`service-${line.variant.id}-${line.isFree ? "free" : "paid"}`}
                     v={line.variant}
+                    isFree={!!line.isFree}
                     onRemove={() => onRemoveLine(index)}
                   />
                 ),
@@ -1186,20 +1243,84 @@ function OrderPanel({
       <div className="shrink-0 border-t border-[#EDE8E3] bg-white px-4 py-3">
         {(step === "services" || step === "datetime" || step === "confirm") &&
           cartLines.length > 0 && (
-            <div className="mb-3 space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="text-[#7A736E]">Total duration</span>
-                <span className="font-medium text-[#1A1614]">
-                  {durFmt(totalDur)}
-                </span>
+            <div className="mb-3 space-y-3">
+              <div className="rounded-xl border border-[#EDE8E3] bg-[#FFFCFA] p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em]">
+                    Voucher
+                  </p>
+                  {pricingSummary.appliedVoucher && (
+                    <span className="text-[11px] font-medium text-[#2F9E44]">
+                      {pricingSummary.appliedVoucher.code} aktif
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className={inputCls}
+                    placeholder="Masukkan kode voucher"
+                    value={form.voucherCode}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        voucherCode: e.target.value.toUpperCase(),
+                      }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={onApplyVoucher}
+                    disabled={isApplyingVoucher}
+                    className={`shrink-0 rounded-xl px-3 py-2 text-[12px] font-semibold transition-colors ${
+                      isApplyingVoucher
+                        ? "cursor-not-allowed bg-[#EDE8E3] text-[#B5AFA9]"
+                        : "bg-[#B55368] text-white hover:bg-[#C96480]"
+                    }`}
+                  >
+                    {isApplyingVoucher ? "Memeriksa..." : "Terapkan"}
+                  </button>
+                </div>
+                {pricingSummary.appliedVoucher && (
+                  <p className="text-[12px] text-[#7A736E]">
+                    Hemat{" "}
+                    <span className="font-semibold text-[#B55368]">
+                      {idr(pricingSummary.discountAmount)}
+                    </span>
+                  </p>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm font-semibold text-[#1A1614]">
-                  Total
-                </span>
-                <span className="text-base font-bold text-[#B55368]">
-                  {idr(totalAmt)}
-                </span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#7A736E]">Total duration</span>
+                  <span className="font-medium text-[#1A1614]">
+                    {durFmt(totalDur)}
+                  </span>
+                </div>
+                {pricingSummary.discountAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#7A736E]">Subtotal</span>
+                      <span className="font-medium text-[#1A1614]">
+                        {idr(pricingSummary.subtotalAmount)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#7A736E]">Diskon Voucher</span>
+                      <span className="font-medium text-[#2F9E44]">
+                        -{idr(pricingSummary.discountAmount)}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-sm font-semibold text-[#1A1614]">
+                    Total
+                  </span>
+                  <span className="text-base font-bold text-[#B55368]">
+                    {idr(pricingSummary.totalAmount)}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1335,6 +1456,7 @@ function buildInitialCartLines(
     const variantFromApi = availableVariants.find((v) => v.id === line.id);
     return {
       kind: "service" as const,
+      isFree: !!line.is_free,
       variant: {
         id: line.id,
         catKey:
@@ -1344,7 +1466,7 @@ function buildInitialCartLines(
         subCat: variantFromApi?.subCat ?? "Selected Service",
         name: line.name,
         duration: line.duration_minutes ?? 0,
-        price: Number(line.retail_price ?? 0),
+        price: Number(line.is_free ? 0 : (line.retail_price ?? 0)),
         categoryId: variantFromApi?.categoryId ?? 0,
       },
     };
@@ -1408,6 +1530,7 @@ export default function BookingModal({
         : [],
     date: initialEditDateTime.date,
     slotTime: initialEditDateTime.time,
+    voucherCode: isEdit ? (initialBooking?.applied_voucher?.code ?? "") : "",
   });
   const [viewingMonth, setViewingMonth] = useState<string>(() => {
     if (initialEditDateTime.date) return initialEditDateTime.date.slice(0, 7);
@@ -1419,10 +1542,41 @@ export default function BookingModal({
       ? {
           id: Number(initialBooking.id),
           booking_code: initialBooking.booking_code,
+          total_amount: Number(initialBooking.total_amount ?? 0),
+          subtotal_amount: Number(
+            initialBooking.subtotal_amount ?? initialBooking.total_amount ?? 0,
+          ),
+          discount_amount: Number(initialBooking.discount_amount ?? 0),
+          applied_voucher: initialBooking.applied_voucher ?? null,
         }
       : null,
   );
   const [mobileView, setMobileView] = useState<"browse" | "order">("browse");
+  const [voucherPreview, setVoucherPreview] = useState<{
+    code: string;
+    subtotalAmount: number;
+    discountAmount: number;
+    totalAmount: number;
+    appliedVoucher: AppliedVoucherSnapshot | null;
+    eligibleFreeServices: BogoEligibleService[];
+    bogoCapAmount: number | null;
+  } | null>(
+    isEdit && initialBooking
+      ? {
+          code: initialBooking.applied_voucher?.code ?? "",
+          subtotalAmount: Number(
+            initialBooking.subtotal_amount ?? initialBooking.total_amount ?? 0,
+          ),
+          discountAmount: Number(initialBooking.discount_amount ?? 0),
+          totalAmount: Number(initialBooking.total_amount ?? 0),
+          appliedVoucher: initialBooking.applied_voucher ?? null,
+          eligibleFreeServices: [],
+          bogoCapAmount: null,
+        }
+      : null,
+  );
+  const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
+  const [focusBogo, setFocusBogo] = useState(false);
 
   // Sync viewingMonth kalau user pilih tanggal di bulan berbeda
   useEffect(() => {
@@ -1431,6 +1585,30 @@ export default function BookingModal({
       setViewingMonth((prev) => (prev === newMonth ? prev : newMonth));
     }
   }, [form.date]);
+
+  useEffect(() => {
+    if (!focusBogo) return;
+
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById("booking-modal-bogo-bonus")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setFocusBogo(false);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [focusBogo]);
+
+  useEffect(() => {
+    const hasPaidService = cartLines.some(
+      (line) => line.kind === "service" && !line.isFree,
+    );
+    if (hasPaidService) return;
+
+    setCartLines((prev) =>
+      prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+    );
+  }, [cartLines]);
 
   // ── API Fetches ────────────────────────────────────────────────────────────
   const { data: variantsResp, isLoading: variantsLoading } = useApiFetch<{
@@ -1521,9 +1699,9 @@ export default function BookingModal({
   }, [
     viewingMonth,
     selectedServiceVariantIds,
-    selectedBundle?.id,
+    selectedBundle,
     isEdit,
-    initialBooking?.id,
+    initialBooking,
   ]);
 
   const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
@@ -1555,9 +1733,9 @@ export default function BookingModal({
   }, [
     form.date,
     selectedServiceVariantIds,
-    selectedBundle?.id,
+    selectedBundle,
     isEdit,
-    initialBooking?.id,
+    initialBooking,
   ]);
 
   const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
@@ -1576,7 +1754,11 @@ export default function BookingModal({
   const totalAmt = cartLines.reduce((sum, line) => {
     return (
       sum +
-      (line.kind === "bundle" ? line.pricing.finalPrice : line.variant.price)
+      (line.kind === "bundle"
+        ? line.pricing.finalPrice
+        : line.isFree
+          ? 0
+          : line.variant.price)
     );
   }, 0);
 
@@ -1588,6 +1770,44 @@ export default function BookingModal({
         : line.variant.duration)
     );
   }, 0);
+
+  const lineItemsPayload = useMemo(
+    () =>
+      cartLines.map((line) =>
+        line.kind === "bundle"
+          ? { type: "bundle_promo" as const, bundle_promo_id: line.bundle.id }
+          : {
+              type: "service_variant" as const,
+              service_variant_id: line.variant.id,
+              is_free: !!line.isFree,
+            },
+      ),
+    [cartLines],
+  );
+
+  const pricingSummary = useMemo(() => {
+    const hasAppliedVoucher =
+      !!voucherPreview &&
+      voucherPreview.code === form.voucherCode.trim().toUpperCase() &&
+      !!form.date &&
+      !!lineItemsPayload.length;
+
+    return {
+      subtotalAmount: hasAppliedVoucher
+        ? voucherPreview.subtotalAmount
+        : totalAmt,
+      discountAmount: hasAppliedVoucher ? voucherPreview.discountAmount : 0,
+      totalAmount: hasAppliedVoucher ? voucherPreview.totalAmount : totalAmt,
+      appliedVoucher: hasAppliedVoucher ? voucherPreview.appliedVoucher : null,
+      isApplied: hasAppliedVoucher,
+    };
+  }, [
+    form.date,
+    form.voucherCode,
+    lineItemsPayload.length,
+    totalAmt,
+    voucherPreview,
+  ]);
 
   const cartSummaryLabel = useMemo(() => {
     if (cartLines.length === 0) return "";
@@ -1668,9 +1888,14 @@ export default function BookingModal({
       customer_phone?: string;
       schedule_date: string;
       slot_time: string;
+      voucher_code?: string;
       service_variants: Array<{ variant_id: number; staff_id: number }>;
       line_items: Array<
-        | { type: "service_variant"; service_variant_id: number }
+        | {
+            type: "service_variant";
+            service_variant_id: number;
+            is_free?: boolean;
+          }
         | { type: "bundle_promo"; bundle_promo_id: number }
       >;
     }
@@ -1693,9 +1918,14 @@ export default function BookingModal({
       customer_phone?: string;
       schedule_date: string;
       slot_time: string;
+      voucher_code?: string;
       service_variants: Array<{ variant_id: number; staff_id: number }>;
       line_items: Array<
-        | { type: "service_variant"; service_variant_id: number }
+        | {
+            type: "service_variant";
+            service_variant_id: number;
+            is_free?: boolean;
+          }
         | { type: "bundle_promo"; bundle_promo_id: number }
       >;
     }
@@ -1749,15 +1979,92 @@ export default function BookingModal({
     [selectedBundle],
   );
 
-  const inCart = (id: number) =>
-    cartLines.some((l) => l.kind === "service" && l.variant.id === id);
+  const inPaidCart = (id: number) =>
+    cartLines.some(
+      (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
+    );
+
+  const inFreeCart = (id: number) =>
+    cartLines.some(
+      (l) => l.kind === "service" && !!l.isFree && l.variant.id === id,
+    );
+
+  const isBogoActive =
+    voucherPreview?.appliedVoucher?.promo_type === "bogo" &&
+    form.voucherCode.trim().toUpperCase() === voucherPreview.code;
+
+  const bogoEligibleServices = voucherPreview?.eligibleFreeServices ?? [];
+
+  const maxPaidServicePrice = cartLines.reduce((max, line) => {
+    if (line.kind !== "service" || line.isFree) return max;
+    return Math.max(max, Number(line.variant.price ?? 0));
+  }, 0);
+
+  const bogoCapAmount = Number(
+    voucherPreview?.bogoCapAmount ?? maxPaidServicePrice,
+  );
+
+  const isBogoEligibleId = (id: number) =>
+    bogoEligibleServices.some((row) => Number(row.id) === Number(id));
 
   const toggleService = (v: Variant) => {
     setCartLines((prev) => {
-      const services = prev.filter((l) => l.kind === "service");
+      const freeServices = prev.filter(
+        (l) => l.kind === "service" && !!l.isFree,
+      );
+      const services = prev.filter((l) => l.kind === "service" && !l.isFree);
       const exists = services.some((l) => l.variant.id === v.id);
-      if (exists) return services.filter((l) => l.variant.id !== v.id);
-      return [...services, { kind: "service", variant: v }];
+      const nextPaid = exists
+        ? services.filter((l) => l.variant.id !== v.id)
+        : [...services, { kind: "service" as const, variant: v }];
+
+      return nextPaid.length > 0 ? [...nextPaid, ...freeServices] : nextPaid;
+    });
+  };
+
+  const toggleFreeService = (row: BogoEligibleService) => {
+    if (!isBogoActive) {
+      toast.warning("Terapkan voucher BOGO dulu sebelum memilih bonus gratis");
+      return;
+    }
+
+    if (Number(row.retail_price ?? 0) > bogoCapAmount) {
+      toast.warning(
+        "Bonus tidak bisa dipilih karena harganya lebih tinggi dari layanan utama",
+      );
+      return;
+    }
+
+    setCartLines((prev) => {
+      const withoutFree = prev.filter(
+        (line) => !(line.kind === "service" && !!line.isFree),
+      );
+      const alreadySelected = prev.some(
+        (line) =>
+          line.kind === "service" &&
+          !!line.isFree &&
+          line.variant.id === row.id,
+      );
+
+      if (alreadySelected) return withoutFree;
+
+      const baseVariant = availableVariants.find((v) => v.id === row.id);
+      const variant: Variant = baseVariant
+        ? { ...baseVariant, price: 0 }
+        : {
+            id: row.id,
+            catKey: "promo",
+            subCat: "Bonus Voucher",
+            name: row.name,
+            duration: Number(row.duration_minutes ?? 0),
+            price: 0,
+            categoryId: 0,
+          };
+
+      return [
+        ...withoutFree,
+        { kind: "service" as const, variant, isFree: true },
+      ];
     });
   };
 
@@ -1776,20 +2083,77 @@ export default function BookingModal({
   const removeLine = (index: number) =>
     setCartLines((prev) => prev.filter((_, i) => i !== index));
 
-  const handleBook = () => {
-    const lineItems = cartLines.map((line) =>
-      line.kind === "bundle"
-        ? { type: "bundle_promo" as const, bundle_promo_id: line.bundle.id }
-        : {
-            type: "service_variant" as const,
-            service_variant_id: line.variant.id,
-          },
-    );
+  const handleApplyVoucher = async () => {
+    const normalizedCode = form.voucherCode.trim().toUpperCase();
 
+    if (!normalizedCode) {
+      setCartLines((prev) =>
+        prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+      );
+      setVoucherPreview(null);
+      return;
+    }
+
+    if (!form.date || !form.slotTime) {
+      toast.warning("Pilih tanggal dan jam booking dulu sebelum pakai voucher");
+      return;
+    }
+
+    if (lineItemsPayload.length === 0) {
+      toast.warning("Pilih layanan dulu sebelum pakai voucher");
+      return;
+    }
+
+    try {
+      setIsApplyingVoucher(true);
+      const response = await apiPost<VoucherPreviewResponse>(
+        "/master/vouchers/preview-booking",
+        {
+          voucher_code: normalizedCode,
+          schedule_date: form.date.slice(0, 10),
+          slot_time: form.slotTime,
+          line_items: lineItemsPayload,
+        },
+      );
+
+      setVoucherPreview({
+        code: normalizedCode,
+        subtotalAmount: Number(response.data.subtotal_amount ?? totalAmt),
+        discountAmount: Number(response.data.discount_amount ?? 0),
+        totalAmount: Number(response.data.total_amount ?? totalAmt),
+        appliedVoucher: response.data.applied_voucher ?? null,
+        eligibleFreeServices: response.data.eligible_free_services ?? [],
+        bogoCapAmount: response.data.bogo_cap_amount ?? null,
+      });
+      setForm((prev) => ({ ...prev, voucherCode: normalizedCode }));
+      if (response.data.applied_voucher?.promo_type === "bogo") {
+        setBrowseMode("services");
+        setStep("services");
+        setFocusBogo(true);
+      }
+      toast.success("Voucher berhasil diterapkan");
+    } catch (error: any) {
+      setCartLines((prev) =>
+        prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+      );
+      setVoucherPreview(null);
+      toast.warning(error?.message ?? "Voucher tidak valid untuk booking ini");
+    } finally {
+      setIsApplyingVoucher(false);
+    }
+  };
+
+  const handleBook = () => {
     const serviceVariants = form.staffAssignments.map((a) => ({
       variant_id: a.service_variant_id,
       staff_id: a.staff_id,
     }));
+
+    const normalizedCode = form.voucherCode.trim().toUpperCase();
+    if (normalizedCode && !pricingSummary.isApplied) {
+      toast.warning("Klik terapkan voucher dulu supaya total booking akurat");
+      return;
+    }
 
     if (isEdit && initialBooking?.id) {
       updateBooking.mutate({
@@ -1798,8 +2162,9 @@ export default function BookingModal({
         customer_phone: form.phone,
         schedule_date: (form.date ?? "").slice(0, 10),
         slot_time: form.slotTime,
+        voucher_code: normalizedCode || undefined,
         service_variants: serviceVariants,
-        line_items: lineItems,
+        line_items: lineItemsPayload,
       });
       return;
     }
@@ -1809,8 +2174,9 @@ export default function BookingModal({
       customer_phone: form.phone,
       schedule_date: (form.date ?? "").slice(0, 10),
       slot_time: form.slotTime,
+      voucher_code: normalizedCode || undefined,
       service_variants: serviceVariants,
-      line_items: lineItems,
+      line_items: lineItemsPayload,
     });
   };
 
@@ -1854,12 +2220,14 @@ export default function BookingModal({
       staffAssignments: [],
       date: "",
       slotTime: "",
+      voucherCode: "",
     });
     setSearch("");
     setBrowseMode("services");
     setCat("spa");
     setSuccess(false);
     setCreatedBooking(null);
+    setVoucherPreview(null);
     setMobileView("browse");
     setStep("services");
     setViewingMonth(getCurrentMonth());
@@ -1915,6 +2283,9 @@ export default function BookingModal({
               ],
               ["Duration", durFmt(totalDur)],
               ["Items", cartSummaryLabel],
+              createdBooking?.applied_voucher?.code
+                ? ["Voucher", createdBooking.applied_voucher.code]
+                : null,
             ] as ([string, string] | null)[]
           )
             .filter((row): row is [string, string] => row !== null)
@@ -1929,10 +2300,30 @@ export default function BookingModal({
                 </span>
               </div>
             ))}
+          {Number(createdBooking?.discount_amount ?? 0) > 0 && (
+            <>
+              <div className="flex justify-between pt-3">
+                <span className="text-sm text-[#7A736E]">Subtotal</span>
+                <span className="text-sm font-medium text-[#1A1614]">
+                  {idr(Number(createdBooking?.subtotal_amount ?? totalAmt))}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1">
+                <span className="text-sm text-[#7A736E]">Diskon Voucher</span>
+                <span className="text-sm font-medium text-[#2F9E44]">
+                  -{idr(Number(createdBooking?.discount_amount ?? 0))}
+                </span>
+              </div>
+            </>
+          )}
           <div className="flex justify-between pt-3">
             <span className="text-sm font-semibold text-[#1A1614]">Total</span>
             <span className="text-base font-bold text-[#B55368]">
-              {idr(totalAmt)}
+              {idr(
+                Number(
+                  createdBooking?.total_amount ?? pricingSummary.totalAmount,
+                ),
+              )}
             </span>
           </div>
         </div>
@@ -1998,7 +2389,7 @@ export default function BookingModal({
             </span>
             <span className="text-[11px] text-[#E8B4C0]">·</span>
             <span className="text-[13px] text-[#B55368] font-bold">
-              {idr(totalAmt)}
+              {idr(pricingSummary.totalAmount)}
             </span>
           </div>
         )}
@@ -2109,26 +2500,117 @@ export default function BookingModal({
                 </p>
               </div>
             ) : (
-              Object.entries(groupedVariants).map(([subCat, vars]) => (
-                <div key={subCat} className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[11px] font-bold text-[#B5AFA9] uppercase tracking-[0.07em] shrink-0">
-                      {subCat}
-                    </span>
-                    <div className="flex-1 h-px bg-[#EDE8E3]" />
+              <>
+                {isBogoActive && (
+                  <div
+                    id="booking-modal-bogo-bonus"
+                    className="mb-6 rounded-2xl border border-[#E8B4C0] bg-[#FFFCFA] p-4"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[11px] font-bold text-[#B55368] uppercase tracking-[0.07em] shrink-0">
+                        Bonus Voucher
+                      </span>
+                      <div className="flex-1 h-px bg-[#F2D7DE]" />
+                    </div>
+                    <p className="mb-3 text-[12px] text-[#7A736E]">
+                      Pilih 1 bonus gratis. Maks bonus{" "}
+                      <span className="font-semibold text-[#B55368]">
+                        {idr(bogoCapAmount)}
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-1 min-[450px]:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
+                      {bogoEligibleServices.map((row) => {
+                        const disableByPrice =
+                          Number(row.retail_price ?? 0) > bogoCapAmount;
+                        const baseVariant = availableVariants.find(
+                          (v) => v.id === row.id,
+                        );
+                        const bonusVariant: Variant = baseVariant
+                          ? { ...baseVariant, price: 0 }
+                          : {
+                              id: row.id,
+                              catKey: "promo",
+                              subCat: "Bonus Voucher",
+                              name: row.name,
+                              duration: Number(row.duration_minutes ?? 0),
+                              price: 0,
+                              categoryId: 0,
+                            };
+
+                        return (
+                          <ServiceCard
+                            key={`bogo-${row.id}`}
+                            v={bonusVariant}
+                            selected={inFreeCart(row.id)}
+                            disabled={disableByPrice}
+                            helperText={
+                              disableByPrice
+                                ? `Harga item ${idr(Number(row.retail_price ?? 0))}`
+                                : "Bonus gratis"
+                            }
+                            priceOverride={0}
+                            onToggle={() => {
+                              if (disableByPrice) {
+                                toast.warning(
+                                  "Bonus tidak bisa dipilih karena lebih mahal dari layanan utama",
+                                );
+                                return;
+                              }
+                              toggleFreeService(row);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 min-[450px]:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
-                    {vars.map((v) => (
-                      <ServiceCard
-                        key={v.id}
-                        v={v}
-                        selected={inCart(v.id)}
-                        onToggle={() => toggleService(v)}
-                      />
-                    ))}
+                )}
+
+                {Object.entries(groupedVariants).map(([subCat, vars]) => (
+                  <div key={subCat} className="mb-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[11px] font-bold text-[#B5AFA9] uppercase tracking-[0.07em] shrink-0">
+                        {subCat}
+                      </span>
+                      <div className="flex-1 h-px bg-[#EDE8E3]" />
+                    </div>
+                    {isBogoActive && (
+                      <p className="mb-3 text-[12px] text-[#B5AFA9]">
+                        Layanan utama dikunci sementara. Pilih bonus gratis di
+                        bagian atas.
+                      </p>
+                    )}
+                    <div className="grid grid-cols-1 min-[450px]:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
+                      {vars.map((v) => {
+                        const disableByBogo = isBogoActive && !inPaidCart(v.id);
+                        const helperText = !disableByBogo
+                          ? undefined
+                          : isBogoEligibleId(v.id)
+                            ? "Pilih dari Bonus Voucher"
+                            : "Tidak termasuk bonus";
+
+                        return (
+                          <ServiceCard
+                            key={v.id}
+                            v={v}
+                            selected={inPaidCart(v.id)}
+                            disabled={disableByBogo}
+                            helperText={helperText}
+                            onToggle={() => {
+                              if (disableByBogo) {
+                                toast.warning(
+                                  "Item ini dikunci saat promo BOGO aktif. Pilih bonus gratis di bagian atas.",
+                                );
+                                return;
+                              }
+                              toggleService(v);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -2158,6 +2640,7 @@ export default function BookingModal({
             availableVariants={availableVariants}
             existingTherapists={existingTherapists}
             onBook={handleBook}
+            onApplyVoucher={handleApplyVoucher}
             submitLabel={
               isSubmitPending
                 ? isEdit
@@ -2172,8 +2655,10 @@ export default function BookingModal({
             selectedBundle={selectedBundle}
             customerBookingCount={customerBookingCount}
             isSubmitPending={isSubmitPending}
+            isApplyingVoucher={isApplyingVoucher}
             viewingMonth={viewingMonth}
             setViewingMonth={setViewingMonth}
+            pricingSummary={pricingSummary}
           />
         </div>
       </div>
@@ -2186,7 +2671,7 @@ export default function BookingModal({
               {cartSummaryLabel}
             </p>
             <p className="text-[13px] font-bold text-[#B55368]">
-              {idr(totalAmt)}
+              {idr(pricingSummary.totalAmount)}
             </p>
           </div>
           <button
