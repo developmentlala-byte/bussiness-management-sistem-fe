@@ -1,12 +1,8 @@
-import { calculateLateMinutes } from "./calculate-late-minute";
+export const formatLateTime = (lateMinutes: number | null | undefined) => {
+  if (!lateMinutes || lateMinutes <= 0) return "-";
 
-export const formatLateTime = (clockIn: string | null) => {
-  if (!clockIn) return "-";
-
-  const totalMinutes = calculateLateMinutes(clockIn);
-
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  const hours = Math.floor(lateMinutes / 60);
+  const minutes = lateMinutes % 60;
 
   if (hours === 0) {
     return `${minutes} mnt`;

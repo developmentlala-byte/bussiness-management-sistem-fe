@@ -325,9 +325,7 @@ const AttendanceSheet = ({
                   Telat
                 </p>
                 <p className="text-sm font-bold tabular-nums text-foreground">
-                  {attendance?.clock_in
-                    ? formatLateTime(attendance.clock_in)
-                    : "—"}
+                  {formatLateTime(attendance?.late_minutes)}
                 </p>
               </div>
             </div>
@@ -399,9 +397,7 @@ const AttendanceSheet = ({
                   Telat
                 </p>
                 <p className="text-sm font-bold tabular-nums text-foreground">
-                  {attendance?.clock_in
-                    ? formatLateTime(attendance.clock_in)
-                    : "—"}
+                  {formatLateTime(attendance?.late_minutes)}
                 </p>
               </div>
             </div>

@@ -252,48 +252,83 @@ function BookingsPageInner() {
     return res?.data as CreatedBookingsReport;
   };
 
-  const buildCreatedBookingsReportText = (report: CreatedBookingsReport) => {
-    const header = `REPORT BOOKING (CREATED) TANGGAL ${formatReportDateLabel(report.date)}`;
-    const rows =
-      report.bookings.length > 0
-        ? report.bookings
-            .map((b, idx) => {
-              const lines = b.service_variants ?? [];
-              const serviceLabel =
-                lines.length > 0
-                  ? lines.map((line) => getBookingLineLabel(line)).join(", ")
-                  : "Spa Service";
+  const formatRupiah = (n: number) =>
+    `Rp ${Math.trunc(Number(n || 0)).toLocaleString("id-ID")}`;
 
-              const amount = `Rp. ${Math.trunc(Number(b.total_amount || 0)).toLocaleString("id-ID")}`;
-              const source = (b.source ?? "direct").toUpperCase();
-              return `${idx + 1}. ${b.booking_code} · ${b.customer_name} · ${serviceLabel} · ${source} : ${amount}`;
-            })
-            .join("\n")
+  const isCancelledBooking = (status?: string) => {
+    const s = (status ?? "").toLowerCase();
+    return s.includes("cancel") || s.includes("batal");
+  };
+
+  const buildCreatedBookingsReportText = (report: CreatedBookingsReport) => {
+    const allBookings = report.bookings ?? [];
+    const cancelledBookings = allBookings.filter((b) =>
+      isCancelledBooking(b.status as unknown as string),
+    );
+    const confirmedBookings = allBookings.filter(
+      (b) => !isCancelledBooking(b.status as unknown as string),
+    );
+
+    const sumBySource = (list: SpaBooking[], source: "direct" | "ads") =>
+      list
+        .filter((b) => (b.source ?? "direct") === source)
+        .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+
+    const directAmount = sumBySource(confirmedBookings, "direct");
+    const adsAmount = sumBySource(confirmedBookings, "ads");
+    const confirmedTotalAmount = directAmount + adsAmount;
+
+    const describeBooking = (b: SpaBooking, idx: number) => {
+      const lines = b.service_variants ?? [];
+      const serviceLabel =
+        lines.length > 0
+          ? lines.map((line) => getBookingLineLabel(line)).join(", ")
+          : "Spa Service";
+      const amount = formatRupiah(Number(b.total_amount || 0));
+      const source = (b.source ?? "direct").toUpperCase();
+      return `${idx + 1}. ${b.customer_name} - ${serviceLabel} - ${source} - ${amount}`;
+    };
+
+    const confirmedRows =
+      confirmedBookings.length > 0
+        ? confirmedBookings.map((b, i) => describeBooking(b, i)).join("\n")
         : "-";
 
-    const totalAmountText = `Rp. ${Math.trunc(Number(report.totals.total_amount || 0)).toLocaleString("id-ID")}`;
+    const cancelledRows = cancelledBookings
+      .map((b, i) => `${describeBooking(b, i)}`)
+      .join("\n");
+
     const statusLines = Object.entries(report.totals.by_status ?? {}).map(
       ([k, v]) => `${k} : ${v}`,
     );
-    const bySource = report.totals.by_source ?? {};
-    const adsCount = bySource.ads ?? 0;
-    const directCount = bySource.direct ?? 0;
+
     const filterStatusLine =
       report.statuses && report.statuses.length
         ? `Filter Status : ${report.statuses.join(", ")}`
         : null;
 
     return [
-      header,
+      `REPORT BOOKING (CREATED) - ${formatReportDateLabel(report.date)}`,
       "",
-      rows,
+      "DETAIL BOOKING CONFIRMED",
+      confirmedRows,
+      ...(cancelledBookings.length > 0
+        ? ["", "DETAIL BOOKING CANCEL", cancelledRows]
+        : []),
       "",
-      `Total Booking : ${report.totals.total_count}`,
-      `Total Amount : ${totalAmountText}`,
-      `Booking Ads : ${adsCount}`,
-      `Booking Direct : ${directCount}`,
-      ...(filterStatusLine ? [filterStatusLine] : []),
-      ...(statusLines.length ? ["", ...statusLines] : []),
+      "TOTAL",
+      `Booking Masuk : ${allBookings.length}`,
+      `Booking Confirmed : ${confirmedBookings.length}`,
+      `Booking Cancel : ${cancelledBookings.length}`,
+      "",
+      // "STATUS",
+      // ...(statusLines.length ? statusLines : ["-"]),
+      // ...(filterStatusLine ? ["", filterStatusLine] : []),
+      // "",
+      "OMZET (booking confirmed)",
+      `Direct : ${formatRupiah(directAmount)}`,
+      `Ads : ${formatRupiah(adsAmount)}`,
+      `Total : ${formatRupiah(confirmedTotalAmount)}`,
     ].join("\n");
   };
 
