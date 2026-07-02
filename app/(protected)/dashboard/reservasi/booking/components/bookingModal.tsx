@@ -1515,7 +1515,7 @@ export default function BookingModal({
   const [browseMode, setBrowseMode] = useState<"services" | "bundles">(
     "services",
   );
-  const [cat, setCat] = useState("spa-wellness-6a41bb8b42eb7");
+  const [cat, setCat] = useState("spa-wellness-6a3e4be004fc9");
   const [search, setSearch] = useState("");
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [step, setStep] = useState<BookingStep>(
