@@ -103,6 +103,7 @@ function BookingsPageInner() {
     start: startOfMonth(currentDateObj),
     end: endOfMonth(currentDateObj),
   });
+  const [useScheduleDate, setUseScheduleDate] = useState<boolean>(false);
   const drawerHeight = useVisualViewportHeight();
   const createBookingDrawer = useOverlayState();
   const detailDrawer = useOverlayState();
@@ -121,10 +122,22 @@ function BookingsPageInner() {
   const startDateStr = dateRange.start.toString();
   const endDateStr = dateRange.end.toString();
 
+  const bookingQueryParams = useMemo(() => {
+    if (useScheduleDate) {
+      return { start_date: startDateStr, end_date: endDateStr };
+    }
+    return { created_start_date: startDateStr, created_end_date: endDateStr };
+  }, [endDateStr, startDateStr, useScheduleDate]);
+
   const { data } = useApiFetch<{ data: SpaBooking[] }>(
-    ["bookings", startDateStr, endDateStr],
+    [
+      "bookings",
+      startDateStr,
+      endDateStr,
+      useScheduleDate ? "schedule_date" : "created_at",
+    ],
     "/master/bookings",
-    { start_date: startDateStr, end_date: endDateStr },
+    bookingQueryParams,
   );
 
   const createPayment = usePost<
@@ -165,7 +178,10 @@ function BookingsPageInner() {
 
   const totalAmount = useMemo(
     () =>
-      filteredBookings.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0),
+      filteredBookings.reduce((sum, b) => {
+        if (b.status === "Cancelled") return sum;
+        return sum + Number(b.total_amount ?? 0);
+      }, 0),
     [filteredBookings],
   );
 
@@ -244,10 +260,12 @@ function BookingsPageInner() {
   const fetchCreatedBookingsReport = async (
     dateStr: string,
     statuses: string[],
+    useScheduleDate: boolean,
   ): Promise<CreatedBookingsReport> => {
     const res = await apiGet("/master/reports/bookings-created", {
       date: dateStr,
       statuses,
+      use_schedule_date: useScheduleDate ? 1 : 0,
     });
     return res?.data as CreatedBookingsReport;
   };
@@ -308,7 +326,7 @@ function BookingsPageInner() {
         : null;
 
     return [
-      `REPORT BOOKING (CREATED) - ${formatReportDateLabel(report.date)}`,
+      `REPORT BOOKING - ${formatReportDateLabel(report.date)}`,
       "",
       "DETAIL BOOKING CONFIRMED",
       confirmedRows,
@@ -335,7 +353,11 @@ function BookingsPageInner() {
   const handleDownloadBookingCreatedReport = async () => {
     const dateStr = currentDateObj.toString();
     try {
-      const report = await fetchCreatedBookingsReport(dateStr, activeStatusIds);
+      const report = await fetchCreatedBookingsReport(
+        dateStr,
+        activeStatusIds,
+        useScheduleDate,
+      );
       const text = buildCreatedBookingsReportText(report);
       downloadTextFile(`report-booking-created-${dateStr}.txt`, text);
     } catch (e: unknown) {
@@ -383,7 +405,11 @@ function BookingsPageInner() {
   const handleSendBookingCreatedReportToWhatsApp = async () => {
     const dateStr = currentDateObj.toString();
     try {
-      const report = await fetchCreatedBookingsReport(dateStr, activeStatusIds);
+      const report = await fetchCreatedBookingsReport(
+        dateStr,
+        activeStatusIds,
+        useScheduleDate,
+      );
       const text = buildCreatedBookingsReportText(report);
       await sendWhatsAppText(text);
     } catch (e: unknown) {
@@ -863,6 +889,33 @@ function BookingsPageInner() {
         </div>
 
         <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-4 py-2">
+            <span className="text-sm font-medium text-muted-foreground">
+              Berdasarkan
+            </span>
+            <div className="flex bg-surface rounded-full p-1">
+              <button
+                onClick={() => setUseScheduleDate(false)}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  !useScheduleDate
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Waktu Dibuat
+              </button>
+              <button
+                onClick={() => setUseScheduleDate(true)}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  useScheduleDate
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Tanggal Booking
+              </button>
+            </div>
+          </div>
           <StatusFilterDropdown
             statuses={BOOKING_STATUS_OPTIONS}
             defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}

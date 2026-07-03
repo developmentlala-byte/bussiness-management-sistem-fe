@@ -259,27 +259,21 @@ function StatCard({
 function ActivityFeed({
   items,
 }: {
-  items: Array<{
-    id: number;
-    description: string;
-    created_at: string;
-    type?: string;
-  }>;
+  items: BookingItem[];
 }) {
-  const getIconForType = (type?: string) => {
-    switch (type) {
-      case "booking_created":
-        return <Calendar size={14} />;
-      case "payment_received":
-      case "membership_payment_created":
-        return <CreditCard size={14} />;
-      case "user_signup":
-        return <User size={14} />;
-      case "booking_confirmed":
-        return <CheckCircle size={14} />;
-      default:
-        return <Clock size={14} />;
+  const getServiceLabel = (booking: BookingItem) => {
+    const isBundle =
+      booking.booking_bundle_promos && booking.booking_bundle_promos.length > 0;
+
+    if (isBundle) {
+      return booking.booking_bundle_promos?.[0]?.bundle_name ?? "Spa Service";
     }
+
+    if (booking.service_variants && booking.service_variants.length > 0) {
+      return booking.service_variants.map((item) => item.name).join(", ");
+    }
+
+    return "Spa Service";
   };
 
   return (
@@ -305,7 +299,7 @@ function ActivityFeed({
             color: "var(--foreground)",
           }}
         >
-          Activity
+          Booking Activity
         </h3>
         <p
           style={{
@@ -342,7 +336,7 @@ function ActivityFeed({
                   marginTop: "4px",
                 }}
               >
-                {getIconForType(item.type)}
+                <Calendar size={14} />
               </div>
               {i < items.slice(0, 5).length - 1 && (
                 <div
@@ -367,15 +361,12 @@ function ActivityFeed({
                   lineHeight: 1.5,
                 }}
               >
-                {item.description}
+                {item.customer_name} - {getServiceLabel(item)}
               </p>
               <span
                 style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}
               >
-                {new Date(item.created_at).toLocaleTimeString("id-ID", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                {formatWallClockDate(item.schedule_date, { withTime: true })}
               </span>
             </div>
           </div>
@@ -867,20 +858,6 @@ export default function DashboardOverviewPage() {
     "/master/staffs",
   );
 
-  const { data: activityLogsResponse } = useApiFetch<{
-    data: Array<{
-      id: number;
-      type: string;
-      description: string;
-      created_at: string;
-      user?: { id: number; name: string };
-      customer?: { id: number; name: string };
-      metadata?: Record<string, any>;
-    }>;
-  }>(["activity-logs"], "/activity-logs", undefined, undefined, {
-    refetchInterval: 10000, // 10 detik
-  });
-
   const { data: weeklyBookingResponse } = useApiFetch<{
     data: PaginatedApiResponse<{ dow: number; count: number }[]>;
   }>(["weekly-booking"], "/booking/weekly-booking");
@@ -1266,7 +1243,7 @@ export default function DashboardOverviewPage() {
 
         {/* Activity Feed — span 4 */}
         <div className="col-span-12 md:col-span-12 lg:col-span-4 min-w-0">
-          <ActivityFeed items={activityLogsResponse?.data ?? []} />
+          <ActivityFeed items={recentBookingsResponse?.data ?? []} />
         </div>
 
         {/* Recent Bookings Table — span 12 */}
