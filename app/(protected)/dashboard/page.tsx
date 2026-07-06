@@ -256,11 +256,7 @@ function StatCard({
 }
 
 // ─── Activity Feed Widget ─────────────────────────────────────────────────────
-function ActivityFeed({
-  items,
-}: {
-  items: BookingItem[];
-}) {
+function ActivityFeed({ items }: { items: BookingItem[] }) {
   const getServiceLabel = (booking: BookingItem) => {
     const isBundle =
       booking.booking_bundle_promos && booking.booking_bundle_promos.length > 0;
@@ -878,6 +874,18 @@ export default function DashboardOverviewPage() {
         trend: `${Math.abs(totalBookingsResponse?.data?.total_bookings?.trend ?? 0)}%`,
         trendDirection:
           (totalBookingsResponse?.data?.total_bookings?.trend ?? 0) >= 0
+            ? ("up" as const)
+            : ("down" as const),
+        context: `vs last ${subLabel}`,
+      },
+      {
+        label: "Confirmed Booking",
+        value: formatNumber(
+          totalBookingsResponse?.data?.total_paid_bookings?.value ?? 0,
+        ),
+        trend: `${Math.abs(totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0)}%`,
+        trendDirection:
+          (totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
         context: `vs last ${subLabel}`,
