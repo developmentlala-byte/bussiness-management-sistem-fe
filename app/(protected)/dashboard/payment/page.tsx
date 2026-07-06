@@ -583,7 +583,7 @@ export default function PaymentsPage() {
     PaginatedApiResponse<Payment>
   >([statusFilter], "/payment/booking-payments");
 
-  const allPayments = paymentResponse?.data?.data?.data ?? [];
+  const allPayments = paymentResponse?.data?.data ?? [];
 
   if (paymentLoading) {
     return (
