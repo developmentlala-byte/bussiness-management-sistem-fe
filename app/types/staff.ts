@@ -16,4 +16,10 @@ export interface Staff {
   created_at: string;
   updated_at: string;
   capabilityCategories?: Category[];
+  capability_categories?: Category[];
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
 }

@@ -29,6 +29,8 @@ import {
   DownloadIcon,
   Trash,
   PaperPlaneRight,
+  ArrowsMergeIcon,
+  ArrowsSplitIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -529,8 +531,10 @@ function BookingsPageInner() {
       header: "Customer",
       cell: (info) => (
         <div className="flex flex-col">
-          <span className="font-medium text-sm">
-            {info.row.original.customer_name}
+          <span className="font-medium text-sm capitalize">
+            {info.row.original.customer_name
+              ? info.row.original.customer_name.toLowerCase() || "—"
+              : "—"}
           </span>
           <span className="text-xs text-muted-foreground">
             {info.row.original.customer_phone}
@@ -625,29 +629,80 @@ function BookingsPageInner() {
       header: "Source",
       cell: (info) => {
         const src = info.row.original.source ?? "direct";
-        const label = src === "ads" ? "ADS" : "DIRECT";
+        const label = src === "ads" ? "Ads" : "Direct";
         return (
           <Chip
             size="sm"
-            variant="flat"
-            color={src === "ads" ? "warning" : "default"}
+            variant="primary"
+            color={src === "ads" ? "accent" : "warning"}
           >
-            {label}
+            {src === "ads" ? (
+              <>
+                <ArrowsMergeIcon
+                  className="size-4 -rotate-90"
+                  weight="regular"
+                />{" "}
+                {label}
+              </>
+            ) : (
+              <>
+                <ArrowsSplitIcon
+                  className="size-4 -rotate-90"
+                  weight="regular"
+                />{" "}
+                {label}
+              </>
+            )}
           </Chip>
         );
       },
     }),
     columnHelper.accessor("totalAmount", {
       header: "Amount",
-      cell: (info) => (
-        <span className="font-medium">
-          {new Intl.NumberFormat("id-ID", {
-            style: "currency",
-            currency: "IDR",
-            maximumFractionDigits: 0,
-          }).format(info.row.original?.total_amount ?? 0)}
-        </span>
-      ),
+      cell: (info) => {
+        const booking = info.row.original;
+        const hasVoucher = booking.applied_voucher || booking.voucher_snapshot;
+        const voucher = booking.applied_voucher || booking.voucher_snapshot;
+        const subtotal = booking.subtotal_amount;
+        const discount = booking.discount_amount;
+        const total = booking.total_amount;
+
+        return (
+          <div className="flex flex-col">
+            {hasVoucher && subtotal && (
+              <>
+                <span className="text-xs text-muted-foreground line-through">
+                  {new Intl.NumberFormat("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    maximumFractionDigits: 0,
+                  }).format(subtotal)}
+                </span>
+                <span className="text-xs text-danger font-medium">
+                  -
+                  {new Intl.NumberFormat("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    maximumFractionDigits: 0,
+                  }).format(discount)}
+                </span>
+                {voucher && (
+                  <span className="text-[10px] text-accent font-semibold mt-0.5">
+                    {voucher.code || voucher.name || "Voucher"}
+                  </span>
+                )}
+              </>
+            )}
+            <span className="font-medium">
+              {new Intl.NumberFormat("id-ID", {
+                style: "currency",
+                currency: "IDR",
+                maximumFractionDigits: 0,
+              }).format(total ?? 0)}
+            </span>
+          </div>
+        );
+      },
       footer: () => (
         <span className="text-sm font-bold">
           {new Intl.NumberFormat("id-ID", {
@@ -1095,13 +1150,55 @@ function BookingsPageInner() {
                           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                             Total amount
                           </p>
-                          <p className="font-semibold">
-                            {new Intl.NumberFormat("id-ID", {
-                              style: "currency",
-                              currency: "IDR",
-                              maximumFractionDigits: 0,
-                            }).format(selectedBooking.total_amount ?? 0)}
-                          </p>
+                          {(() => {
+                            const hasVoucher =
+                              selectedBooking.applied_voucher ||
+                              selectedBooking.voucher_snapshot;
+                            const voucher =
+                              selectedBooking.applied_voucher ||
+                              selectedBooking.voucher_snapshot;
+                            const subtotal = selectedBooking.subtotal_amount;
+                            const discount = selectedBooking.discount_amount;
+                            const total = selectedBooking.total_amount;
+
+                            return (
+                              <div>
+                                {hasVoucher && subtotal && (
+                                  <>
+                                    <p className="text-sm text-muted-foreground line-through">
+                                      {new Intl.NumberFormat("id-ID", {
+                                        style: "currency",
+                                        currency: "IDR",
+                                        maximumFractionDigits: 0,
+                                      }).format(subtotal)}
+                                    </p>
+                                    <p className="text-sm text-danger font-medium">
+                                      -{" "}
+                                      {new Intl.NumberFormat("id-ID", {
+                                        style: "currency",
+                                        currency: "IDR",
+                                        maximumFractionDigits: 0,
+                                      }).format(discount)}
+                                    </p>
+                                    {voucher && (
+                                      <p className="text-xs text-accent font-semibold">
+                                        {voucher.code ||
+                                          voucher.name ||
+                                          "Voucher"}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                                <p className="font-semibold">
+                                  {new Intl.NumberFormat("id-ID", {
+                                    style: "currency",
+                                    currency: "IDR",
+                                    maximumFractionDigits: 0,
+                                  }).format(total ?? 0)}
+                                </p>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div>
                           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">

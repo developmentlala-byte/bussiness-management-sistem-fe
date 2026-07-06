@@ -12,8 +12,24 @@ import {
 import { toast } from "@heroui/react";
 import { useApiFetch, usePost, usePut, useRemove } from "@/app/libs/use-http";
 import { formatRupiah } from "@/app/libs/format-rupiah";
+import { apiGet } from "@/app/services/api";
 
 type VoucherDiscountType = "percentage" | "nominal";
+
+type UsageBooking = {
+  id: number;
+  booking_code: string;
+  customer_name: string;
+  customer_phone: string;
+  schedule_date: string;
+  status: string;
+  payment_status: string;
+  subtotal_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  applied_voucher: any;
+  service_labels: string[];
+};
 
 type Voucher = {
   id: number;
@@ -28,6 +44,8 @@ type Voucher = {
   ends_at?: string | null;
   usage_limit?: number | null;
   is_active: boolean;
+  used_count?: number;
+  usage_bookings?: UsageBooking[];
 };
 
 function toNumber(value: unknown): number {
@@ -114,13 +132,15 @@ export default function MasterVoucherPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isUsageHistoryOpen, setIsUsageHistoryOpen] = useState(false);
   const [activeVoucher, setActiveVoucher] = useState<Voucher | null>(null);
   const [form, setForm] = useState<VoucherFormState>(emptyForm());
 
-  const { data: resp, isLoading, isError } = useApiFetch<{ data: Voucher[] }>(
-    ["vouchers"],
-    "/master/vouchers",
-  );
+  const {
+    data: resp,
+    isLoading,
+    isError,
+  } = useApiFetch<{ data: Voucher[] }>(["vouchers"], "/master/vouchers");
   const vouchers = resp?.data ?? [];
 
   const filtered = useMemo(() => {
@@ -201,7 +221,10 @@ export default function MasterVoucherPage() {
           : "",
       starts_at: toDateTimeLocal(v.starts_at),
       ends_at: toDateTimeLocal(v.ends_at),
-      usage_limit: v.usage_limit !== null && v.usage_limit !== undefined ? String(v.usage_limit) : "",
+      usage_limit:
+        v.usage_limit !== null && v.usage_limit !== undefined
+          ? String(v.usage_limit)
+          : "",
       is_active: Boolean(v.is_active),
     });
     setIsFormOpen(true);
@@ -254,7 +277,10 @@ export default function MasterVoucherPage() {
           : "",
       starts_at: toDateTimeLocal(v.starts_at),
       ends_at: toDateTimeLocal(v.ends_at),
-      usage_limit: v.usage_limit !== null && v.usage_limit !== undefined ? String(v.usage_limit) : "",
+      usage_limit:
+        v.usage_limit !== null && v.usage_limit !== undefined
+          ? String(v.usage_limit)
+          : "",
       is_active: !v.is_active,
     };
     updateVoucher({ id: v.id, ...buildPayload(next) });
@@ -371,7 +397,10 @@ export default function MasterVoucherPage() {
               cursor: "pointer",
             }}
           >
-            <Plus weight="bold" style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }} />
+            <Plus
+              weight="bold"
+              style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
+            />
             <span>Tambah Voucher</span>
           </button>
         </div>
@@ -403,6 +432,7 @@ export default function MasterVoucherPage() {
                   "Max",
                   "Mulai",
                   "Berakhir",
+                  "Digunakan",
                   "Kuota",
                   "Status",
                   "Aksi",
@@ -430,7 +460,7 @@ export default function MasterVoucherPage() {
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     style={{
                       padding: "var(--space-6)",
                       fontSize: "var(--text-sm)",
@@ -523,6 +553,16 @@ export default function MasterVoucherPage() {
                         whiteSpace: "nowrap",
                       }}
                     >
+                      {v.used_count ?? 0}
+                    </td>
+                    <td
+                      style={{
+                        padding: `var(--table-cell-py) var(--table-cell-px)`,
+                        borderBottom: "1px solid var(--separator)",
+                        fontSize: "var(--text-sm)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {v.usage_limit ?? "—"}
                     </td>
                     <td
@@ -540,7 +580,9 @@ export default function MasterVoucherPage() {
                           backgroundColor: v.is_active
                             ? "color-mix(in oklch, var(--success) 12%, transparent)"
                             : "var(--surface)",
-                          color: v.is_active ? "var(--success)" : "var(--muted)",
+                          color: v.is_active
+                            ? "var(--success)"
+                            : "var(--muted)",
                           padding: "6px 10px",
                           borderRadius: "9999px",
                           fontSize: "var(--text-xs)",
@@ -560,6 +602,42 @@ export default function MasterVoucherPage() {
                         whiteSpace: "nowrap",
                       }}
                     >
+                      {((v.used_count && v.used_count > 0) || true) && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = await apiGet(
+                                `/master/vouchers/${v.id}`,
+                              );
+                              if (response && response.data) {
+                                setActiveVoucher(response.data);
+                                setIsUsageHistoryOpen(true);
+                              }
+                            } catch (err) {
+                              toast.error(
+                                "Gagal memuat riwayat penggunaan voucher",
+                              );
+                            }
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            border: "1px solid var(--border)",
+                            backgroundColor: "var(--surface)",
+                            color: "var(--accent)",
+                            padding: "6px 10px",
+                            borderRadius: "10px",
+                            fontSize: "var(--text-xs)",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            marginRight: "8px",
+                          }}
+                        >
+                          <Ticket className="w-4 h-4" />
+                          Riwayat
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(v)}
                         style={{
@@ -711,7 +789,9 @@ export default function MasterVoucherPage() {
                     onChange={(e) =>
                       setForm((p) => ({ ...p, discount_value: e.target.value }))
                     }
-                    placeholder={form.discount_type === "percentage" ? "10" : "50000"}
+                    placeholder={
+                      form.discount_type === "percentage" ? "10" : "50000"
+                    }
                     className="w-full bg-surface border border-border focus:border-accent focus:ring-1 focus:ring-accent rounded-md px-3 py-2 text-sm outline-none transition-colors"
                   />
                 </div>
@@ -844,10 +924,13 @@ export default function MasterVoucherPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-surface w-full max-w-md rounded-xl shadow-xl border border-border overflow-hidden">
             <div className="px-6 py-4 border-b border-border">
-              <h2 className="text-lg font-bold text-foreground">Hapus Voucher</h2>
+              <h2 className="text-lg font-bold text-foreground">
+                Hapus Voucher
+              </h2>
               <p className="text-xs text-muted mt-0.5">
-                Voucher <span className="font-semibold">{activeVoucher.code}</span>{" "}
-                akan dihapus.
+                Voucher{" "}
+                <span className="font-semibold">{activeVoucher.code}</span> akan
+                dihapus.
               </p>
             </div>
             <div className="px-6 py-4 text-sm text-foreground">
@@ -875,7 +958,123 @@ export default function MasterVoucherPage() {
           </div>
         </div>
       )}
+
+      {isUsageHistoryOpen && activeVoucher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-surface w-full max-w-4xl rounded-xl shadow-xl border border-border overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">
+                  Riwayat Penggunaan Voucher
+                </h2>
+                <p className="text-xs text-muted mt-0.5">
+                  <span className="font-semibold">{activeVoucher.code}</span> -{" "}
+                  {activeVoucher.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsUsageHistoryOpen(false)}
+                className="text-muted hover:text-foreground p-1 rounded-md hover:bg-surface-secondary"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              {!activeVoucher.usage_bookings ||
+              activeVoucher.usage_bookings.length === 0 ? (
+                <p className="text-sm text-muted text-center py-8">
+                  Belum ada penggunaan voucher ini.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {activeVoucher.usage_bookings.map((booking) => (
+                    <div
+                      key={booking.id}
+                      className="rounded-xl border border-border p-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-mono font-semibold text-sm">
+                              {booking.booking_code}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                booking.status === "Completed"
+                                  ? "bg-success/10 text-success"
+                                  : booking.status === "Cancelled"
+                                    ? "bg-danger/10 text-danger"
+                                    : booking.status === "Confirmed"
+                                      ? "bg-accent/10 text-accent"
+                                      : "bg-warning/10 text-warning"
+                              }`}
+                            >
+                              {booking.status}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium">
+                            {booking.customer_name}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {booking.customer_phone}
+                          </p>
+                          <p className="text-xs text-muted mt-1">
+                            {new Date(booking.schedule_date).toLocaleDateString(
+                              "id-ID",
+                              {
+                                weekday: "short",
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            )}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {booking.service_labels.map((label, idx) => (
+                              <span
+                                key={idx}
+                                className="text-[10px] bg-surface-secondary px-2 py-0.5 rounded-full"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted line-through">
+                            {new Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              maximumFractionDigits: 0,
+                            }).format(booking.subtotal_amount)}
+                          </p>
+                          <p className="text-xs text-danger font-semibold">
+                            -{" "}
+                            {new Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              maximumFractionDigits: 0,
+                            }).format(booking.discount_amount)}
+                          </p>
+                          <p className="text-sm font-bold text-foreground mt-1">
+                            {new Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              maximumFractionDigits: 0,
+                            }).format(booking.total_amount)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

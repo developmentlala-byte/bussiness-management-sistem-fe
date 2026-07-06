@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react"; // Sesuaikan jika Anda menggunakan HeroUI v3 import path
+import React, { useState, useMemo, useRef } from "react"; // Sesuaikan jika Anda menggunakan HeroUI v3 import path
 import {
   CaretDown,
   CaretLeft,
@@ -17,7 +17,8 @@ import {
   CalendarBlankIcon,
 } from "@phosphor-icons/react";
 import { getLocalTimeZone, today } from "@internationalized/date";
-import { useApiFetch, usePost, useRemove } from "@/app/libs/use-http";
+import { useApiFetch, usePost } from "@/app/libs/use-http";
+import { parseWallClockDate } from "@/app/libs/date-format";
 import {
   Dropdown,
   Spinner,
@@ -40,7 +41,10 @@ interface Shift {
 interface StaffSchedule {
   id: number | string;
   date: string;
-  bms_ms_shift_id: number | string;
+  bms_ms_shift_id: number | string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  is_day_off?: boolean;
   shift?: Shift;
 }
 
@@ -56,11 +60,15 @@ interface Staff {
 interface SchedulePayload {
   bms_ms_staff_id: number | string;
   date: string;
-  bms_ms_shift_id: number | string;
+  bms_ms_shift_id?: number | string | null;
+  is_day_off?: boolean;
 }
 
 interface RemovePayload {
-  id: number | string;
+  bms_ms_staff_id: number | string;
+  date: string;
+  bms_ms_shift_id?: null;
+  is_day_off: boolean;
 }
 
 interface ScheduleCellProps {
@@ -71,8 +79,19 @@ interface ScheduleCellProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assignSchedule: (data: SchedulePayload, options: any) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  removeSchedule: (data: RemovePayload, options: any) => void;
+  clearSchedule: (data: RemovePayload, options: any) => void;
 }
+
+const normalizeScheduleDateKey = (dateInput?: string | null) => {
+  if (!dateInput) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) return dateInput;
+  const parsed = parseWallClockDate(dateInput);
+  if (!parsed) return "";
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
 // --- KOMPONEN SEL JADWAL INDIVIDUAL ---
 const ScheduleCell = ({
@@ -81,24 +100,67 @@ const ScheduleCell = ({
   schedule,
   shifts,
   assignSchedule,
-  removeSchedule,
+  clearSchedule,
 }: ScheduleCellProps) => {
   const [isCellLoading, setIsCellLoading] = useState(false);
+  const actionLockRef = useRef(false);
+  const isDayOff = Boolean(schedule?.is_day_off);
+  const resolvedShift = useMemo(
+    () =>
+      schedule?.shift ??
+      shifts.find(
+        (shift) => String(shift.id) === String(schedule?.bms_ms_shift_id),
+      ),
+    [schedule?.bms_ms_shift_id, schedule?.shift, shifts],
+  );
+
+  const unlockCell = () => {
+    actionLockRef.current = false;
+    setIsCellLoading(false);
+  };
 
   const handleAssign = (shiftId: string) => {
+    if (actionLockRef.current) return;
+    if (!isDayOff && String(schedule?.bms_ms_shift_id) === shiftId) return;
+
+    actionLockRef.current = true;
     setIsCellLoading(true);
     assignSchedule(
       { bms_ms_staff_id: staff.id, date: date, bms_ms_shift_id: shiftId },
-      { onSettled: () => setIsCellLoading(false) },
+      { onSettled: unlockCell },
     );
   };
 
   const handleRemove = () => {
-    if (!schedule) return;
+    if (actionLockRef.current || !schedule) return;
+
+    actionLockRef.current = true;
     setIsCellLoading(true);
-    removeSchedule(
-      { id: schedule.id },
-      { onSettled: () => setIsCellLoading(false) },
+    clearSchedule(
+      {
+        bms_ms_staff_id: staff.id,
+        date,
+        bms_ms_shift_id: null,
+        is_day_off: true,
+      },
+      { onSettled: unlockCell },
+    );
+  };
+
+  const handleMarkDayOff = () => {
+    if (actionLockRef.current) return;
+    if (isDayOff && !schedule?.bms_ms_shift_id) return;
+
+    actionLockRef.current = true;
+    setIsCellLoading(true);
+    clearSchedule(
+      {
+        bms_ms_staff_id: staff.id,
+        date,
+        bms_ms_shift_id: null,
+        is_day_off: true,
+      },
+      { onSettled: unlockCell },
     );
   };
 
@@ -116,7 +178,7 @@ const ScheduleCell = ({
   const formattedDate = new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
     month: "long",
-  }).format(new Date(date));
+  }).format(new Date(`${date}T00:00:00`));
 
   return (
     <Dropdown className="p-0 w-full h-full block">
@@ -133,14 +195,30 @@ const ScheduleCell = ({
           )}
 
           {schedule ? (
-            <div className="w-full h-full bg-accent/15 border border-accent/20 py-2 px-1 flex flex-col items-center justify-center cursor-pointer hover:bg-accent/25 transition-colors group/event">
-              <span className="text-[12px] font-bold text-accent tracking-tight">
-                {schedule.shift
-                  ? `${schedule.shift.start_time.substring(0, 5)} - ${schedule.shift.end_time.substring(0, 5)}`
-                  : "Custom"}
+            <div
+              className={`w-full h-full border py-2 px-1 flex flex-col items-center justify-center cursor-pointer transition-colors group/event ${
+                isDayOff
+                  ? "bg-danger/10 border-danger/20 hover:bg-danger/15"
+                  : "bg-accent/15 border-accent/20 hover:bg-accent/25"
+              }`}
+            >
+              <span
+                className={`text-[12px] font-bold tracking-tight ${
+                  isDayOff ? "text-danger" : "text-accent"
+                }`}
+              >
+                {isDayOff
+                  ? "Libur"
+                  : resolvedShift
+                    ? `${resolvedShift.start_time.substring(0, 5)} - ${resolvedShift.end_time.substring(0, 5)}`
+                    : "Custom"}
               </span>
-              <span className="text-[10px] font-bold text-accent/60 mt-0.5 truncate w-full px-1 text-center">
-                {schedule.shift?.name || "Shift"}
+              <span
+                className={`text-[10px] font-bold mt-0.5 truncate w-full px-1 text-center ${
+                  isDayOff ? "text-danger/70" : "text-accent/60"
+                }`}
+              >
+                {isDayOff ? "Hari Off" : resolvedShift?.name || "Shift"}
               </span>
 
               <div className="absolute top-1 right-1 opacity-0 group-hover/event:opacity-100 transition-opacity bg-surface rounded-full p-1 shadow-sm border border-border">
@@ -187,7 +265,8 @@ const ScheduleCell = ({
           {shifts.length > 0 ? (
             shifts.map((shift) => {
               const shiftIdStr = String(shift.id);
-              const isActive = String(schedule?.bms_ms_shift_id) === shiftIdStr;
+              const isActive =
+                !isDayOff && String(schedule?.bms_ms_shift_id) === shiftIdStr;
 
               return (
                 <Dropdown.Item
@@ -253,7 +332,26 @@ const ScheduleCell = ({
             </Dropdown.Item>
           )}
 
-          {schedule ? (
+          <Dropdown.Item
+            key="day-off"
+            onPress={handleMarkDayOff}
+            textValue="Tandai Libur"
+            className="mt-1.5 rounded-xl text-warning data-[hover=true]:bg-warning/10 data-[hover=true]:text-warning"
+          >
+            <div className="flex items-center gap-2.5 px-1">
+              <div className="flex items-center justify-center w-6 h-6 rounded-md bg-warning/10 text-warning">
+                <CalendarBlankIcon weight="fill" className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col items-start leading-none">
+                <span className="text-sm font-semibold">Tandai Libur</span>
+                <span className="text-[11px] opacity-70">
+                  Set hari ini sebagai off
+                </span>
+              </div>
+            </div>
+          </Dropdown.Item>
+
+          {schedule && !isDayOff ? (
             <Dropdown.Item
               key="delete"
               onPress={handleRemove}
@@ -267,9 +365,7 @@ const ScheduleCell = ({
                 <span className="text-sm font-semibold">Kosongkan Jadwal</span>
               </div>
             </Dropdown.Item>
-          ) : (
-            <Dropdown.Item key="hidden_placeholder" className="hidden" />
-          )}
+          ) : null}
         </Dropdown.Menu>
       </Dropdown.Popover>
     </Dropdown>
@@ -316,13 +412,13 @@ export default function JamKerjaView() {
     },
   );
 
-  // MUTATION REMOVE
-  const { mutate: removeSchedule } = useRemove<unknown, RemovePayload>(
-    (data) => `/master/schedules/${data.id}`,
+  // MUTATION CLEAR TO DAY OFF
+  const { mutate: clearSchedule } = usePost<unknown, RemovePayload>(
+    "/master/schedules",
     {
       invalidate: [["schedules"]],
       onSuccess: () => {
-        toast.success("Jadwal berhasil dikosongkan");
+        toast.success("Jadwal berhasil diubah menjadi hari off");
       },
     },
   );
@@ -620,7 +716,7 @@ export default function JamKerjaView() {
                   {/* Kolom Hari (Kotak Jadwal) */}
                   {gridDays.map((d) => {
                     const schedule = staff.schedules?.find(
-                      (s) => s.date?.substring(0, 10) === d.dateStr,
+                      (s) => normalizeScheduleDateKey(s.date) === d.dateStr,
                     );
                     return (
                       <td
@@ -633,7 +729,7 @@ export default function JamKerjaView() {
                           schedule={schedule}
                           shifts={shifts}
                           assignSchedule={assignSchedule}
-                          removeSchedule={removeSchedule}
+                          clearSchedule={clearSchedule}
                         />
                       </td>
                     );
