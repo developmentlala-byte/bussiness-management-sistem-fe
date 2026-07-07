@@ -143,6 +143,7 @@ export interface SpaBooking {
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   totalAmount?: number;
+  voucher_snapshot?: AppliedVoucherSnapshot | null;
   service_variant?: {
     id: number;
   }[];

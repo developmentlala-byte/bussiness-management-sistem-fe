@@ -10,6 +10,8 @@ import {
   cn,
   Dropdown,
   RangeCalendar,
+  TextField,
+  InputGroup,
 } from "@heroui/react";
 import {
   BookingStatus,
@@ -26,11 +28,12 @@ import {
   Plus,
   CaretLeft,
   CaretRight,
-  DownloadIcon,
   Trash,
   PaperPlaneRight,
   ArrowsMergeIcon,
   ArrowsSplitIcon,
+  MagnifyingGlass,
+  X,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -67,24 +70,6 @@ const getBookingStatusColor = (status: BookingStatus) => {
 
 const columnHelper = createColumnHelper<SpaBooking>();
 
-type DailySalesReport = {
-  date: string;
-  lines: Array<{
-    label: string;
-    amount: number;
-    type: string;
-    booking_code: string;
-    payment_via: string;
-    paid_at: string | null;
-  }>;
-  totals: { total: number; cash: number; transfer: number };
-  customers_by_source?: {
-    ads?: { count: number };
-    direct?: { count: number };
-  };
-  meta: { paid_count: number; line_count: number };
-};
-
 type CreatedBookingsReport = {
   date: string;
   statuses?: string[] | null;
@@ -106,6 +91,8 @@ function BookingsPageInner() {
     end: endOfMonth(currentDateObj),
   });
   const [useScheduleDate, setUseScheduleDate] = useState<boolean>(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const drawerHeight = useVisualViewportHeight();
   const createBookingDrawer = useOverlayState();
   const detailDrawer = useOverlayState();
@@ -124,12 +111,20 @@ function BookingsPageInner() {
   const startDateStr = dateRange.start.toString();
   const endDateStr = dateRange.end.toString();
 
+  // Debounce search: tunggu 400ms setelah user berhenti ngetik
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
   const bookingQueryParams = useMemo(() => {
-    if (useScheduleDate) {
-      return { start_date: startDateStr, end_date: endDateStr };
-    }
-    return { created_start_date: startDateStr, created_end_date: endDateStr };
-  }, [endDateStr, startDateStr, useScheduleDate]);
+    const base = useScheduleDate
+      ? { start_date: startDateStr, end_date: endDateStr }
+      : { created_start_date: startDateStr, created_end_date: endDateStr };
+    return debouncedSearch ? { ...base, search: debouncedSearch } : base;
+  }, [endDateStr, startDateStr, useScheduleDate, debouncedSearch]);
 
   const { data } = useApiFetch<{ data: SpaBooking[] }>(
     [
@@ -137,6 +132,7 @@ function BookingsPageInner() {
       startDateStr,
       endDateStr,
       useScheduleDate ? "schedule_date" : "created_at",
+      debouncedSearch,
     ],
     "/master/bookings",
     bookingQueryParams,
@@ -186,67 +182,6 @@ function BookingsPageInner() {
       }, 0),
     [filteredBookings],
   );
-
-  const formatReportDate = (dateStr: string) => {
-    const dt = new Date(`${dateStr}T00:00:00`);
-    const formatted = new Intl.DateTimeFormat("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(dt);
-    return formatted.toUpperCase();
-  };
-
-  const fmtRp = (amount: number) =>
-    `Rp. ${Math.trunc(Number(amount || 0)).toLocaleString("id-ID")}`;
-
-  const buildReportText = (report: DailySalesReport) => {
-    const header = `REPORT SALES TANGGAL ${formatReportDate(report.date)}`;
-    const lines =
-      report.lines.length > 0
-        ? report.lines
-            .map((l, idx) => `${idx + 1}. ${l.label} : ${fmtRp(l.amount)}`)
-            .join("\n")
-        : "-";
-
-    const cash = report.totals.cash > 0 ? fmtRp(report.totals.cash) : "-";
-    const transfer =
-      report.totals.transfer > 0 ? fmtRp(report.totals.transfer) : "-";
-
-    const adsCustomerCount = report.customers_by_source?.ads?.count ?? 0;
-    const directCustomerCount = report.customers_by_source?.direct?.count ?? 0;
-
-    return [
-      header,
-      "",
-      lines,
-      "",
-      `Total : ${fmtRp(report.totals.total)}`,
-      `Cash : ${cash}`,
-      `Transfer : ${transfer}`,
-      `Customer Ads : ${adsCustomerCount}`,
-      `Customer Direct : ${directCustomerCount}`,
-    ].join("\n");
-  };
-
-  const fetchDailySalesReport = async (dateStr: string) => {
-    const res = await apiGet("/master/reports/daily-sales", {
-      date: dateStr,
-    });
-    return res?.data as DailySalesReport;
-  };
-
-  const downloadTextFile = (filename: string, content: string) => {
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
 
   const formatReportDateLabel = (dateStr: string) => {
     const dt = new Date(`${dateStr}T00:00:00`);
@@ -341,39 +276,11 @@ function BookingsPageInner() {
       `Booking Confirmed : ${confirmedBookings.length}`,
       `Booking Cancel : ${cancelledBookings.length}`,
       "",
-      // "STATUS",
-      // ...(statusLines.length ? statusLines : ["-"]),
-      // ...(filterStatusLine ? ["", filterStatusLine] : []),
-      // "",
       "OMZET (booking confirmed)",
       `Direct : ${formatRupiah(directAmount)}`,
       `Ads : ${formatRupiah(adsAmount)}`,
       `Total : ${formatRupiah(confirmedTotalAmount)}`,
     ].join("\n");
-  };
-
-  const handleDownloadBookingCreatedReport = async () => {
-    const dateStr = currentDateObj.toString();
-    try {
-      const report = await fetchCreatedBookingsReport(
-        dateStr,
-        activeStatusIds,
-        useScheduleDate,
-      );
-      const text = buildCreatedBookingsReportText(report);
-      downloadTextFile(`report-booking-created-${dateStr}.txt`, text);
-    } catch (e: unknown) {
-      const err = e as {
-        response?: { data?: { message?: string } };
-        message?: string;
-      };
-      toast.danger("Gagal membuat report booking", {
-        description:
-          err?.response?.data?.message ||
-          err?.message ||
-          "Tidak bisa mengambil data report.",
-      });
-    }
   };
 
   const sendWhatsAppText = async (text: string) => {
@@ -861,89 +768,94 @@ function BookingsPageInner() {
         </Drawer>
       </div>
 
-      {/* TOOLBAR */}
+      {/* TOOLBAR — 2 baris berdasarkan fungsi, biar tidak sesak */}
       <div
-        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-3"
+        className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-3"
         style={{ borderRadius: "var(--radius-xl)" }}
       >
-        <div className="flex h-11 w-full items-center justify-between overflow-visible rounded-full border border-border shadow-sm transition-colors sm:w-fit">
-          <button
-            onClick={() => {
-              const rangeDuration = dateRange.end.compare(dateRange.start) + 1;
-              setDateRange({
-                start: dateRange.start.subtract({ days: rangeDuration }),
-                end: dateRange.end.subtract({ days: rangeDuration }),
-              });
-            }}
-            className="flex h-full w-12 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
-            aria-label="Previous period"
-          >
-            <CaretLeft weight="bold" className="h-4 w-4" />
-          </button>
-
-          <Dropdown>
-            <Dropdown.Trigger className="w-full md:w-fit">
-              <div className="flex flex-1 cursor-pointer items-center justify-center gap-2 px-4 text-[13px] sm:text-sm font-bold text-foreground outline-none transition-colors hover:bg-surface-secondary/50">
-                <CalendarBlank
-                  weight="bold"
-                  className="h-4 w-4 shrink-0 text-muted"
-                />
-                <span className="truncate">
-                  {formatDate(dateRange.start.toDate(timeZone), {
-                    dateStyle: "medium",
-                  })}{" "}
-                  -{" "}
-                  {formatDate(dateRange.end.toDate(timeZone), {
-                    dateStyle: "medium",
-                  })}
-                </span>
-              </div>
-            </Dropdown.Trigger>
-            <Dropdown.Popover
-              placement="bottom"
-              className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
+        {/* BARIS 1: FILTER DATA — date range, status, sumber tanggal */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex h-11 items-center justify-between overflow-visible rounded-full border border-border shadow-sm transition-colors w-full sm:w-fit">
+            <button
+              onClick={() => {
+                const rangeDuration =
+                  dateRange.end.compare(dateRange.start) + 1;
+                setDateRange({
+                  start: dateRange.start.subtract({ days: rangeDuration }),
+                  end: dateRange.end.subtract({ days: rangeDuration }),
+                });
+              }}
+              className="flex h-full w-12 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
+              aria-label="Previous period"
             >
-              <RangeCalendar
-                aria-label="Pilih rentang tanggal"
-                value={dateRange}
-                onChange={(val) => setDateRange(val)}
-                className="w-full"
+              <CaretLeft weight="bold" className="h-4 w-4" />
+            </button>
+
+            <Dropdown>
+              <Dropdown.Trigger className="w-full md:w-fit">
+                <div className="flex flex-1 cursor-pointer items-center justify-center gap-2 px-4 text-[13px] sm:text-sm font-bold text-foreground outline-none transition-colors hover:bg-surface-secondary/50">
+                  <CalendarBlank
+                    weight="bold"
+                    className="h-4 w-4 shrink-0 text-muted"
+                  />
+                  <span className="truncate">
+                    {formatDate(dateRange.start.toDate(timeZone), {
+                      dateStyle: "medium",
+                    })}{" "}
+                    -{" "}
+                    {formatDate(dateRange.end.toDate(timeZone), {
+                      dateStyle: "medium",
+                    })}
+                  </span>
+                </div>
+              </Dropdown.Trigger>
+              <Dropdown.Popover
+                placement="bottom"
+                className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
               >
-                <RangeCalendar.Header>
-                  <RangeCalendar.Heading />
-                  <RangeCalendar.NavButton slot="previous" />
-                  <RangeCalendar.NavButton slot="next" />
-                </RangeCalendar.Header>
-                <RangeCalendar.Grid>
-                  <RangeCalendar.GridHeader>
-                    {(day) => (
-                      <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>
-                    )}
-                  </RangeCalendar.GridHeader>
-                  <RangeCalendar.GridBody>
-                    {(date) => <RangeCalendar.Cell date={date} />}
-                  </RangeCalendar.GridBody>
-                </RangeCalendar.Grid>
-              </RangeCalendar>
-            </Dropdown.Popover>
-          </Dropdown>
+                <RangeCalendar
+                  aria-label="Pilih rentang tanggal"
+                  value={dateRange}
+                  onChange={(val) => setDateRange(val)}
+                  className="w-full"
+                >
+                  <RangeCalendar.Header>
+                    <RangeCalendar.Heading />
+                    <RangeCalendar.NavButton slot="previous" />
+                    <RangeCalendar.NavButton slot="next" />
+                  </RangeCalendar.Header>
+                  <RangeCalendar.Grid>
+                    <RangeCalendar.GridHeader>
+                      {(day) => (
+                        <RangeCalendar.HeaderCell>
+                          {day}
+                        </RangeCalendar.HeaderCell>
+                      )}
+                    </RangeCalendar.GridHeader>
+                    <RangeCalendar.GridBody>
+                      {(date) => <RangeCalendar.Cell date={date} />}
+                    </RangeCalendar.GridBody>
+                  </RangeCalendar.Grid>
+                </RangeCalendar>
+              </Dropdown.Popover>
+            </Dropdown>
 
-          <button
-            onClick={() => {
-              const rangeDuration = dateRange.end.compare(dateRange.start) + 1;
-              setDateRange({
-                start: dateRange.start.add({ days: rangeDuration }),
-                end: dateRange.end.add({ days: rangeDuration }),
-              });
-            }}
-            className="flex h-full w-12 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
-            aria-label="Next period"
-          >
-            <CaretRight weight="bold" className="h-4 w-4" />
-          </button>
-        </div>
+            <button
+              onClick={() => {
+                const rangeDuration =
+                  dateRange.end.compare(dateRange.start) + 1;
+                setDateRange({
+                  start: dateRange.start.add({ days: rangeDuration }),
+                  end: dateRange.end.add({ days: rangeDuration }),
+                });
+              }}
+              className="flex h-full w-12 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
+              aria-label="Next period"
+            >
+              <CaretRight weight="bold" className="h-4 w-4" />
+            </button>
+          </div>
 
-        <div className="flex items-center justify-center gap-3">
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-4 py-2">
             <span className="text-sm font-medium text-muted-foreground">
               Berdasarkan
@@ -971,89 +883,106 @@ function BookingsPageInner() {
               </button>
             </div>
           </div>
+
           <StatusFilterDropdown
             statuses={BOOKING_STATUS_OPTIONS}
             defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
             onChange={(ids) => setActiveStatusIds(ids)}
-            className="hidden sm:inline-flex"
+            className="hidden! sm:inline-flex!"
           />
-          <Button
-            variant="secondary"
-            style={{
-              borderRadius: "var(--radius-xl)",
-              border: "1px solid var(--border)",
-              padding: "var(--space-2) var(--space-4)",
-              fontSize: "var(--text-sm)",
-            }}
-            className="ml-auto sm:ml-0"
-            onClick={() => setIsChartVisible(!isChartVisible)}
+        </div>
+
+        {/* BARIS 2: PENCARIAN + AKSI — search dapat ruang lebar, aksi di kanan */}
+        <div className="flex flex-wrap items-center gap-3">
+          <TextField
+            aria-label="Cari nama atau nomor HP customer"
+            className="w-full sm:flex-1 sm:min-w-[240px]"
           >
-            <CalendarBlank
-              style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
-            />
-            <span className="hidden sm:inline">
-              {isChartVisible ? "Hide Timeline" : "Show Timeline"}
-            </span>
-            <span className="sm:hidden">Timeline</span>
-            {isChartVisible ? (
-              <CaretUp
-                style={{
-                  width: "var(--icon-xs)",
-                  height: "var(--icon-xs)",
-                  marginLeft: "var(--space-1)",
-                  color: "var(--muted)",
-                }}
+            <InputGroup className="h-11 rounded-full" fullWidth>
+              <InputGroup.Prefix>
+                <MagnifyingGlass weight="bold" className="h-4 w-4 text-muted" />
+              </InputGroup.Prefix>
+              <InputGroup.Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Cari nama / no. HP customer..."
+                className="text-sm font-medium"
               />
-            ) : (
-              <CaretDown
-                style={{
-                  width: "var(--icon-xs)",
-                  height: "var(--icon-xs)",
-                  marginLeft: "var(--space-1)",
-                  color: "var(--muted)",
-                }}
+              {searchInput && (
+                <InputGroup.Suffix className="pr-1">
+                  <button
+                    type="button"
+                    aria-label="Hapus pencarian"
+                    onClick={() => setSearchInput("")}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-surface-secondary hover:text-foreground transition-colors"
+                  >
+                    <X weight="bold" className="h-3.5 w-3.5" />
+                  </button>
+                </InputGroup.Suffix>
+              )}
+            </InputGroup>
+          </TextField>
+
+          {/* Status filter juga muncul di sini khusus layar kecil, karena disembunyikan di baris 1 */}
+          <StatusFilterDropdown
+            statuses={BOOKING_STATUS_OPTIONS}
+            defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
+            onChange={(ids) => setActiveStatusIds(ids)}
+            className="sm:hidden! w-full!"
+          />
+
+          <div className="flex items-center gap-3 ml-auto">
+            <Button
+              variant="secondary"
+              style={{
+                borderRadius: "var(--radius-xl)",
+                border: "1px solid var(--border)",
+                padding: "var(--space-2) var(--space-4)",
+                fontSize: "var(--text-sm)",
+              }}
+              onClick={() => setIsChartVisible(!isChartVisible)}
+            >
+              <CalendarBlank
+                style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
               />
-            )}
-          </Button>
+              <span className="hidden sm:inline">
+                {isChartVisible ? "Hide Timeline" : "Show Timeline"}
+              </span>
+              <span className="sm:hidden">Timeline</span>
+              {isChartVisible ? (
+                <CaretUp
+                  style={{
+                    width: "var(--icon-xs)",
+                    height: "var(--icon-xs)",
+                    marginLeft: "var(--space-1)",
+                    color: "var(--muted)",
+                  }}
+                />
+              ) : (
+                <CaretDown
+                  style={{
+                    width: "var(--icon-xs)",
+                    height: "var(--icon-xs)",
+                    marginLeft: "var(--space-1)",
+                    color: "var(--muted)",
+                  }}
+                />
+              )}
+            </Button>
 
-          {/* <Button
-          variant="secondary"
-          style={{
-            borderRadius: "var(--radius-xl)",
-            border: "1px solid var(--border)",
-            padding: "var(--space-2) var(--space-4)",
-            fontSize: "var(--text-sm)",
-          }}
-          onClick={() => void handleDownloadDailyReport()}
-        >
-          Download Report
-        </Button> */}
-
-          <Button
-            variant="secondary"
-            style={{
-              borderRadius: "var(--radius-xl)",
-              border: "1px solid var(--border)",
-              padding: "var(--space-2) var(--space-4)",
-              fontSize: "var(--text-sm)",
-            }}
-            onClick={() => void handleDownloadBookingCreatedReport()}
-          >
-            <DownloadIcon className="size-5" /> Download Report
-          </Button>
-
-          <Button
-            variant="secondary"
-            style={{
-              borderRadius: "var(--radius-xl)",
-              border: "1px solid var(--border)",
-              padding: "var(--space-2) var(--space-4)",
-              fontSize: "var(--text-sm)",
-            }}
-            onClick={() => void handleSendBookingCreatedReportToWhatsApp()}
-          >
-            <PaperPlaneRight className="size-5" /> Kirim WA
-          </Button>
+            <Button
+              variant="secondary"
+              style={{
+                borderRadius: "var(--radius-xl)",
+                border: "1px solid var(--border)",
+                padding: "var(--space-2) var(--space-4)",
+                fontSize: "var(--text-sm)",
+              }}
+              onClick={() => void handleSendBookingCreatedReportToWhatsApp()}
+            >
+              <PaperPlaneRight className="size-5" /> Kirim WA
+            </Button>
+          </div>
         </div>
       </div>
 
