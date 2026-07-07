@@ -878,18 +878,18 @@ export default function DashboardOverviewPage() {
             : ("down" as const),
         context: `vs last ${subLabel}`,
       },
-      {
-        label: "Confirmed Booking",
-        value: formatNumber(
-          totalBookingsResponse?.data?.total_paid_bookings?.value ?? 0,
-        ),
-        trend: `${Math.abs(totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0)}%`,
-        trendDirection:
-          (totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0) >= 0
-            ? ("up" as const)
-            : ("down" as const),
-        context: `vs last ${subLabel}`,
-      },
+      // {
+      //   label: "Confirmed Booking",
+      //   value: formatNumber(
+      //     totalBookingsResponse?.data?.total_paid_bookings?.value ?? 0,
+      //   ),
+      //   trend: `${Math.abs(totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0)}%`,
+      //   trendDirection:
+      //     (totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0) >= 0
+      //       ? ("up" as const)
+      //       : ("down" as const),
+      //   context: `vs last ${subLabel}`,
+      // },
       {
         label: "Pelanggan Baru",
         value: formatNumber(totalCustomersResponse?.data?.value ?? 0),
