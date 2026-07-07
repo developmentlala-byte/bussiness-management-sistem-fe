@@ -163,7 +163,7 @@ export default function MasterPelangganPage() {
                         {customer.active_membership && (
                           <Chip
                             size="sm"
-                            variant="flat"
+                            variant="secondary"
                             color="success"
                             startContent={<Crown className="w-3 h-3" />}
                           >
@@ -215,7 +215,7 @@ export default function MasterPelangganPage() {
                       {selectedCustomer.active_membership && (
                         <Chip
                           size="sm"
-                          variant="flat"
+                          variant="secondary"
                           color="success"
                           startContent={<Crown className="w-3 h-3" />}
                         >

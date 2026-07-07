@@ -54,6 +54,7 @@ import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
 import { AlertDialog } from "@heroui/react";
 import StatusFilterDropdown from "./components/status-filter-dropdown";
+import { CopyableText } from "@/app/components/copyable-text";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -429,25 +430,31 @@ function BookingsPageInner() {
     columnHelper.accessor("id", {
       header: "Booking ID",
       cell: (info) => (
-        <span className="font-mono font-semibold">
-          {info.row.original.booking_code}
-        </span>
+        <CopyableText
+          text={info.row.original.booking_code || null}
+          className="font-mono font-semibold "
+        />
       ),
     }),
     columnHelper.accessor("customer_name", {
       header: "Customer",
-      cell: (info) => (
-        <div className="flex flex-col">
-          <span className="font-medium text-sm capitalize">
-            {info.row.original.customer_name
-              ? info.row.original.customer_name.toLowerCase() || "—"
-              : "—"}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {info.row.original.customer_phone}
-          </span>
-        </div>
-      ),
+      cell: (info) => {
+        const rawName = info.row.original.customer_name ?? "";
+        const displayName = rawName ? rawName.toLowerCase() : "";
+
+        return (
+          <div className="flex flex-col gap-0.5">
+            <CopyableText
+              text={displayName || null}
+              className="font-medium text-sm capitalize"
+            />
+            <CopyableText
+              text={info.row.original.customer_phone}
+              className="text-xs text-muted-foreground"
+            />
+          </div>
+        );
+      },
     }),
     columnHelper.accessor("service_name", {
       header: "Service & Therapist",
@@ -896,7 +903,7 @@ function BookingsPageInner() {
         <div className="flex flex-wrap items-center gap-3">
           <TextField
             aria-label="Cari nama atau nomor HP customer"
-            className="w-full sm:flex-1 sm:min-w-[240px]"
+            className="w-full sm:flex-1 sm:min-w-[240px] "
           >
             <InputGroup className="h-11 rounded-full" fullWidth>
               <InputGroup.Prefix>
@@ -1215,7 +1222,7 @@ function BookingsPageInner() {
                               : "Pilih Metode Pembayaran"}
                           </Button>
                           <Button
-                            variant="flat"
+                            variant="secondary"
                             className="mt-2 w-full rounded-xl"
                             onClick={handlePayCash}
                             isDisabled={payCash.isPending}
