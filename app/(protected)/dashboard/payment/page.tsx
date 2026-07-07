@@ -25,6 +25,7 @@ import { useApiFetch } from "@/app/libs/use-http";
 import { IDR } from "@/app/libs/idr";
 import ReceiptModal from "./components/receiptModal";
 import { PaginatedApiResponse } from "@/app/types/api";
+import { CopyableText } from "@/app/components/copyable-text";
 
 export const STATUS_CONFIG: Record<
   PaymentStatus,
@@ -192,9 +193,10 @@ function usePaymentColumns(onView: (p: Payment) => void) {
       enableSorting: false,
       cell: (info) => (
         <div className="flex flex-col">
-          <span className=" text-[11px] font-bold text-foreground">
-            {info.getValue()}
-          </span>
+          <CopyableText
+            text={info.getValue() || null}
+            className="text-[11px]! font-bold! text-foreground!"
+          />
         </div>
       ),
     }),
@@ -217,12 +219,14 @@ function usePaymentColumns(onView: (p: Payment) => void) {
 
         return (
           <div className="flex flex-col">
-            <span className="font-semibold text-xs text-foreground">
-              {customerName}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              {customerPhone}
-            </span>
+            <CopyableText
+              text={customerName || null}
+              className="font-semibold! text-xs! text-foreground! "
+            />
+            <CopyableText
+              text={customerPhone || null}
+              className="text-[10px]! text-muted-foreground! "
+            />
           </div>
         );
       },

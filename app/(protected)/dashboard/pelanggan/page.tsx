@@ -5,6 +5,7 @@ import { MagnifyingGlass, Users } from "@phosphor-icons/react";
 import { useState, useMemo } from "react";
 import { useApiFetch } from "@/app/libs/use-http";
 import Link from "next/link";
+import { CopyableText } from "@/app/components/copyable-text";
 
 type Booking = {
   id: number;
@@ -182,9 +183,11 @@ export default function MasterPelangganPage() {
                           </Avatar.Fallback>
                         </Avatar>
                         <div className="flex flex-col">
-                          <span className="text-sm font-extrabold text-foreground">
-                            {customer.name}
-                          </span>
+                          <CopyableText
+                            text={customer.name || null}
+                            className=" text-sm! font-extrabold! text-foreground!"
+                          />
+
                           {customer.gender && (
                             <span className="text-[11px] uppercase tracking-wider text-muted font-bold mt-1">
                               {customer.gender}
@@ -228,9 +231,10 @@ export default function MasterPelangganPage() {
                     <td className="px-4 py-5 whitespace-nowrap">
                       {customer.last_booking ? (
                         <div className="flex flex-col">
-                          <span className="text-xs font-semibold text-foreground">
-                            {customer.last_booking.booking_code}
-                          </span>
+                          <CopyableText
+                            text={customer.last_booking.booking_code || null}
+                            className="text-xs! font-semibold! text-foreground!"
+                          />
                           <span className="text-[11px] text-muted">
                             {new Date(
                               customer.last_booking.schedule_date,

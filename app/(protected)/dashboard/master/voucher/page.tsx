@@ -13,6 +13,7 @@ import { toast } from "@heroui/react";
 import { useApiFetch, usePost, usePut, useRemove } from "@/app/libs/use-http";
 import { formatRupiah } from "@/app/libs/format-rupiah";
 import { apiGet } from "@/app/services/api";
+import { CopyableText } from "@/app/components/copyable-text";
 
 type VoucherDiscountType = "percentage" | "nominal";
 
@@ -483,7 +484,11 @@ export default function MasterVoucherPage() {
                         fontSize: "var(--text-xs)",
                       }}
                     >
-                      {v.code}
+                      <CopyableText
+                        text={v.code || null}
+                        className="font-mono font-semibold "
+                      />
+                      {}
                     </td>
                     <td
                       style={{
