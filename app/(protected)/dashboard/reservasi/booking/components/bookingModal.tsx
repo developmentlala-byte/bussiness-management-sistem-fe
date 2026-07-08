@@ -1,10 +1,9 @@
 "use client";
 
-import { Calendar, Dropdown, Label, useFilter } from "@heroui/react";
+import { Calendar, Dropdown, Label } from "@heroui/react";
 import { parseDate } from "@internationalized/date";
 import { CreditCardIcon } from "@phosphor-icons/react";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { usePost, useApiFetch, usePut } from "@/app/libs/use-http";
 import { apiPost } from "@/app/services/api";
 import { toast } from "@heroui/react";
@@ -215,6 +214,7 @@ interface ExistingTherapist {
 }
 
 type LocalStaffAssignment = BookingStaffAssignment & { client_key: string };
+type BundleItem = NonNullable<BundlePromo["bundle_items"]>[number];
 
 interface FormState {
   name: string;
@@ -223,6 +223,13 @@ interface FormState {
   date: string;
   slotTime: string;
   voucherCode: string;
+}
+
+interface BonusBookingFormState {
+  scheduleMode: "same_date" | "custom_date";
+  date: string;
+  slotTime: string;
+  staffAssignments: BookingStaffAssignment[];
 }
 
 type BookingStep = "customer" | "services" | "datetime" | "confirm";
@@ -494,7 +501,6 @@ interface OrderPanelProps {
   cartLines: CartLine[];
   onRemoveLine: (index: number) => void;
   onClearCart: () => void;
-  totalAmt: number;
   totalDur: number;
   selectedServiceVariantIds: number[];
   availableDates: string[];
@@ -521,6 +527,13 @@ interface OrderPanelProps {
     appliedVoucher: AppliedVoucherSnapshot | null;
     isApplied: boolean;
   };
+  bonusBookingForm: BonusBookingFormState;
+  selectedFreeVariant: Variant | null;
+  bonusAvailableSlots: AvailableSlot[] | null;
+  onBonusScheduleModeChange: (mode: "same_date" | "custom_date") => void;
+  onBonusDateChange: (date: string) => void;
+  onBonusSlotSelect: (slot: AvailableSlot) => void;
+  onBonusTherapistChange: (therapistId: number) => void;
 }
 
 function OrderPanel({
@@ -530,7 +543,6 @@ function OrderPanel({
   setForm,
   cartLines,
   onRemoveLine,
-  totalAmt,
   totalDur,
   selectedServiceVariantIds,
   availableDates,
@@ -549,6 +561,13 @@ function OrderPanel({
   viewingMonth,
   setViewingMonth,
   pricingSummary,
+  bonusBookingForm,
+  selectedFreeVariant,
+  bonusAvailableSlots,
+  onBonusScheduleModeChange,
+  onBonusDateChange,
+  onBonusSlotSelect,
+  onBonusTherapistChange,
 }: OrderPanelProps) {
   const bundleCalendarBounds = selectedBundle
     ? getBundleCalendarBounds(selectedBundle)
@@ -559,11 +578,12 @@ function OrderPanel({
 
     cartLines.forEach((line) => {
       if (line.kind === "service") {
+        if (line.isFree) return;
         counts.set(line.variant.id, (counts.get(line.variant.id) ?? 0) + 1);
         return;
       }
 
-      line.bundle.bundle_items?.forEach((item: any) => {
+      line.bundle.bundle_items?.forEach((item: BundleItem) => {
         const variantId = Number(item.bms_ms_service_variant_id);
         const qty = Math.max(1, Number(item.quantity ?? 1));
         counts.set(variantId, (counts.get(variantId) ?? 0) + qty);
@@ -658,6 +678,23 @@ function OrderPanel({
     // Fallback ke existing therapists saat slots belum loaded
     return existingTherapists.map((t) => ({ id: t.id, name: t.name }));
   }, [availableSlots, form.slotTime, existingTherapists]);
+
+  const bonusAvailableTherapistsForSlot = useMemo((): AvailableTherapist[] => {
+    if (!bonusAvailableSlots || !bonusBookingForm.slotTime) return [];
+    const slot = bonusAvailableSlots.find(
+      (s) => s.slot_time === bonusBookingForm.slotTime,
+    );
+    return slot?.available_therapists ?? [];
+  }, [bonusAvailableSlots, bonusBookingForm.slotTime]);
+
+  const selectedBonusTherapist = useMemo(() => {
+    const selectedStaffId = bonusBookingForm.staffAssignments[0]?.staff_id;
+    if (!selectedStaffId) return null;
+    return (
+      bonusAvailableTherapistsForSlot.find((t) => t.id === selectedStaffId) ??
+      null
+    );
+  }, [bonusAvailableTherapistsForSlot, bonusBookingForm.staffAssignments]);
 
   const handleDateSelect = (date: { toString: () => string }) => {
     const dateStr = date.toString();
@@ -769,7 +806,7 @@ function OrderPanel({
         const categoryId = variant?.categoryId ?? 0;
         const eligibleIds = eligibleTherapistIdsForCategory(slot, categoryId);
         const usedForVariant = usedByVariant.get(unit.variantId) ?? {};
-        let staffId =
+        const staffId =
           eligibleIds.find((id) => !usedForVariant[id]) ?? eligibleIds[0] ?? 0;
         if (staffId > 0) {
           usedForVariant[staffId] = true;
@@ -796,6 +833,11 @@ function OrderPanel({
 
   const canProceedFromCustomer = !!form.name.trim();
   const canProceedFromServices = cartLines.length > 0;
+  const bonusBookingReady = selectedFreeVariant
+    ? !!bonusBookingForm.date &&
+      !!bonusBookingForm.slotTime &&
+      bonusBookingForm.staffAssignments.length > 0
+    : true;
 
   /**
    * Validasi assignment therapist.
@@ -884,7 +926,8 @@ function OrderPanel({
     !!form.date &&
     !!form.slotTime &&
     allUnitsAssigned &&
-    meetsVariantTherapistCounts;
+    meetsVariantTherapistCounts &&
+    bonusBookingReady;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F8F4F0]">
@@ -1235,6 +1278,177 @@ function OrderPanel({
                 })}
               </div>
             </div>
+
+            {selectedFreeVariant && (
+              <div>
+                <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
+                  Jadwal Layanan Bonus Gratis
+                </p>
+                <div className="rounded-xl border border-[#EDE8E3] bg-white p-3 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onBonusScheduleModeChange("same_date")}
+                      className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                        bonusBookingForm.scheduleMode === "same_date"
+                          ? "bg-[#B55368] text-white"
+                          : "bg-[#F8F4F0] text-[#7A736E]"
+                      }`}
+                    >
+                      Ikut tanggal booking utama
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onBonusScheduleModeChange("custom_date")}
+                      className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                        bonusBookingForm.scheduleMode === "custom_date"
+                          ? "bg-[#B55368] text-white"
+                          : "bg-[#F8F4F0] text-[#7A736E]"
+                      }`}
+                    >
+                      Pilih tanggal sendiri
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-[12px] text-[#7A736E]">
+                        Layanan bonus
+                      </p>
+                      <div className="rounded-[10px] border border-[#EDE8E3] px-3 py-2 text-[13px] font-medium text-[#1A1614]">
+                        {selectedFreeVariant.name}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[12px] text-[#7A736E]">Tanggal</p>
+                      <input
+                        type="date"
+                        className={inputCls}
+                        value={bonusBookingForm.date}
+                        disabled={bonusBookingForm.scheduleMode === "same_date"}
+                        min={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => onBonusDateChange(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-[12px] text-[#7A736E]">
+                      Pilih slot bonus
+                    </p>
+                    {!bonusBookingForm.date ? (
+                      <p className="text-[12px] text-[#B5AFA9]">
+                        Tentukan tanggal bonus terlebih dahulu.
+                      </p>
+                    ) : !bonusAvailableSlots ? (
+                      <p className="text-[12px] text-[#B5AFA9]">
+                        Memuat slot bonus...
+                      </p>
+                    ) : bonusAvailableSlots.length === 0 ? (
+                      <p className="text-[12px] text-[#B5AFA9]">
+                        Tidak ada slot bonus tersedia di tanggal ini.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {bonusAvailableSlots.map((slot) => (
+                          <button
+                            key={`bonus-${slot.slot_time}`}
+                            type="button"
+                            disabled={!slot.is_available}
+                            onClick={() => onBonusSlotSelect(slot)}
+                            className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                              !slot.is_available
+                                ? "cursor-not-allowed border-[#EDE8E3] bg-[#F3F0ED] text-[#B5AFA9]"
+                                : bonusBookingForm.slotTime === slot.slot_time
+                                  ? "border-[#B55368] bg-[#FEF1F4] text-[#B55368]"
+                                  : "border-[#EDE8E3] bg-white text-[#1A1614]"
+                            }`}
+                          >
+                            <span>{slot.slot_time}</span>
+                            {!!slot.available_therapists?.length && (
+                              <span className="ml-1 text-[10px] opacity-70">
+                                ({slot.available_therapists.length} therapist)
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {bonusBookingForm.slotTime && (
+                    <div className="rounded-[10px] border border-[#EDE8E3] bg-[#FAF7F4] px-3 py-2 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[12px] font-medium text-[#1A1614]">
+                          Therapist bonus
+                        </p>
+                        {selectedBonusTherapist?.name && (
+                          <span className="text-[11px] text-[#7A736E]">
+                            Auto: {selectedBonusTherapist.name}
+                          </span>
+                        )}
+                      </div>
+                      <Dropdown>
+                        <Dropdown.Trigger className="w-full">
+                          <button
+                            type="button"
+                            className="w-full rounded-[10px] border border-[#EDE8E3] bg-white px-3 py-2 text-left text-[13px] text-[#1A1614]"
+                          >
+                            {selectedBonusTherapist?.name ??
+                              "Pilih therapist bonus"}
+                          </button>
+                        </Dropdown.Trigger>
+                        <Dropdown.Popover className="rounded-2xl border border-[#EDE8E3] bg-white p-2 shadow-xl">
+                          <Dropdown.Menu
+                            aria-label="Pilih therapist bonus"
+                            selectionMode="single"
+                            selectedKeys={
+                              selectedBonusTherapist
+                                ? [String(selectedBonusTherapist.id)]
+                                : []
+                            }
+                            onAction={(key) =>
+                              onBonusTherapistChange(Number(key))
+                            }
+                            className="min-w-[220px]"
+                          >
+                            {bonusAvailableTherapistsForSlot.length === 0 ? (
+                              <Dropdown.Item
+                                key="empty"
+                                id="empty"
+                                isDisabled
+                                className="rounded-xl px-3 py-2 text-[13px] text-[#B5AFA9]"
+                              >
+                                <Label>Tidak ada therapist tersedia</Label>
+                              </Dropdown.Item>
+                            ) : (
+                              bonusAvailableTherapistsForSlot.map((therapist) => (
+                                <Dropdown.Item
+                                  key={therapist.id}
+                                  id={String(therapist.id)}
+                                  textValue={therapist.name}
+                                  className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
+                                >
+                                  <Label>{therapist.name}</Label>
+                                </Dropdown.Item>
+                              ))
+                            )}
+                          </Dropdown.Menu>
+                        </Dropdown.Popover>
+                      </Dropdown>
+                      {!!bonusAvailableTherapistsForSlot.length && (
+                        <p className="text-[11px] text-[#B5AFA9]">
+                          Tersedia:{" "}
+                          {bonusAvailableTherapistsForSlot
+                            .map((therapist) => therapist.name)
+                            .join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1414,7 +1628,7 @@ function buildInitialCartLines(
       return {
         kind: "bundle" as const,
         bundle: {
-          id: line.bundle_promo_id as any,
+          id: Number(line.bundle_promo_id),
           name: line.name,
           slug: line.slug,
           description: null,
@@ -1577,13 +1791,35 @@ export default function BookingModal({
   );
   const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
   const [focusBogo, setFocusBogo] = useState(false);
+  const [bonusBookingForm, setBonusBookingForm] =
+    useState<BonusBookingFormState>({
+      scheduleMode: "same_date",
+      date: "",
+      slotTime: "",
+      staffAssignments: [],
+    });
 
   // Sync viewingMonth kalau user pilih tanggal di bulan berbeda
   useEffect(() => {
     if (form.date) {
       const newMonth = form.date.slice(0, 7);
+      // eslint-disable-next-line
       setViewingMonth((prev) => (prev === newMonth ? prev : newMonth));
     }
+  }, [form.date]);
+
+  useEffect(() => {
+    // eslint-disable-next-line
+    setBonusBookingForm((prev) => {
+      if (prev.scheduleMode !== "same_date") return prev;
+      if (!form.date) return prev;
+      return {
+        ...prev,
+        date: form.date,
+        slotTime: "",
+        staffAssignments: [],
+      };
+    });
   }, [form.date]);
 
   useEffect(() => {
@@ -1605,10 +1841,25 @@ export default function BookingModal({
     );
     if (hasPaidService) return;
 
+    // eslint-disable-next-line
     setCartLines((prev) =>
       prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
     );
   }, [cartLines]);
+
+  useEffect(() => {
+    const hasFreeVariant = cartLines.some(
+      (line) => line.kind === "service" && !!line.isFree,
+    );
+    if (hasFreeVariant) return;
+    // eslint-disable-next-line
+    setBonusBookingForm({
+      scheduleMode: "same_date",
+      date: form.date,
+      slotTime: "",
+      staffAssignments: [],
+    });
+  }, [cartLines, form.date]);
 
   // ── API Fetches ────────────────────────────────────────────────────────────
   const { data: variantsResp, isLoading: variantsLoading } = useApiFetch<{
@@ -1643,6 +1894,7 @@ export default function BookingModal({
     if (!isOpen || !isEdit || !initialBooking || availableVariants.length === 0)
       return;
     const lines = buildInitialCartLines(initialBooking, availableVariants);
+    // eslint-disable-next-line
     setCartLines(lines);
 
     // Set browse mode sesuai isi cart
@@ -1663,13 +1915,23 @@ export default function BookingModal({
   );
 
   // ── Available dates & slots ────────────────────────────────────────────────
+  const selectedFreeVariant = useMemo(
+    () =>
+      cartLines.find(
+        (line): line is Extract<CartLine, { kind: "service" }> =>
+          line.kind === "service" && !!line.isFree,
+      )?.variant ?? null,
+    [cartLines],
+  );
+
   const selectedServiceVariantIds = useMemo(() => {
     const ids = new Set<number>();
     cartLines.forEach((line) => {
       if (line.kind === "service") {
+        if (line.isFree) return;
         ids.add(line.variant.id);
       } else if (line.kind === "bundle") {
-        line.bundle.bundle_items?.forEach((item: any) => {
+        line.bundle.bundle_items?.forEach((item: BundleItem) => {
           ids.add(item.bms_ms_service_variant_id);
         });
       }
@@ -1750,6 +2012,25 @@ export default function BookingModal({
     isOpen && !!availableSlotsUrl,
   );
 
+  const bonusAvailableSlotsUrl = useMemo(() => {
+    if (!selectedFreeVariant?.id || !bonusBookingForm.date) return null;
+    const params = new URLSearchParams();
+    params.set("date", bonusBookingForm.date);
+    params.append("variant_ids[]", String(selectedFreeVariant.id));
+    return `/master/bookings/available-slots?${params.toString()}`;
+  }, [selectedFreeVariant, bonusBookingForm.date]);
+
+  const { data: bonusAvailableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
+    [
+      "bonus-available-slots",
+      bonusBookingForm.date,
+      String(selectedFreeVariant?.id ?? ""),
+    ] as string[],
+    bonusAvailableSlotsUrl ?? "",
+    undefined,
+    isOpen && !!bonusAvailableSlotsUrl,
+  );
+
   // ── Derived values ─────────────────────────────────────────────────────────
   const totalAmt = cartLines.reduce((sum, line) => {
     return (
@@ -1767,7 +2048,9 @@ export default function BookingModal({
       sum +
       (line.kind === "bundle"
         ? line.pricing.totalDuration
-        : line.variant.duration)
+        : line.isFree
+          ? 0
+          : line.variant.duration)
     );
   }, 0);
 
@@ -1783,6 +2066,20 @@ export default function BookingModal({
             },
       ),
     [cartLines],
+  );
+
+  const parentLineItemsPayload = useMemo(
+    () =>
+      lineItemsPayload.filter(
+        (line) =>
+          !(
+            line.type === "service_variant" &&
+            selectedFreeVariant &&
+            line.service_variant_id === selectedFreeVariant.id &&
+            line.is_free
+          ),
+      ),
+    [lineItemsPayload, selectedFreeVariant],
   );
 
   const pricingSummary = useMemo(() => {
@@ -1898,6 +2195,15 @@ export default function BookingModal({
           }
         | { type: "bundle_promo"; bundle_promo_id: number }
       >;
+      bonus_booking?: {
+        service_variant_id: number;
+        schedule_date: string;
+        slot_time: string;
+        staff_assignments: Array<{
+          service_variant_id: number;
+          staff_id: number;
+        }>;
+      };
     }
   >("/master/bookings", {
     invalidate: [["bookings"]],
@@ -1979,6 +2285,70 @@ export default function BookingModal({
     [selectedBundle],
   );
 
+  const handleBonusScheduleModeChange = useCallback(
+    (mode: "same_date" | "custom_date") => {
+      setBonusBookingForm((prev) => ({
+        ...prev,
+        scheduleMode: mode,
+        date: mode === "same_date" ? form.date : prev.date,
+        slotTime: "",
+        staffAssignments: [],
+      }));
+    },
+    [form.date],
+  );
+
+  const handleBonusDateChange = useCallback((date: string) => {
+    setBonusBookingForm((prev) => ({
+      ...prev,
+      date,
+      slotTime: "",
+      staffAssignments: [],
+    }));
+  }, []);
+
+  const handleBonusSlotSelect = useCallback(
+    (slot: AvailableSlot) => {
+      if (!slot.is_available || !selectedFreeVariant) return;
+      const eligibleIds = eligibleTherapistIdsForCategory(
+        slot,
+        selectedFreeVariant.categoryId,
+      );
+      const selectedId =
+        eligibleIds[0] ?? slot.available_therapists?.[0]?.id ?? 0;
+      setBonusBookingForm((prev) => ({
+        ...prev,
+        slotTime: slot.slot_time,
+        staffAssignments:
+          selectedId > 0
+            ? [
+                {
+                  service_variant_id: selectedFreeVariant.id,
+                  staff_id: selectedId,
+                },
+              ]
+            : [],
+      }));
+    },
+    [selectedFreeVariant],
+  );
+
+  const handleBonusTherapistChange = useCallback(
+    (therapistId: number) => {
+      if (!selectedFreeVariant || therapistId <= 0) return;
+      setBonusBookingForm((prev) => ({
+        ...prev,
+        staffAssignments: [
+          {
+            service_variant_id: selectedFreeVariant.id,
+            staff_id: therapistId,
+          },
+        ],
+      }));
+    },
+    [selectedFreeVariant],
+  );
+
   const inPaidCart = (id: number) =>
     cartLines.some(
       (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
@@ -2010,9 +2380,13 @@ export default function BookingModal({
   const toggleService = (v: Variant) => {
     setCartLines((prev) => {
       const freeServices = prev.filter(
-        (l) => l.kind === "service" && !!l.isFree,
+        (l): l is Extract<CartLine, { kind: "service" }> =>
+          l.kind === "service" && !!l.isFree,
       );
-      const services = prev.filter((l) => l.kind === "service" && !l.isFree);
+      const services = prev.filter(
+        (l): l is Extract<CartLine, { kind: "service" }> =>
+          l.kind === "service" && !l.isFree,
+      );
       const exists = services.some((l) => l.variant.id === v.id);
       const nextPaid = exists
         ? services.filter((l) => l.variant.id !== v.id)
@@ -2106,15 +2480,12 @@ export default function BookingModal({
 
     try {
       setIsApplyingVoucher(true);
-      const response = await apiPost<VoucherPreviewResponse>(
-        "/master/vouchers/preview-booking",
-        {
-          voucher_code: normalizedCode,
-          schedule_date: form.date.slice(0, 10),
-          slot_time: form.slotTime,
-          line_items: lineItemsPayload,
-        },
-      );
+      const response = (await apiPost("/master/vouchers/preview-booking", {
+        voucher_code: normalizedCode,
+        schedule_date: form.date.slice(0, 10),
+        slot_time: form.slotTime,
+        line_items: lineItemsPayload,
+      })) as VoucherPreviewResponse;
 
       setVoucherPreview({
         code: normalizedCode,
@@ -2132,12 +2503,19 @@ export default function BookingModal({
         setFocusBogo(true);
       }
       toast.success("Voucher berhasil diterapkan");
-    } catch (error: any) {
+    } catch (error: unknown) {
       setCartLines((prev) =>
         prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
       );
       setVoucherPreview(null);
-      toast.warning(error?.message ?? "Voucher tidak valid untuk booking ini");
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "message" in error &&
+        typeof error.message === "string"
+          ? error.message
+          : "Voucher tidak valid untuk booking ini";
+      toast.warning(message);
     } finally {
       setIsApplyingVoucher(false);
     }
@@ -2155,6 +2533,16 @@ export default function BookingModal({
       return;
     }
 
+    const bonusBookingPayload =
+      selectedFreeVariant && bonusBookingForm.date && bonusBookingForm.slotTime
+        ? {
+            service_variant_id: selectedFreeVariant.id,
+            schedule_date: bonusBookingForm.date,
+            slot_time: bonusBookingForm.slotTime,
+            staff_assignments: bonusBookingForm.staffAssignments,
+          }
+        : undefined;
+
     if (isEdit && initialBooking?.id) {
       updateBooking.mutate({
         bookingId: Number(initialBooking.id),
@@ -2164,7 +2552,7 @@ export default function BookingModal({
         slot_time: form.slotTime,
         voucher_code: normalizedCode || undefined,
         service_variants: serviceVariants,
-        line_items: lineItemsPayload,
+        line_items: parentLineItemsPayload,
       });
       return;
     }
@@ -2176,7 +2564,8 @@ export default function BookingModal({
       slot_time: form.slotTime,
       voucher_code: normalizedCode || undefined,
       service_variants: serviceVariants,
-      line_items: lineItemsPayload,
+      line_items: parentLineItemsPayload,
+      bonus_booking: bonusBookingPayload,
     });
   };
 
@@ -2228,6 +2617,12 @@ export default function BookingModal({
     setSuccess(false);
     setCreatedBooking(null);
     setVoucherPreview(null);
+    setBonusBookingForm({
+      scheduleMode: "same_date",
+      date: "",
+      slotTime: "",
+      staffAssignments: [],
+    });
     setMobileView("browse");
     setStep("services");
     setViewingMonth(getCurrentMonth());
@@ -2632,7 +3027,6 @@ export default function BookingModal({
             cartLines={cartLines}
             onRemoveLine={removeLine}
             onClearCart={() => setCartLines([])}
-            totalAmt={totalAmt}
             totalDur={totalDur}
             selectedServiceVariantIds={selectedServiceVariantIds}
             availableDates={availableDatesResp?.data?.available_dates ?? []}
@@ -2659,6 +3053,13 @@ export default function BookingModal({
             viewingMonth={viewingMonth}
             setViewingMonth={setViewingMonth}
             pricingSummary={pricingSummary}
+            bonusBookingForm={bonusBookingForm}
+            selectedFreeVariant={selectedFreeVariant}
+            bonusAvailableSlots={bonusAvailableSlotsResp?.data?.slots ?? null}
+            onBonusScheduleModeChange={handleBonusScheduleModeChange}
+            onBonusDateChange={handleBonusDateChange}
+            onBonusSlotSelect={handleBonusSlotSelect}
+            onBonusTherapistChange={handleBonusTherapistChange}
           />
         </div>
       </div>

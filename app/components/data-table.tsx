@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import {
   ColumnDef,
   SortingState,
   ColumnSizingState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getPaginationRowModel,
   getSortedRowModel,
+  Row,
   useReactTable,
 } from "@tanstack/react-table";
 import {
@@ -29,6 +31,8 @@ interface DataTableProps<TData> {
   pageSizeOptions?: number[];
   caption?: string;
   emptyMessage?: string;
+  renderExpandedRow?: (row: Row<TData>) => ReactNode;
+  getRowCanExpand?: (row: Row<TData>) => boolean;
 }
 
 // ─── Sort Icon ────────────────────────────────────────────────────────────────
@@ -107,22 +111,28 @@ export function DataTable<TData>({
   pageSizeOptions = [5, 10, 25, 50],
   caption,
   emptyMessage = "Tidak ada data yang ditampilkan.",
+  renderExpandedRow,
+  getRowCanExpand,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [expanded, setExpanded] = useState({});
 
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    onExpandedChange: setExpanded,
     columnResizeMode: "onChange",
     enableColumnResizing: true,
-    state: { sorting, columnSizing },
+    getRowCanExpand,
+    state: { sorting, columnSizing, expanded },
     initialState: { pagination: { pageSize } },
   });
 
@@ -248,23 +258,34 @@ export function DataTable<TData>({
             ) : (
               <>
                 {table.getRowModel().rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors"
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-5 py-3.5 text-sm text-foreground align-middle"
-                        style={{ width: cell.column.getSize() }}
-                      >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </td>
-                    ))}
-                  </tr>
+                  <Fragment key={row.id}>
+                    <tr
+                      className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors"
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td
+                          key={cell.id}
+                          className="px-5 py-3.5 text-sm text-foreground align-middle"
+                          style={{ width: cell.column.getSize() }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                    {row.getIsExpanded() && renderExpandedRow && (
+                      <tr className="border-b border-border bg-muted/15">
+                        <td
+                          colSpan={row.getVisibleCells().length}
+                          className="px-5 py-4"
+                        >
+                          {renderExpandedRow(row)}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </>
             )}
@@ -315,7 +336,6 @@ export function DataTable<TData>({
                     key={cell.id}
                     className="flex items-center justify-between gap-3 min-h-[22px]"
                   >
-                    {/* Label kolom */}
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
                       {header
                         ? flexRender(
@@ -324,7 +344,6 @@ export function DataTable<TData>({
                           )
                         : null}
                     </span>
-                    {/* Nilai */}
                     <div className="text-sm text-foreground text-right truncate">
                       {flexRender(
                         cell.column.columnDef.cell,
@@ -334,6 +353,11 @@ export function DataTable<TData>({
                   </div>
                 );
               })}
+              {row.getIsExpanded() && renderExpandedRow && (
+                <div className="mt-2 rounded-xl border border-border bg-muted/20 p-3">
+                  {renderExpandedRow(row)}
+                </div>
+              )}
             </div>
           ))
         )}

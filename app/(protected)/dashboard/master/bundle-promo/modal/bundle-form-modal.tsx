@@ -111,8 +111,9 @@ export function BundleFormModal({
         onClose();
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onError: (err: any) =>
-        toast.danger("Gagal", { description: err?.response?.data?.message }),
+      onError: (err: any) => {
+        toast.danger("Gagal", { description: err?.response?.data?.message });
+      },
     },
   );
 
@@ -125,8 +126,9 @@ export function BundleFormModal({
         onClose();
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onError: (err: any) =>
-        toast.danger("Gagal", { description: err?.response?.data?.message }),
+      onError: (err: any) => {
+        toast.danger("Gagal", { description: err?.response?.data?.message });
+      },
     },
   );
 

@@ -1,7 +1,12 @@
 // types/booking.ts
 
 export type BookingStatus = "Pending" | "Confirmed" | "Completed" | "Cancelled";
-export type PaymentStatus = "Unpaid" | "Paid" | "Refunded" | "Expired";
+export type PaymentStatus =
+  | "Unpaid"
+  | "Paid"
+  | "Refunded"
+  | "Expired"
+  | "Pending";
 
 export type BookingLineType = "service_variant" | "bundle_promo";
 
@@ -123,6 +128,8 @@ export interface SpaBooking {
   id: number | string;
   booking_code: string;
   source?: "ads" | "direct";
+  booking_type?: "standard" | "bonus_child";
+  parent_booking_id?: number | null;
   booking_bundle_promos?: BookingBundlePromoLine[];
   customer_name: string;
   customer_phone: string;
@@ -144,6 +151,7 @@ export interface SpaBooking {
   paymentStatus: PaymentStatus;
   totalAmount?: number;
   voucher_snapshot?: AppliedVoucherSnapshot | null;
+  child_bookings?: SpaBooking[];
   service_variant?: {
     id: number;
   }[];

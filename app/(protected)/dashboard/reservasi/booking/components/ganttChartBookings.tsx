@@ -46,12 +46,12 @@ interface BookingTherapist {
 }
 
 interface SpaBooking {
-  id: string;
+  id: string | number;
   booking_code: string;
   customer_name: string;
   customer_phone: string;
-  service_name: string;
-  therapist_name: string;
+  service_name?: string;
+  therapist_name?: string;
   therapists?: Array<string | BookingTherapist>;
   schedule_date: string;
   duration_minutes: number;
@@ -64,6 +64,14 @@ interface SpaBooking {
   status: "Confirmed" | "Pending" | "Completed" | "Cancelled";
   payment_status: string;
   total_amount: number;
+  subtotal_amount?: number;
+  discount_amount?: number;
+  booking_bundle_promos?: Array<{ bundle_name?: string }>;
+  booking_type?: "standard" | "bonus_child";
+  parent_booking_id?: number | null;
+  child_bookings?: SpaBooking[];
+  applied_voucher?: { code?: string; name?: string } | null;
+  voucher_snapshot?: { code?: string; name?: string } | null;
 }
 
 type BookingMeta = SpaBooking & {
@@ -153,11 +161,44 @@ const getTherapistNames = (event: SpaBooking): string => {
     therapists
       .map((t) => {
         if (typeof t === "string") return t;
-        return t.name;
+        return t?.name;
       })
       .filter(Boolean)
       .join(", ") || "—"
   );
+};
+
+const getEventServiceName = (event: SpaBooking): string => {
+  const variantNames = event.service_variants
+    ?.map((line) => line?.name)
+    .filter(Boolean) as string[];
+
+  if (variantNames?.length) {
+    return variantNames.join(", ");
+  }
+
+  if (event.service_name) {
+    return event.service_name;
+  }
+
+  if (event.booking_bundle_promos?.[0]?.bundle_name) {
+    return event.booking_bundle_promos[0].bundle_name;
+  }
+
+  return "Spa Service";
+};
+
+const isBonusChildBooking = (event: SpaBooking) =>
+  event.booking_type === "bonus_child" || Boolean(event.parent_booking_id);
+
+const addBookingToMap = (
+  map: Map<string, (SpaBooking & { timeStr: string })[]>,
+  booking: SpaBooking,
+) => {
+  const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
+  const list = map.get(dateStr) ?? [];
+  list.push({ ...booking, timeStr });
+  map.set(dateStr, list);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,11 +314,7 @@ interface DayDetailModalProps {
 }
 
 function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-
     // Lock body scroll while open
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -309,8 +346,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
       .reduce((s, e) => s + e.total_amount, 0);
     return { confirmed, pending, completed, cancelled, totalRevenue };
   }, [events]);
-
-  if (!mounted) return null;
 
   const content = (
     <div
@@ -416,9 +451,11 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           ) : (
             sorted.map((event) => {
               const endTime = addMin(event.timeStr, event.duration_minutes);
-              const cat = toCat(event.service_name);
+              const displayServiceName = getEventServiceName(event);
+              const cat = toCat(displayServiceName);
               const th = STATUS[event.status] ?? STATUS.Confirmed;
               const therapists = getTherapistNames(event);
+              const isBonus = isBonusChildBooking(event);
 
               return (
                 <div
@@ -494,8 +531,13 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                           th.metaTx,
                         )}
                       >
-                        {event.service_name}
+                        {displayServiceName}
                       </span>
+                      {isBonus && (
+                        <span className="rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8.5px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                          Bonus
+                        </span>
+                      )}
                     </div>
 
                     {/* Therapist */}
@@ -568,7 +610,7 @@ export default function GanttChartBookings() {
     ["bookings"],
     "/master/bookings",
   );
-  const bookings = data?.data ?? [];
+  const bookings = useMemo(() => data?.data ?? [], [data]);
 
   // Tracks which day's detail modal is open
   const [selectedDay, setSelectedDay] = useState<{
@@ -599,14 +641,14 @@ export default function GanttChartBookings() {
 
   const byDate = useMemo(() => {
     const map = new Map<string, (SpaBooking & { timeStr: string })[]>();
-    bookings.forEach((b) => {
-      // Timezone-safe: reads digits straight out of the string instead of
-      // letting `new Date()` reinterpret the trailing "Z" and shift the day.
-      const { dateStr, timeStr } = parseSchedule(b.schedule_date);
-      const list = map.get(dateStr) ?? [];
-      list.push({ ...b, timeStr });
-      map.set(dateStr, list);
+
+    bookings.forEach((booking) => {
+      addBookingToMap(map, booking);
+      (booking.child_bookings ?? []).forEach((childBooking) => {
+        addBookingToMap(map, childBooking);
+      });
     });
+
     return map;
   }, [bookings]);
 
@@ -810,13 +852,15 @@ export default function GanttChartBookings() {
                         event.timeStr,
                         event.duration_minutes,
                       );
-                      const cat = toCat(event.service_name);
+                      const displayServiceName = getEventServiceName(event);
+                      const cat = toCat(displayServiceName);
                       const th = STATUS[event.status] ?? STATUS.Confirmed;
+                      const isBonus = isBonusChildBooking(event);
 
                       const serviceName =
                         event?.service_variants?.length >= 2
                           ? event.service_variants[0].name
-                          : event.service_name;
+                          : displayServiceName;
 
                       const showService = widthPx >= 100;
                       const showTherapist = widthPx >= 155;
@@ -905,6 +949,11 @@ export default function GanttChartBookings() {
                                 >
                                   {serviceName}
                                 </p>
+                                {isBonus && (
+                                  <span className="rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                                    Bonus
+                                  </span>
+                                )}
                               </div>
                             )}
 

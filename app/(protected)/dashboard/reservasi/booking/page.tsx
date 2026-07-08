@@ -13,6 +13,7 @@ import {
   TextField,
   InputGroup,
 } from "@heroui/react";
+import type { Row } from "@tanstack/react-table";
 import {
   BookingStatus,
   SpaBooking,
@@ -341,10 +342,13 @@ function BookingsPageInner() {
       (payload) => `/master/bookings/${payload.id}`,
       {
         invalidate: [["bookings"]],
-        onError: (err: any) => {
+        onError: (err: unknown) => {
+          const error = err as {
+            response?: { data?: { message?: string } };
+          };
           toast.warning("Gagal menghapus booking", {
             description:
-              err.response?.data.message ??
+              error.response?.data?.message ??
               "Terjadi kesalahan saat menghapus booking.",
           });
         },
@@ -427,6 +431,31 @@ function BookingsPageInner() {
   };
 
   const columns = [
+    columnHelper.display({
+      id: "expand",
+      header: "",
+      cell: (info) => {
+        const childBookings = info.row.original.child_bookings ?? [];
+        if (childBookings.length === 0) return null;
+
+        return (
+          <Button
+            isIconOnly
+            size="sm"
+            variant="secondary"
+            aria-label="Toggle bonus booking"
+            onClick={() => info.row.toggleExpanded()}
+          >
+            {info.row.getIsExpanded() ? (
+              <CaretUp className="size-4" weight="bold" />
+            ) : (
+              <CaretDown className="size-4" weight="bold" />
+            )}
+          </Button>
+        );
+      },
+      footer: () => null,
+    }),
     columnHelper.accessor("id", {
       header: "Booking ID",
       cell: (info) => (
@@ -575,15 +604,17 @@ function BookingsPageInner() {
       header: "Amount",
       cell: (info) => {
         const booking = info.row.original;
-        const hasVoucher = booking.applied_voucher || booking.voucher_snapshot;
         const voucher = booking.applied_voucher || booking.voucher_snapshot;
-        const subtotal = booking.subtotal_amount;
-        const discount = booking.discount_amount;
-        const total = booking.total_amount;
+        const subtotal = Number(
+          booking.subtotal_amount ?? booking.total_amount ?? 0,
+        );
+        const discount = Number(booking.discount_amount ?? 0);
+        const total = Number(booking.total_amount ?? subtotal);
+        const hasDiscount = discount > 0;
 
         return (
           <div className="flex flex-col">
-            {hasVoucher && subtotal && (
+            {hasDiscount && (
               <>
                 <span className="text-xs text-muted-foreground line-through">
                   {new Intl.NumberFormat("id-ID", {
@@ -600,19 +631,22 @@ function BookingsPageInner() {
                     maximumFractionDigits: 0,
                   }).format(discount)}
                 </span>
-                {voucher && (
-                  <span className="text-[10px] text-accent font-semibold mt-0.5">
-                    {voucher.code || voucher.name || "Voucher"}
-                  </span>
-                )}
+                <span className="text-[10px] text-danger/80 font-semibold mt-0.5">
+                  Diskon
+                </span>
               </>
+            )}
+            {voucher && !hasDiscount && (
+              <span className="text-[10px] text-accent font-semibold mb-0.5">
+                {voucher.code || voucher.name || "Voucher"}
+              </span>
             )}
             <span className="font-medium">
               {new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
                 maximumFractionDigits: 0,
-              }).format(total ?? 0)}
+              }).format(total)}
             </span>
           </div>
         );
@@ -701,6 +735,81 @@ function BookingsPageInner() {
       footer: () => null,
     }),
   ];
+
+  const renderExpandedBookingRow = (row: Row<SpaBooking>) => {
+    const childBookings = row.original.child_bookings ?? [];
+    if (childBookings.length === 0) return null;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Bonus Booking
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Tidak tampil sebagai row terpisah
+          </p>
+        </div>
+        <div className="grid gap-3">
+          {childBookings.map((child) => (
+            <div
+              key={child.booking_code}
+              className="rounded-2xl border border-border bg-card p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {child.service_variants?.length
+                      ? child.service_variants
+                          .map((line) => getBookingLineLabel(line))
+                          .join(", ")
+                      : "Bonus Service"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {child.booking_code}
+                  </p>
+                </div>
+                <Chip size="sm" variant="primary" color="accent">
+                  Bonus Gratis
+                </Chip>
+              </div>
+              <div className="mt-3 grid gap-2 text-sm text-foreground sm:grid-cols-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Jadwal
+                  </p>
+                  <p>
+                    {formatWallClockDate(child.schedule_date, {
+                      withTime: true,
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Therapist
+                  </p>
+                  <p>
+                    {child.therapists
+                      ?.map((t) => (typeof t === "string" ? t : t.name))
+                      .filter(Boolean)
+                      .join(", ") || "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Status
+                  </p>
+                  <p>
+                    {child.status} / {child.payment_status}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -1013,6 +1122,10 @@ function BookingsPageInner() {
         columns={columns}
         data={filteredBookings}
         defaultPageSize={10}
+        getRowCanExpand={(row) =>
+          (row.original.child_bookings ?? []).length > 0
+        }
+        renderExpandedRow={renderExpandedBookingRow}
       />
 
       {/* DETAIL DRAWER */}
@@ -1208,6 +1321,64 @@ function BookingsPageInner() {
                           )}
                         </div>
                       </div>
+
+                      {(selectedBooking.child_bookings ?? []).length > 0 && (
+                        <div className="rounded-2xl border border-border bg-card p-4">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mb-3">
+                            Bonus Booking
+                          </p>
+                          <div className="space-y-3">
+                            {selectedBooking.child_bookings?.map((child) => (
+                              <div
+                                key={child.booking_code}
+                                className="rounded-xl border border-border/60 p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium">
+                                      {child.service_variants?.length
+                                        ? child.service_variants
+                                            .map((line) =>
+                                              getBookingLineLabel(line),
+                                            )
+                                            .join(", ")
+                                        : "Bonus Service"}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {formatWallClockDate(
+                                        child.schedule_date,
+                                        {
+                                          withTime: true,
+                                        },
+                                      )}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {child.therapists
+                                        ?.map((t) =>
+                                          typeof t === "string" ? t : t.name,
+                                        )
+                                        .filter(Boolean)
+                                        .join(", ") || "—"}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <Chip
+                                      size="sm"
+                                      variant="primary"
+                                      color="accent"
+                                    >
+                                      Bonus Gratis
+                                    </Chip>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                      {child.status} / {child.payment_status}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {selectedBooking.status === "Pending" && (
                         <div className="pt-2">
