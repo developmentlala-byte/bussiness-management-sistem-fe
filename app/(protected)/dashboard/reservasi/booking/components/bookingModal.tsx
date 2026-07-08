@@ -2409,6 +2409,14 @@ export default function BookingModal({
       return;
     }
 
+    // Check if already selected first so we know what to do after
+    const isAlreadySelected = cartLines.some(
+      (line) =>
+        line.kind === "service" &&
+        !!line.isFree &&
+        line.variant.id === row.id,
+    );
+
     setCartLines((prev) => {
       const withoutFree = prev.filter(
         (line) => !(line.kind === "service" && !!line.isFree),
@@ -2440,6 +2448,27 @@ export default function BookingModal({
         { kind: "service" as const, variant, isFree: true },
       ];
     });
+
+    // If we are selecting a new free service, auto-set bonus form and step to confirm
+    if (!isAlreadySelected && form.date && form.slotTime) {
+      setBonusBookingForm((prev) => ({
+        ...prev,
+        scheduleMode: "same_date",
+        date: form.date,
+        slotTime: "", // Let user pick slot but date is prefilled
+        staffAssignments: [],
+      }));
+      setStep("confirm");
+      setMobileView("order");
+    } else if (isAlreadySelected) {
+      // If deselecting, reset bonus form
+      setBonusBookingForm({
+        scheduleMode: "same_date",
+        date: form.date,
+        slotTime: "",
+        staffAssignments: [],
+      });
+    }
   };
 
   const toggleBundle = (bundle: BundlePromo) => {

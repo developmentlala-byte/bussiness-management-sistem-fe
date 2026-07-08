@@ -432,26 +432,66 @@ function BookingsPageInner() {
 
   const columns = [
     columnHelper.display({
-      id: "expand",
-      header: "",
+      id: "no",
+      header: "No",
+      size: 56,
+      minSize: 40,
+      maxSize: 72,
       cell: (info) => {
         const childBookings = info.row.original.child_bookings ?? [];
-        if (childBookings.length === 0) return null;
+        const canExpand = childBookings.length > 0;
+
+        // Nomor urut mengikuti posisi baris di halaman aktif (bukan id booking),
+        // jadi tetap 1, 2, 3... berlanjut antar halaman.
+        const rows = info.table.getRowModel().rows;
+        const localIndex = rows.findIndex((r) => r.id === info.row.id);
+        const { pageIndex, pageSize } = info.table.getState().pagination;
+        const rowNumber = pageIndex * pageSize + localIndex + 1;
+
+        // Row tanpa bonus booking: tampil angka polos aja, tidak interaktif.
+        if (!canExpand) {
+          return (
+            <span className="inline-flex h-6 w-6 items-center justify-center text-sm text-muted-foreground">
+              {rowNumber}
+            </span>
+          );
+        }
+
+        const isExpanded = info.row.getIsExpanded();
 
         return (
-          <Button
-            isIconOnly
-            size="sm"
-            variant="secondary"
-            aria-label="Toggle bonus booking"
+          <button
+            type="button"
             onClick={() => info.row.toggleExpanded()}
+            aria-label="Toggle bonus booking"
+            aria-expanded={isExpanded}
+            className="group relative inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-muted cursor-pointer"
           >
-            {info.row.getIsExpanded() ? (
-              <CaretUp className="size-4" weight="bold" />
-            ) : (
-              <CaretDown className="size-4" weight="bold" />
-            )}
-          </Button>
+            {/* Angka: default kelihatan, hilang saat hover atau saat expanded */}
+            <span
+              className={cn(
+                "text-sm text-muted-foreground transition-opacity",
+                isExpanded ? "opacity-0" : "opacity-100 group-hover:opacity-0",
+              )}
+            >
+              {rowNumber}
+            </span>
+            {/* Icon caret: default disembunyikan, muncul saat hover atau saat expanded */}
+            <span
+              className={cn(
+                "absolute inset-0 flex items-center justify-center transition-opacity",
+                isExpanded
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100",
+              )}
+            >
+              {isExpanded ? (
+                <CaretUp className="size-4 text-foreground" weight="bold" />
+              ) : (
+                <CaretDown className="size-4 text-foreground" weight="bold" />
+              )}
+            </span>
+          </button>
         );
       },
       footer: () => null,
