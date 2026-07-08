@@ -343,7 +343,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
     const cancelled = events.filter((e) => e.status === "Cancelled").length;
     const totalRevenue = events
       .filter((e) => e.status !== "Cancelled")
-      .reduce((s, e) => s + e.total_amount, 0);
+      .reduce((s, e) => s + Number(e.total_amount), 0);
     return { confirmed, pending, completed, cancelled, totalRevenue };
   }, [events]);
 
