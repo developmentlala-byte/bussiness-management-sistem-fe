@@ -1,17 +1,14 @@
 import React, { useMemo } from "react";
-import { CaretDown } from "@phosphor-icons/react";
 
 type RevenueChartPoint = {
   date: string;
   total_revenue: number | string;
+  is_today?: boolean;
 };
 
 interface RevenueChartProps {
   data?: RevenueChartPoint[];
 }
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -26,40 +23,35 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
       data.map((item) => ({
         date: item.date,
         value: Number(item.total_revenue) || 0,
+        isToday: Boolean(item.is_today),
       })),
     [data],
   );
 
-  const points = useMemo(() => {
-    if (normalizedData.length === 0) {
-      return [];
-    }
+  const maxValue = useMemo(() => {
+    if (normalizedData.length === 0) return 0;
+    return Math.max(...normalizedData.map((item) => item.value), 0);
+  }, [normalizedData]);
 
-    const values = normalizedData.map((item) => item.value);
-    const maxValue = Math.max(...values, 1);
-    const minValue = Math.min(...values, 0);
+  const points = useMemo(() => {
+    if (normalizedData.length === 0) return [];
+
     const chartWidth = 520;
     const chartHeight = 140;
     const leftPadding = 30;
-    const rightPadding = 20;
     const pointCount = normalizedData.length;
     const xStep = pointCount === 1 ? 0 : chartWidth / (pointCount - 1);
+    const safeMax = maxValue || 1;
 
     return normalizedData.map((item, index) => {
       const x = leftPadding + index * xStep;
-      const y =
-        chartHeight -
-        ((item.value - minValue) / (maxValue - minValue || 1)) * chartHeight +
-        10;
+      const y = chartHeight - (item.value / safeMax) * chartHeight + 10;
       return { ...item, x, y };
     });
-  }, [normalizedData]);
+  }, [normalizedData, maxValue]);
 
   const path = useMemo(() => {
-    if (!points.length) {
-      return "";
-    }
-
+    if (!points.length) return "";
     return points
       .map((point, index) =>
         index === 0 ? `M ${point.x},${point.y}` : `L ${point.x},${point.y}`,
@@ -68,23 +60,14 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
   }, [points]);
 
   const areaPath = useMemo(() => {
-    if (!points.length) {
-      return "";
-    }
-
+    if (!points.length) return "";
     const pathPoints = points
       .map((point, index) =>
         index === 0 ? `M ${point.x},${point.y}` : `L ${point.x},${point.y}`,
       )
       .join(" ");
-
     return `${pathPoints} L ${points[points.length - 1].x},170 L ${points[0].x},170 Z`;
-  }, [points, path]);
-
-  const highest = points.reduce(
-    (current, point) => (point.value > current.value ? point : current),
-    points[0] ?? { value: 0, x: 0, y: 0, date: "" },
-  );
+  }, [points]);
 
   const xLabels = normalizedData.map((item) =>
     new Intl.DateTimeFormat("id-ID", {
@@ -92,6 +75,7 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
       month: "short",
     }).format(new Date(item.date)),
   );
+  const labelStep = xLabels.length > 10 ? Math.ceil(xLabels.length / 8) : 1;
 
   const totalRevenue = normalizedData.reduce(
     (sum, item) => sum + item.value,
@@ -106,22 +90,16 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
             Ringkasan Pendapatan
           </h3>
           <p className="mt-0.5 text-[10px] text-[var(--muted)]">
-            Periode terpilih
+            Total periode ini: {formatCurrency(totalRevenue)}
           </p>
         </div>
-        {/* <button
-          className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-foreground)]"
-          type="button"
-        >
-          Total {formatCurrency(totalRevenue)} <CaretDown size={11} weight="bold" />
-        </button> */}
       </div>
 
       <div className="flex w-full gap-2">
         <div className="flex flex-col justify-between pb-6 text-[9px] font-medium text-[var(--muted)] select-none">
           {[3, 2, 1, 0].map((index) => (
             <span key={index} className="flex h-0 items-center leading-none">
-              {formatCurrency((index * totalRevenue) / 3 || 0)}
+              {formatCurrency((index * maxValue) / 3 || 0)}
             </span>
           ))}
         </div>
@@ -161,18 +139,6 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
               />
             ))}
 
-            {points.map((point, index) => (
-              <circle
-                key={`point-${index}`}
-                cx={point.x}
-                cy={point.y}
-                r="4"
-                fill="oklch(100% 0.0073 52.55)"
-                stroke="oklch(58.67% 0.118 52.55)"
-                strokeWidth="2"
-              />
-            ))}
-
             {areaPath && <path d={areaPath} fill="url(#areaGradient)" />}
             {path && (
               <path
@@ -185,21 +151,46 @@ export default function RevenueChart({ data = [] }: RevenueChartProps) {
                 vectorEffect="non-scaling-stroke"
               />
             )}
+
+            {points.map((point, index) => (
+              <circle
+                key={`point-${index}`}
+                cx={point.x}
+                cy={point.y}
+                // titik "hari ini" digambar lebih besar biar keliatan ini data masih berjalan
+                r={point.isToday ? 6 : 4}
+                fill={
+                  point.isToday
+                    ? "oklch(58.67% 0.118 52.55)"
+                    : "oklch(100% 0.0073 52.55)"
+                }
+                stroke="oklch(58.67% 0.118 52.55)"
+                strokeWidth="2"
+              >
+                <title>
+                  {`${xLabels[index]}${point.isToday ? " (Hari ini)" : ""}: ${formatCurrency(point.value)}`}
+                </title>
+              </circle>
+            ))}
           </svg>
 
           <div className="mt-2.5 flex justify-between text-[9px] font-medium text-[var(--muted)] select-none">
-            {xLabels.map((label, i) => (
-              <span
-                key={i}
-                className={
-                  label === xLabels[xLabels.length - 1]
-                    ? "font-bold text-[var(--accent)]"
-                    : undefined
-                }
-              >
-                {label}
-              </span>
-            ))}
+            {xLabels.map((label, i) =>
+              i % labelStep === 0 || i === xLabels.length - 1 ? (
+                <span
+                  key={i}
+                  className={
+                    normalizedData[i]?.isToday
+                      ? "font-bold text-[var(--accent)]"
+                      : undefined
+                  }
+                >
+                  {label}
+                </span>
+              ) : (
+                <span key={i} />
+              ),
+            )}
           </div>
         </div>
       </div>

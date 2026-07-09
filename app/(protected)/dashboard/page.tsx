@@ -7,10 +7,6 @@ import {
   Printer,
   SquaresFour,
   Calendar,
-  CreditCard,
-  User,
-  CheckCircle,
-  Clock,
 } from "@phosphor-icons/react";
 import TopDestinations from "./components/dashboardTopDestinations";
 import RevenueChart from "./components/dashboardRevenueChart";
@@ -37,24 +33,52 @@ type DateRange = { start: DateValue; end: DateValue } | null;
 
 type BookingSummaryResponse = {
   data: {
-    total_bookings: { value: number; trend: number };
-    total_paid_bookings: { value: number; trend: number };
-    total_unpaid_bookings: { value: number; trend: number };
-    total_cancelled_bookings: { value: number; trend: number };
+    total_bookings: {
+      value: number;
+      trend: { value: number; is_new: boolean };
+    };
+    total_paid_bookings: {
+      value: number;
+      trend: { value: number; is_new: boolean };
+    };
+    total_unpaid_bookings: {
+      value: number;
+      trend: { value: number; is_new: boolean };
+    };
+    total_cancelled_bookings: {
+      value: number;
+      trend: { value: number; is_new: boolean };
+    };
   };
-
   meta: { compared_days: number };
 };
 
 type TotalCustomerResponse = {
   value: number;
-  trend: number;
+  trend: {
+    value: number;
+    is_new: boolean;
+  };
 };
 
 type RevenueReportResponse = {
-  summary: { total_revenue: number; difference: number; trend: number };
-  chart_data: Array<{ date: string; total_revenue: number | string }>;
-  meta: { compared_days: number };
+  summary: {
+    total_revenue: number;
+    difference: number;
+    trend: {
+      value: number;
+      is_new: boolean;
+    };
+  };
+  chart_data: Array<{
+    date: string;
+    total_revenue: number | string;
+    is_today?: boolean;
+  }>;
+  meta: {
+    compared_days: number;
+    is_partial_period?: boolean;
+  };
 };
 
 type TopServicesResponse = Array<{
@@ -106,8 +130,6 @@ const pad2 = (value: number) => String(value).padStart(2, "0");
 const formatApiDate = (date: DateValue) =>
   `${date.year}-${pad2(date.month)}-${pad2(date.day)}`;
 
-// ─── Dummy Data for Presets ───────────────────────────────────────────────────
-
 const PRESETS = [
   { id: "7d", label: "Last 7 days" },
   { id: "30d", label: "Last 30 days" },
@@ -115,15 +137,6 @@ const PRESETS = [
   { id: "mtd", label: "Month to date" },
   { id: "ytd", label: "Year to date" },
 ];
-
-const QUICK_STATS = [
-  { label: "Avg Trip Value", value: "$1,840" },
-  { label: "Conversion Rate", value: "68.4%" },
-  { label: "Repeat Customers", value: "42%" },
-  { label: "Active Packages", value: "24" },
-];
-
-// ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -144,9 +157,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ============================================================
-// TIPE A: DASHBOARD (Analytics Grid) — Following UI Rules
-// ============================================================
 function TrendBadge({
   direction,
   value,
@@ -185,7 +195,6 @@ function TrendBadge({
   );
 }
 
-// ─── Stat Card — SAMA STYLE, tidak ada background berbeda ────────────────────
 function StatCard({
   label,
   value,
@@ -210,7 +219,6 @@ function StatCard({
         flex: 1,
       }}
     >
-      {/* Header */}
       <div className="flex items-start justify-between">
         <span
           className="uppercase tracking-widest font-semibold"
@@ -224,7 +232,6 @@ function StatCard({
         </span>
       </div>
 
-      {/* Value — tidak boleh terpotong */}
       <div
         className="font-bold leading-none truncate"
         style={{
@@ -237,10 +244,9 @@ function StatCard({
         {value}
       </div>
 
-      {/* Trend */}
       {trend && (
         <div
-          className="flex items-center"
+          className="flex items-center flex-wrap"
           style={{ gap: "var(--space-2)", marginTop: "var(--space-2)" }}
         >
           <TrendBadge direction={trendDirection} value={trend} />
@@ -255,7 +261,6 @@ function StatCard({
   );
 }
 
-// ─── Activity Feed Widget ─────────────────────────────────────────────────────
 function ActivityFeed({ items }: { items: BookingItem[] }) {
   const getServiceLabel = (booking: BookingItem) => {
     const isBundle =
@@ -297,6 +302,8 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
         >
           Booking Activity
         </h3>
+        {/* FIX: label sebelumnya "Today" nyesatkan — isi widget ini adalah
+            booking yang DIBUAT hari ini, jadwalnya bisa di masa depan */}
         <p
           style={{
             fontSize: "var(--text-xs)",
@@ -304,7 +311,7 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
             marginTop: "var(--space-1)",
           }}
         >
-          Today
+          Booking dibuat hari ini
         </p>
       </div>
       <div className="flex flex-col" style={{ padding: "var(--space-3) 0" }}>
@@ -317,7 +324,6 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
               padding: `var(--space-3) var(--card-padding-md)`,
             }}
           >
-            {/* Icon indicator */}
             <div
               className="flex flex-col items-center"
               style={{ gap: "var(--space-1)", flexShrink: 0 }}
@@ -345,7 +351,6 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
                 />
               )}
             </div>
-            {/* Content */}
             <div
               className="flex flex-col min-w-0"
               style={{ gap: "var(--space-1)", paddingBottom: "var(--space-3)" }}
@@ -372,7 +377,6 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
   );
 }
 
-// ─── Staff Attendance Widget ─────────────────────────────────────────────────
 function StaffAttendanceWidget({
   staff,
   hadir,
@@ -488,7 +492,6 @@ function StaffAttendanceWidget({
   );
 }
 
-// ─── Recent Bookings Table ────────────────────────────────────────────────────
 function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
   return (
     <div
@@ -551,96 +554,42 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
         >
           <thead>
             <tr style={{ backgroundColor: "var(--surface-secondary)" }}>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "left",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Customer
-              </th>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "left",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Package
-              </th>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "left",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Duration
-              </th>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "left",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Dates
-              </th>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "right",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Amount
-              </th>
-              <th
-                style={{
-                  padding: "var(--table-cell-py) var(--table-cell-px)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  textAlign: "right",
-                  borderBottom: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Status
-              </th>
+              {["Customer", "Package", "Duration", "Dates"].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    padding: "var(--table-cell-py) var(--table-cell-px)",
+                    fontSize: "var(--text-xs)",
+                    fontWeight: 600,
+                    color: "var(--muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    textAlign: "left",
+                    borderBottom: "1px solid var(--border)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+              {["Amount", "Status"].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    padding: "var(--table-cell-py) var(--table-cell-px)",
+                    fontSize: "var(--text-xs)",
+                    fontWeight: 600,
+                    color: "var(--muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    textAlign: "right",
+                    borderBottom: "1px solid var(--border)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -771,8 +720,6 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 export default function DashboardOverviewPage() {
   const tz = getLocalTimeZone();
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -819,6 +766,10 @@ export default function DashboardOverviewPage() {
     "/payment/reports/revenue",
     dateParams,
   );
+  console.log(
+    "🚀 ~ DashboardOverviewPage ~ totalRevenueResponse:",
+    totalRevenueResponse,
+  );
 
   const { data: topServicesResponse } = useApiFetch<
     SingleApiResponse<TopServicesResponse>
@@ -837,9 +788,7 @@ export default function DashboardOverviewPage() {
     "/master/bookings",
     { ...dateParams, per_page: 6, limit: 5 },
     undefined,
-    {
-      refetchInterval: 10000, // 10 detik
-    },
+    { refetchInterval: 10000 },
   );
 
   const { data: attendanceResponse } = useApiFetch<{
@@ -858,57 +807,54 @@ export default function DashboardOverviewPage() {
     data: PaginatedApiResponse<{ dow: number; count: number }[]>;
   }>(["weekly-booking"], "/booking/weekly-booking");
 
+  // FIX: setiap card sekarang pakai compared_days dari ENDPOINT-nya sendiri,
+  // bukan 1 variabel yang dishare — biar label periode selalu match sama trend value-nya.
+  // FIX: card Pendapatan sekarang kasih tau kalau periode-nya masih berjalan (belum full sebulan).
   const stats = useMemo(() => {
-    const comparedDays = Math.round(
-      totalBookingsResponse?.meta?.compared_days ??
-        totalRevenueResponse?.data?.meta?.compared_days ??
-        30,
+    const bookingDays = Math.round(
+      totalBookingsResponse?.meta?.compared_days ?? 30,
     );
-    const subLabel = `${comparedDays} Hari`;
+    const customerDays = Math.round(
+      totalCustomersResponse?.meta?.compared_days ?? 30,
+    );
+    const revenueDays = Math.round(
+      totalRevenueResponse?.data?.meta?.compared_days ?? 30,
+    );
+    const isPartialRevenuePeriod =
+      totalRevenueResponse?.data?.meta?.is_partial_period ?? false;
+
     return [
       {
         label: "Total Booking",
         value: formatNumber(
           totalBookingsResponse?.data?.total_bookings?.value ?? 0,
         ),
-        trend: `${Math.abs(totalBookingsResponse?.data?.total_bookings?.trend ?? 0)}%`,
+        trend: `${Math.abs(totalBookingsResponse?.data?.total_bookings?.trend.value ?? 0)}%`,
         trendDirection:
-          (totalBookingsResponse?.data?.total_bookings?.trend ?? 0) >= 0
+          (totalBookingsResponse?.data?.total_bookings?.trend.value ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
-        context: `vs last ${subLabel}`,
+        context: `vs last ${bookingDays} Hari`,
       },
-      // {
-      //   label: "Confirmed Booking",
-      //   value: formatNumber(
-      //     totalBookingsResponse?.data?.total_paid_bookings?.value ?? 0,
-      //   ),
-      //   trend: `${Math.abs(totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0)}%`,
-      //   trendDirection:
-      //     (totalBookingsResponse?.data?.total_paid_bookings?.trend ?? 0) >= 0
-      //       ? ("up" as const)
-      //       : ("down" as const),
-      //   context: `vs last ${subLabel}`,
-      // },
       {
         label: "Pelanggan Baru",
         value: formatNumber(totalCustomersResponse?.data?.value ?? 0),
-        trend: `${Math.abs(totalCustomersResponse?.data?.trend ?? 0)}%`,
+        trend: `${Math.abs(totalCustomersResponse?.data?.trend.value ?? 0)}%`,
         trendDirection:
-          (totalCustomersResponse?.data?.trend ?? 0) >= 0
+          (totalCustomersResponse?.data?.trend.value ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
-        context: `vs last ${subLabel}`,
+        context: `vs last ${customerDays} Hari`,
       },
       {
         label: "Pendapatan",
         value: IDR(totalRevenueResponse?.data?.summary?.total_revenue ?? 0),
-        trend: `${Math.abs(totalRevenueResponse?.data?.summary?.trend ?? 0)}%`,
+        trend: `${Math.abs(totalRevenueResponse?.data?.summary?.trend.value ?? 0)}%`,
         trendDirection:
-          (totalRevenueResponse?.data?.summary?.trend ?? 0) >= 0
+          (totalRevenueResponse?.data?.summary?.trend.value ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
-        context: `vs last ${subLabel}`,
+        context: `vs last ${revenueDays} Hari${isPartialRevenuePeriod ? " (bulan berjalan)" : ""}`,
       },
     ];
   }, [totalBookingsResponse, totalCustomersResponse, totalRevenueResponse]);
@@ -992,10 +938,6 @@ export default function DashboardOverviewPage() {
       setDateRange({ start: end.set({ month: 1, day: 1 }), end });
   };
 
-  console.log(
-    "🚀 ~ DashboardOverviewPage ~ weeklyBookingResponse:",
-    weeklyBookingResponse,
-  );
   return (
     <div
       ref={contentRef}
@@ -1008,7 +950,6 @@ export default function DashboardOverviewPage() {
         minHeight: "100%",
       }}
     >
-      {/* Background pattern */}
       <div
         className="pointer-events-none fixed inset-0 z-50 opacity-[0.04] mix-blend-overlay"
         style={{
@@ -1016,7 +957,6 @@ export default function DashboardOverviewPage() {
         }}
       />
 
-      {/* Page Header */}
       <div
         className="flex flex-wrap items-center justify-between"
         style={{ gap: "var(--space-4)" }}
@@ -1046,7 +986,6 @@ export default function DashboardOverviewPage() {
           className="flex flex-wrap items-center"
           style={{ gap: "var(--space-2)" }}
         >
-          {/* Date Range Selector */}
           <div
             className="flex items-center overflow-hidden divide-x divide-border bg-surface shadow-sm max-sm:w-full"
             style={{
@@ -1192,7 +1131,6 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
 
-      {/* Main Layout — Analytics Grid */}
       <div
         className="grid"
         style={{
@@ -1200,7 +1138,6 @@ export default function DashboardOverviewPage() {
           gridTemplateColumns: "repeat(12, 1fr)",
         }}
       >
-        {/* Stat Cards Row — 4 cards equal width */}
         <div
           className="flex"
           style={{
@@ -1220,17 +1157,14 @@ export default function DashboardOverviewPage() {
           ))}
         </div>
 
-        {/* Chart Widget — span 7 */}
         <div className="col-span-12 lg:col-span-7 min-w-0">
           <RevenueChart data={totalRevenueResponse?.data?.chart_data ?? []} />
         </div>
 
-        {/* Top Destinations — span 5 */}
         <div className="col-span-12 lg:col-span-5 min-w-0">
           <TopDestinations items={topServicesResponse?.data ?? []} />
         </div>
 
-        {/* Staff Attendance — span 4 */}
         <div className="col-span-12 md:col-span-6 lg:col-span-4 min-w-0">
           <StaffAttendanceWidget
             staff={staffAttendance}
@@ -1239,7 +1173,6 @@ export default function DashboardOverviewPage() {
           />
         </div>
 
-        {/* Weekly Booking — span 4 */}
         <div className="col-span-12 md:col-span-6 lg:col-span-4 min-w-0">
           <WeeklyBookingCard
             data={weeklyBookingResponse?.data?.data ?? []}
@@ -1249,12 +1182,10 @@ export default function DashboardOverviewPage() {
           />
         </div>
 
-        {/* Activity Feed — span 4 */}
         <div className="col-span-12 md:col-span-12 lg:col-span-4 min-w-0">
           <ActivityFeed items={recentBookingsResponse?.data ?? []} />
         </div>
 
-        {/* Recent Bookings Table — span 12 */}
         <div className="col-span-12 min-w-0">
           <RecentBookingsTable bookings={recentBookingsResponse?.data ?? []} />
         </div>

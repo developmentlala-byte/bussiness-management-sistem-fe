@@ -67,6 +67,9 @@ export default function WeeklyBookingCard({
       </div>
       <p className="text-xs text-muted-foreground mb-5">
         Total bookings this week
+        <span className="block text-[10px] opacity-70">
+          berdasarkan tanggal jadwal
+        </span>
       </p>
 
       <div className="flex gap-3 items-end">
