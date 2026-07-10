@@ -2212,7 +2212,13 @@ export default function BookingModal({
       setSuccess(true);
     },
     onError: (error) => {
-      console.error("Booking creation failed", error);
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Terjadi kesalahan saat membuat booking.";
+      toast.danger("Gagal membuat booking", {
+        description: message,
+      });
     },
   });
 
@@ -2241,8 +2247,14 @@ export default function BookingModal({
       toast.success("Booking berhasil diupdate");
       onSaved?.();
     },
-    onError: () => {
-      toast.warning("Booking gagal diupdate");
+    onError: (error) => {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Terjadi kesalahan saat mengupdate booking.";
+      toast.warning("Booking gagal diupdate", {
+        description: message,
+      });
     },
   });
 
