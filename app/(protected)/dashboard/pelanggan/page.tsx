@@ -1,18 +1,31 @@
 "use client";
 
 import { Avatar, InputGroup, TextField } from "@heroui/react";
-import { MagnifyingGlass, Users } from "@phosphor-icons/react";
-import { useState, useMemo } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
+import { useEffect, useMemo, useState } from "react";
+import { createColumnHelper } from "@tanstack/react-table";
 import { useApiFetch } from "@/app/libs/use-http";
 import Link from "next/link";
 import { CopyableText } from "@/app/components/copyable-text";
+import { DataTable } from "@/app/components/data-table";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
 type Booking = {
   id: number;
   booking_code: string;
   schedule_date: string;
   status: string;
   total_amount: number;
+};
+
+type ActiveMembership = {
+  id: number;
+  membership_package?: {
+    id: number;
+    name: string;
+  } | null;
 };
 
 type Customer = {
@@ -27,26 +40,177 @@ type Customer = {
   bookings_count: number;
   created_at: string;
   last_booking?: Booking | null;
+  active_membership?: ActiveMembership | null;
 };
 
-export default function MasterPelangganPage() {
-  const [search, setSearch] = useState("");
+// Backend paginate(20) → response dibungkus paginator Laravel
+type PaginatedCustomers = {
+  data: {
+    data: Customer[];
+    total: number;
+  };
+};
 
-  const { data: responseData, isLoading } = useApiFetch<{ data: Customer[] }>(
-    ["customers"],
-    "/customer",
+// Ambil per_page besar supaya DataTable (client-side pagination) tetap bisa
+// menampilkan & memfilter seluruh pelanggan seperti sebelumnya.
+const FETCH_PER_PAGE = 500;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FORMATTERS
+// ─────────────────────────────────────────────────────────────────────────────
+const fmtDate = (iso: string) =>
+  new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(
+    new Date(iso),
   );
-  const customers = responseData?.data || [];
 
-  const filteredCustomers = useMemo(() => {
-    if (!search) return customers;
-    return customers.filter(
-      (customer: Customer) =>
-        customer.name?.toLowerCase().includes(search.toLowerCase()) ||
-        customer.phone?.toLowerCase().includes(search.toLowerCase()) ||
-        customer.email?.toLowerCase().includes(search.toLowerCase()),
-    );
-  }, [search, customers]);
+const columnHelper = createColumnHelper<Customer>();
+
+export default function MasterPelangganPage() {
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce: tunggu user berhenti ngetik 400ms sebelum query ke backend
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
+  const queryParams = useMemo(
+    () => ({
+      per_page: FETCH_PER_PAGE,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    }),
+    [debouncedSearch],
+  );
+
+  const { data: responseData, isLoading } = useApiFetch<PaginatedCustomers>(
+    ["customers", debouncedSearch],
+    "/customer",
+    queryParams,
+  );
+
+  const customers = responseData?.data ?? [];
+
+  // ── Kolom tabel ────────────────────────────────────────────────────────
+  const columns = [
+    columnHelper.display({
+      id: "profile",
+      header: "Profil Pelanggan",
+      cell: (info) => {
+        const customer = info.row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <Avatar className="border border-border/50 bg-border/20 shrink-0">
+              <Avatar.Fallback className="text-muted font-bold">
+                {customer.name?.charAt(0) ?? "?"}
+              </Avatar.Fallback>
+            </Avatar>
+            <div className="flex flex-col min-w-0">
+              <CopyableText
+                text={customer.name || null}
+                className="text-sm! font-extrabold! text-foreground!"
+              />
+              {customer.gender && (
+                <span className="text-[11px] uppercase tracking-wider text-muted font-bold mt-0.5">
+                  {customer.gender}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor("customer_code", {
+      header: "Kode Pelanggan",
+      cell: (info) => (
+        <span className="text-xs font-bold text-muted">
+          {info.getValue() || "-"}
+        </span>
+      ),
+    }),
+    columnHelper.accessor("email", {
+      header: "Email",
+      cell: (info) => (
+        <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 text-xs font-bold text-muted">
+          {info.getValue() || "-"}
+        </span>
+      ),
+    }),
+    columnHelper.accessor("phone", {
+      header: "No. Telp",
+      cell: (info) => {
+        const phone = info.getValue();
+        if (!phone) {
+          return (
+            <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 text-xs font-bold text-muted">
+              -
+            </span>
+          );
+        }
+        return (
+          <Link
+            href={`https://wa.me/${phone}`}
+            target="_blank"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 hover:bg-accent/10 text-muted hover:text-accent text-xs font-bold transition-colors"
+          >
+            {phone}
+          </Link>
+        );
+      },
+    }),
+    columnHelper.accessor("active_membership", {
+      header: "Membership",
+      cell: (info) => {
+        const membership = info.getValue();
+        if (!membership) {
+          return <span className="text-xs text-muted">-</span>;
+        }
+        return (
+          <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 text-xs font-bold">
+            {membership.membership_package?.name ?? "Member Aktif"}
+          </span>
+        );
+      },
+    }),
+    columnHelper.accessor("bookings_count", {
+      header: "Jumlah Booking",
+      cell: (info) => (
+        <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-accent/15 text-accent text-xs font-bold">
+          {info.getValue()}x
+        </span>
+      ),
+    }),
+    columnHelper.accessor("last_booking", {
+      header: "Terakhir Booking",
+      cell: (info) => {
+        const lastBooking = info.getValue();
+        if (!lastBooking) {
+          return <span className="text-xs text-muted">-</span>;
+        }
+        return (
+          <div className="flex flex-col">
+            <CopyableText
+              text={lastBooking.booking_code || null}
+              className="text-xs! font-semibold! text-foreground!"
+            />
+            <span className="text-[11px] text-muted">
+              {fmtDate(lastBooking.schedule_date)}
+            </span>
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor("created_at", {
+      header: "Bergabung",
+      cell: (info) => (
+        <span className="text-sm text-muted font-semibold">
+          {fmtDate(info.getValue())}
+        </span>
+      ),
+    }),
+  ];
 
   return (
     <div
@@ -90,177 +254,29 @@ export default function MasterPelangganPage() {
         </div>
       </div>
 
-      {/* CONTENT */}
-      <div className="space-y-6">
-        {/* TOOLBAR */}
-        <div className="flex items-center justify-between">
-          <TextField aria-label="Cari pelanggan" className="w-full sm:w-80">
-            <InputGroup className="bg-transparent rounded-full border border-border h-11 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all shadow-sm overflow-hidden">
-              <InputGroup.Prefix className="pl-4 pr-2 bg-transparent text-muted flex items-center">
-                <MagnifyingGlass weight="bold" className="w-4 h-4" />
-              </InputGroup.Prefix>
-              <InputGroup.Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari nama, email, atau telepon..."
-                className="w-full bg-transparent text-sm font-semibold h-full px-2 outline-none"
-              />
-            </InputGroup>
-          </TextField>
-        </div>
+      {/* TOOLBAR */}
+      <TextField aria-label="Cari pelanggan" className="w-full sm:w-80">
+        <InputGroup className="bg-transparent rounded-full border border-border h-11 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all shadow-sm overflow-hidden">
+          <InputGroup.Prefix className="pl-4 pr-2 bg-transparent text-muted flex items-center">
+            <MagnifyingGlass weight="bold" className="w-4 h-4" />
+          </InputGroup.Prefix>
+          <InputGroup.Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Cari nama, email, atau telepon..."
+            className="w-full bg-transparent text-sm font-semibold h-full px-2 outline-none"
+          />
+        </InputGroup>
+      </TextField>
 
-        {/* TABEL DATA */}
-        <div className="overflow-x-auto scrollbar-hide pb-10">
-          <table className="w-full text-left border-collapse min-w-[1100px]">
-            <thead>
-              <tr className="border-y border-border">
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Profil Pelanggan
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Kode Pelanggan
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  No. Telp
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Jumlah Booking
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Terakhir Booking
-                </th>
-                <th className="px-4 py-5 text-[11px] font-bold text-muted uppercase tracking-wider">
-                  Bergabung
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={`skeleton-${i}`} className="border-b border-border">
-                    <td className="py-5 px-4 bg-background sticky left-0 z-10 border-r border-border/50 shadow-[1px_0_0_0_var(--color-border)]">
-                      <div className="flex items-center gap-3 animate-pulse">
-                        <div className="w-10 h-10 rounded-full bg-accent/25" />
-                        <div className="flex flex-col gap-1.5 w-32">
-                          <div className="h-3.5 bg-accent/25 rounded-md w-full" />
-                          <div className="h-2.5 bg-accent/25 rounded-md w-1/2" />
-                        </div>
-                      </div>
-                    </td>
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <td
-                        key={`skeleton-cell-${i}`}
-                        className="p-2.5 border-r border-border/30 last:border-r-0"
-                      >
-                        <div className="w-full h-[3.5rem] rounded-xl bg-accent/25 animate-pulse" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : filteredCustomers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-12 text-center text-muted font-medium text-sm"
-                  >
-                    Tidak ada data pelanggan.
-                  </td>
-                </tr>
-              ) : (
-                filteredCustomers.map((customer: Customer) => (
-                  <tr
-                    key={customer.id}
-                    className="border-b border-border hover:bg-border/10 transition-colors group"
-                  >
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="border border-border/50 bg-border/20">
-                          <Avatar.Fallback className="text-muted font-bold">
-                            {customer.name.charAt(0)}
-                          </Avatar.Fallback>
-                        </Avatar>
-                        <div className="flex flex-col">
-                          <CopyableText
-                            text={customer.name || null}
-                            className=" text-sm! font-extrabold! text-foreground!"
-                          />
-
-                          {customer.gender && (
-                            <span className="text-[11px] uppercase tracking-wider text-muted font-bold mt-1">
-                              {customer.gender}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      <span className="text-xs font-bold text-muted">
-                        {customer.customer_code || "-"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 text-xs font-bold text-muted">
-                        {customer.email || "-"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      {customer.phone ? (
-                        <Link
-                          href={`https://wa.me/${customer.phone}`}
-                          target="_blank"
-                          className="text-muted hover:text-accent transition-colors"
-                        >
-                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 hover:bg-accent/10 hover:text-accent text-xs font-bold">
-                            {customer.phone}
-                          </span>
-                        </Link>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-border/20 text-xs font-bold text-muted">
-                          -
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-accent/15 text-accent text-xs font-bold">
-                        {customer.bookings_count}x
-                      </span>
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      {customer.last_booking ? (
-                        <div className="flex flex-col">
-                          <CopyableText
-                            text={customer.last_booking.booking_code || null}
-                            className="text-xs! font-semibold! text-foreground!"
-                          />
-                          <span className="text-[11px] text-muted">
-                            {new Date(
-                              customer.last_booking.schedule_date,
-                            ).toLocaleDateString("id-ID", {
-                              dateStyle: "medium",
-                            })}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-5 whitespace-nowrap">
-                      <span className="text-sm text-muted font-semibold">
-                        {new Intl.DateTimeFormat("id-ID", {
-                          dateStyle: "medium",
-                        }).format(new Date(customer.created_at))}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* TABEL */}
+      <DataTable
+        columns={columns}
+        data={customers}
+        defaultPageSize={10}
+        isLoading={isLoading}
+        emptyMessage="Tidak ada data pelanggan."
+      />
     </div>
   );
 }
