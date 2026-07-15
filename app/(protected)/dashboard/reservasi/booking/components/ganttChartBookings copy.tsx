@@ -14,7 +14,6 @@ import {
   Wallet,
   CalendarBlank,
   CaretRight,
-  CaretLeft,
 } from "@phosphor-icons/react";
 import { useApiFetch } from "@/app/libs/use-http";
 
@@ -29,7 +28,6 @@ const MIN_WIDTH = HOUR_WIDTH / 60;
 const Y_AXIS_W = 150;
 const LANE_H = 82;
 const LANE_PAD = 8;
-const DAYS_IN_VIEW = 7;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -76,22 +74,19 @@ interface SpaBooking {
   voucher_snapshot?: { code?: string; name?: string } | null;
 }
 
-type ScheduledBooking = SpaBooking & { timeStr: string };
-type BookingMeta = ScheduledBooking & { lane: number; laneCount: number };
+type BookingMeta = SpaBooking & {
+  timeStr: string;
+  lane: number;
+  laneCount: number;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DATE / TIME HELPERS
+// HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 const toDateStr = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate(),
   ).padStart(2, "0")}`;
-
-const addDays = (base: Date, amount: number) => {
-  const d = new Date(base);
-  d.setDate(d.getDate() + amount);
-  return d;
-};
 
 // ── TIMEZONE-SAFE PARSING ───────────────────────────────────────────────────
 // The API returns schedule_date as e.g. "2026-06-29T16:00:00.000000Z".
@@ -144,41 +139,7 @@ const fmtIDR = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FORMATTERS
-// ─────────────────────────────────────────────────────────────────────────────
-const DAY_FMT = new Intl.DateTimeFormat("id-ID", { weekday: "long" });
-const DATE_FMT = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-});
-const DATE_LONG_FMT = new Intl.DateTimeFormat("id-ID", {
-  weekday: "long",
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-});
-const RANGE_DAY_FMT = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-});
-
-function formatRange(start: Date, end: Date) {
-  const startLabel = RANGE_DAY_FMT.format(start);
-  const endLabel = RANGE_DAY_FMT.format(end);
-  const year = end.getFullYear();
-  if (start.getFullYear() !== year) {
-    return `${startLabel} ${start.getFullYear()} – ${endLabel} ${year}`;
-  }
-  return `${startLabel} – ${endLabel} ${year}`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BOOKING DISPLAY HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 type Cat = "massage" | "nail" | "facial" | "spa";
-
 const toCat = (name: string): Cat => {
   const s = name?.toLowerCase() ?? "";
   if (s.includes("nail")) return "nail";
@@ -198,7 +159,10 @@ const getTherapistNames = (event: SpaBooking): string => {
   const therapists = event.therapists ?? [event.therapist_name];
   return (
     therapists
-      .map((t) => (typeof t === "string" ? t : t?.name))
+      .map((t) => {
+        if (typeof t === "string") return t;
+        return t?.name;
+      })
       .filter(Boolean)
       .join(", ") || "—"
   );
@@ -209,11 +173,18 @@ const getEventServiceName = (event: SpaBooking): string => {
     ?.map((line) => line?.name)
     .filter(Boolean) as string[];
 
-  if (variantNames?.length) return variantNames.join(", ");
-  if (event.service_name) return event.service_name;
+  if (variantNames?.length) {
+    return variantNames.join(", ");
+  }
+
+  if (event.service_name) {
+    return event.service_name;
+  }
+
   if (event.booking_bundle_promos?.[0]?.bundle_name) {
     return event.booking_bundle_promos[0].bundle_name;
   }
+
   return "Spa Service";
 };
 
@@ -221,7 +192,7 @@ const isBonusChildBooking = (event: SpaBooking) =>
   event.booking_type === "bonus_child" || Boolean(event.parent_booking_id);
 
 const addBookingToMap = (
-  map: Map<string, ScheduledBooking[]>,
+  map: Map<string, (SpaBooking & { timeStr: string })[]>,
   booking: SpaBooking,
 ) => {
   const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
@@ -279,7 +250,9 @@ const STATUS: Record<string, Theme> = {
 // available lane whose last occupant has already ended. If none is free,
 // a new lane is opened. This prevents any visual overlap.
 // ─────────────────────────────────────────────────────────────────────────────
-function assignLanes(events: ScheduledBooking[]): BookingMeta[] {
+function assignLanes(
+  events: (SpaBooking & { timeStr: string })[],
+): BookingMeta[] {
   const sorted = [...events].sort((a, b) => a.timeStr.localeCompare(b.timeStr));
   const laneEnds: string[] = []; // last end-time per lane
 
@@ -294,6 +267,22 @@ function assignLanes(events: ScheduledBooking[]): BookingMeta[] {
   const laneCount = Math.max(laneEnds.length, 1);
   return assigned.map((ev) => ({ ...ev, laneCount }));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FORMATTERS
+// ─────────────────────────────────────────────────────────────────────────────
+const DAY_FMT = new Intl.DateTimeFormat("id-ID", { weekday: "long" });
+const DATE_FMT = new Intl.DateTimeFormat("id-ID", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+const DATE_LONG_FMT = new Intl.DateTimeFormat("id-ID", {
+  weekday: "long",
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LEGEND BADGE
@@ -314,103 +303,30 @@ function LegendItem({ label, status }: { label: string; status: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DAY NAVIGATION
-// Minimal ghost-icon buttons flanking a quiet text label. No boxed pill,
-// no heavy border — feels like part of the header, not a separate control.
-// ─────────────────────────────────────────────────────────────────────────────
-function DayNavControl({
-  isAtToday,
-  rangeLabel,
-  onPrev,
-  onNext,
-  onToday,
-}: {
-  isAtToday: boolean;
-  rangeLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-  onToday: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-0.5 shrink-0">
-      <button
-        type="button"
-        onClick={onPrev}
-        aria-label="Mundur 1 hari"
-        className={cn(
-          "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-          "text-[var(--muted)] hover:text-[var(--foreground)]",
-          "hover:bg-[var(--surface-secondary)] active:scale-95",
-          "transition-all duration-100",
-        )}
-      >
-        <CaretLeft weight="bold" className="size-3.5" />
-      </button>
-
-      <button
-        type="button"
-        onClick={onToday}
-        className={cn(
-          "px-2.5 h-7 rounded-md flex items-center justify-center shrink-0",
-          "text-[11px] font-medium tabular-nums whitespace-nowrap",
-          "transition-colors duration-100",
-          isAtToday
-            ? "text-[var(--foreground)] cursor-default"
-            : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-secondary)]",
-        )}
-      >
-        {isAtToday ? (
-          "Hari Ini"
-        ) : (
-          <span className="flex items-center gap-1.5">
-            {rangeLabel}
-            <span className="text-[var(--accent)] text-[9px] font-semibold uppercase tracking-wide">
-              Kembali
-            </span>
-          </span>
-        )}
-      </button>
-
-      <button
-        type="button"
-        onClick={onNext}
-        aria-label="Maju 1 hari"
-        className={cn(
-          "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
-          "text-[var(--muted)] hover:text-[var(--foreground)]",
-          "hover:bg-[var(--surface-secondary)] active:scale-95",
-          "transition-all duration-100",
-        )}
-      >
-        <CaretRight weight="bold" className="size-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // DAY DETAIL MODAL
 // Rendered via createPortal so it sits outside the scrollable Gantt container.
 // Opens as a bottom sheet on mobile, centered card on sm+.
 // ─────────────────────────────────────────────────────────────────────────────
 interface DayDetailModalProps {
   date: Date;
-  events: ScheduledBooking[];
+  events: (SpaBooking & { timeStr: string })[];
   onClose: () => void;
 }
 
 function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
+    // Lock body scroll while open
+    const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    // ESC to dismiss
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
 
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
@@ -427,7 +343,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
     const cancelled = events.filter((e) => e.status === "Cancelled").length;
     const totalRevenue = events
       .filter((e) => e.status !== "Cancelled")
-      .reduce((sum, e) => sum + Number(e.total_amount), 0);
+      .reduce((s, e) => s + Number(e.total_amount), 0);
     return { confirmed, pending, completed, cancelled, totalRevenue };
   }, [events]);
 
@@ -451,12 +367,12 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           "animate-in fade-in slide-in-from-bottom-6 duration-300 ease-out",
         )}
       >
-        {/* Mobile drag handle */}
+        {/* ── Mobile drag handle ── */}
         <div className="sm:hidden flex justify-center pt-3 shrink-0">
           <div className="w-9 h-[3px] rounded-full bg-[var(--muted)]/25" />
         </div>
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
@@ -487,7 +403,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           </button>
         </div>
 
-        {/* Stats row */}
+        {/* ── Stats row ── */}
         <div className="grid grid-cols-4 divide-x divide-border border-b border-border shrink-0">
           {[
             { label: "Confirmed", value: stats.confirmed, status: "Confirmed" },
@@ -517,7 +433,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           })}
         </div>
 
-        {/* Booking list */}
+        {/* ── Booking list ── */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 text-center">
@@ -578,6 +494,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0 space-y-1.5">
+                    {/* Name + booking code + status badge */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p
@@ -603,6 +520,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                       </span>
                     </div>
 
+                    {/* Service */}
                     <div className="flex items-center gap-1.5">
                       <span className={cn("shrink-0", th.metaTx)}>
                         {CAT_ICONS[cat]}
@@ -622,6 +540,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                       )}
                     </div>
 
+                    {/* Therapist */}
                     <div className="flex items-center gap-1.5">
                       <UserCircle
                         weight="duotone"
@@ -632,6 +551,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                       </span>
                     </div>
 
+                    {/* Duration + Amount */}
                     <div className="flex items-center justify-between pt-1 border-t border-[var(--border)]/40">
                       <div className="flex items-center gap-1">
                         <Clock
@@ -657,7 +577,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           )}
         </div>
 
-        {/* Footer */}
+        {/* ── Footer ── */}
         <div className="px-5 py-3.5 border-t border-border bg-[var(--surface)]/60 rounded-b-[inherit] flex items-center justify-between shrink-0">
           <span className="text-[11px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--foreground)]">
@@ -692,81 +612,56 @@ export default function GanttChartBookings() {
   );
   const bookings = useMemo(() => data?.data ?? [], [data]);
 
-  // Which day's detail modal is open (null = closed)
+  // Tracks which day's detail modal is open
   const [selectedDay, setSelectedDay] = useState<{
     date: Date;
-    events: ScheduledBooking[];
+    events: (SpaBooking & { timeStr: string })[];
   } | null>(null);
 
-  // `today` is fixed once per mount — purely for rendering "this is today's
-  // column" and as the anchor point for the sliding window below. It is NOT
-  // used to interpret the API's schedule_date strings (see parseSchedule).
+  // `today` is only used to build the local-date label grid (Date object is
+  // fine here — it's purely for rendering "this is today's column", not for
+  // interpreting the API's schedule_date strings).
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
 
-  // ── Sliding 7-day window ──────────────────────────────────────────────
-  // dayOffset = 0 → window starts today. Negative = window shifted into the
-  // past, positive = shifted into the future. Always moves by 1 day at a
-  // time, so the view never "jumps" a full week like a calendar page-flip.
-  const [dayOffset, setDayOffset] = useState(0);
-  const isAtToday = dayOffset === 0;
-
-  const viewStart = useMemo(
-    () => addDays(today, dayOffset),
-    [today, dayOffset],
-  );
-  const viewEnd = useMemo(
-    () => addDays(viewStart, DAYS_IN_VIEW - 1),
-    [viewStart],
-  );
-
   const days = useMemo(
-    () => Array.from({ length: DAYS_IN_VIEW }, (_, i) => addDays(viewStart, i)),
-    [viewStart],
+    () =>
+      Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        return d;
+      }),
+    [today],
   );
 
-  const rangeLabel = useMemo(
-    () => formatRange(viewStart, viewEnd),
-    [viewStart, viewEnd],
-  );
-
-  const goPrevDay = () => setDayOffset((o) => o - 1);
-  const goNextDay = () => setDayOffset((o) => o + 1);
-  const goToday = () => setDayOffset(0);
-
-  // ── Hour axis (fixed, independent of which days are shown) ───────────
   const hours = useMemo(
     () => Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => START_HOUR + i),
     [],
   );
 
-  // ── Group all bookings (+ their bonus child bookings) by calendar date ─
   const byDate = useMemo(() => {
-    const map = new Map<string, ScheduledBooking[]>();
+    const map = new Map<string, (SpaBooking & { timeStr: string })[]>();
+
     bookings.forEach((booking) => {
       addBookingToMap(map, booking);
-      (booking.child_bookings ?? []).forEach((child) =>
-        addBookingToMap(map, child),
-      );
+      (booking.child_bookings ?? []).forEach((childBooking) => {
+        addBookingToMap(map, childBooking);
+      });
     });
+
     return map;
   }, [bookings]);
 
-  // ── "Now" line position — only meaningful when today is in view ───────
   const nowPx = useMemo(() => {
-    const now = new Date();
-    const minutesFromStart =
-      (now.getHours() - START_HOUR) * 60 + now.getMinutes();
-    return {
-      px: minutesFromStart * MIN_WIDTH,
-      show: minutesFromStart > 0 && minutesFromStart < TOTAL_HOURS * 60,
-    };
+    const n = new Date();
+    const min = (n.getHours() - START_HOUR) * 60 + n.getMinutes();
+    return { px: min * MIN_WIDTH, show: min > 0 && min < TOTAL_HOURS * 60 };
   }, []);
 
   return (
     <>
       <div className="relative w-full overflow-hidden rounded-2xl bg-background border border-border shadow-sm text-[var(--foreground)] mb-8">
-        {/* Grain overlay */}
+        {/* ── Grain overlay ── */}
         <div
           className="pointer-events-none absolute inset-0 z-50 opacity-[0.025] mix-blend-overlay"
           style={{
@@ -774,28 +669,19 @@ export default function GanttChartBookings() {
           }}
         />
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b-[0.5px] border-border bg-muted/40">
           <div>
             <h2 className="text-2xl font-semibold tracking-wide text-[var(--foreground)]">
               Schedule Overview
             </h2>
             <p className="text-xs text-[var(--muted)] mt-0.5">
-              Timeline reservasi 7 hari berjalan.{" "}
+              Timeline reservasi untuk 7 hari ke depan.{" "}
               <span className="opacity-60">
                 Klik tanggal untuk lihat detail.
               </span>
             </p>
           </div>
-
-          <DayNavControl
-            isAtToday={isAtToday}
-            rangeLabel={rangeLabel}
-            onPrev={goPrevDay}
-            onNext={goNextDay}
-            onToday={goToday}
-          />
-
           <div className="flex flex-wrap items-center gap-4">
             <LegendItem label="Confirmed" status="Confirmed" />
             <LegendItem label="Pending" status="Pending" />
@@ -804,10 +690,10 @@ export default function GanttChartBookings() {
           </div>
         </div>
 
-        {/* Scrollable timeline */}
+        {/* ── Scrollable timeline ── */}
         <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
           <div style={{ minWidth: Y_AXIS_W + TOTAL_HOURS * HOUR_WIDTH }}>
-            {/* Hour header (sticky top) */}
+            {/* ── Hour header (sticky top) ── */}
             <div className="flex border-b-[0.5px] border-border bg-background/40 sticky top-0 z-30">
               <div
                 className="shrink-0 border-r-[0.5px] border-border"
@@ -828,14 +714,15 @@ export default function GanttChartBookings() {
               </div>
             </div>
 
-            {/* Day rows */}
+            {/* ── Day rows ── */}
             {days.map((dayDate) => {
               const dateStr = toDateStr(dayDate);
               const isToday = dateStr === todayStr;
               const rawEvents = byDate.get(dateStr) ?? [];
 
-              const laneEvents = assignLanes(rawEvents);
-              const laneCount = laneEvents[0]?.laneCount ?? 1;
+              // Assign overlap lanes — this is the core fix
+              const events = assignLanes(rawEvents);
+              const laneCount = events[0]?.laneCount ?? 1;
               const rowH = Math.max(laneCount * LANE_H, 104);
 
               const activeCount = rawEvents.filter(
@@ -847,7 +734,7 @@ export default function GanttChartBookings() {
                   key={dateStr}
                   className="flex border-b-[0.5px] border-border last:border-b-0 group/row"
                 >
-                  {/* Date label — clickable button */}
+                  {/* ── Date label — clickable button ── */}
                   <button
                     type="button"
                     onClick={() =>
@@ -887,6 +774,7 @@ export default function GanttChartBookings() {
                         {activeCount} sesi aktif
                       </span>
                     )}
+                    {/* Hover cue — appears on hover */}
                     <span className="mt-2 flex items-center gap-0.5 opacity-0 group-hover/datebtn:opacity-100 transition-opacity duration-150 text-[var(--accent)]">
                       <span className="text-[8px] font-bold uppercase tracking-widest">
                         Detail
@@ -895,7 +783,7 @@ export default function GanttChartBookings() {
                     </span>
                   </button>
 
-                  {/* Timeline area */}
+                  {/* ── Timeline area ── */}
                   <div
                     className={cn(
                       "relative",
@@ -945,20 +833,18 @@ export default function GanttChartBookings() {
                       </div>
                     )}
 
-                    {/* Booking blocks — lane-positioned, zero overlap */}
-                    {laneEvents.map((event) => {
+                    {/* ── Booking blocks — lane-positioned, zero overlap ── */}
+                    {events.map((event) => {
                       const [hStr, mStr] = event.timeStr.split(":");
                       const minFromStart =
                         (parseInt(hStr) - START_HOUR) * 60 + parseInt(mStr);
-                      if (
-                        minFromStart < 0 ||
-                        minFromStart >= TOTAL_HOURS * 60
-                      ) {
+                      if (minFromStart < 0 || minFromStart >= TOTAL_HOURS * 60)
                         return null;
-                      }
 
                       const leftPx = minFromStart * MIN_WIDTH;
                       const widthPx = event.duration_minutes * MIN_WIDTH;
+
+                      // Vertical position from lane assignment
                       const topPx = event.lane * LANE_H + LANE_PAD;
                       const blockH = LANE_H - LANE_PAD * 2;
 
@@ -999,9 +885,13 @@ export default function GanttChartBookings() {
                             height: blockH,
                           }}
                           onClick={() =>
-                            setSelectedDay({ date: dayDate, events: rawEvents })
+                            setSelectedDay({
+                              date: dayDate,
+                              events: rawEvents,
+                            })
                           }
                         >
+                          {/* ─── Card ─── */}
                           <div
                             className={cn(
                               "absolute inset-0 flex flex-col gap-[3px] rounded-lg overflow-hidden",
