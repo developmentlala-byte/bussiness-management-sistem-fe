@@ -128,7 +128,9 @@ function BookingsPageInner() {
     return debouncedSearch ? { ...base, search: debouncedSearch } : base;
   }, [endDateStr, startDateStr, useScheduleDate, debouncedSearch]);
 
-  const { data } = useApiFetch<{ data: SpaBooking[] }>(
+  const { data, isLoading: isBookingsLoading } = useApiFetch<{
+    data: SpaBooking[];
+  }>(
     [
       "bookings",
       startDateStr,
@@ -1162,6 +1164,7 @@ function BookingsPageInner() {
         columns={columns}
         data={filteredBookings}
         defaultPageSize={10}
+        isLoading={isBookingsLoading}
         getRowCanExpand={(row) =>
           (row.original.child_bookings ?? []).length > 0
         }
@@ -1326,6 +1329,9 @@ function BookingsPageInner() {
                                     <p className="font-medium mt-1">
                                       {getBookingLineLabel(line)}
                                     </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      Durasi: {line.duration_minutes ?? 0} menit
+                                    </p>
                                     {isBundlePromoLine(line) && (
                                       <p className="text-xs text-muted-foreground mt-1">
                                         Hemat{" "}
@@ -1391,6 +1397,13 @@ function BookingsPageInner() {
                                           withTime: true,
                                         },
                                       )}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      Durasi bonus:{" "}
+                                      {child.total_duration_minutes ??
+                                        child.duration_minutes ??
+                                        0}{" "}
+                                      menit
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       {child.therapists

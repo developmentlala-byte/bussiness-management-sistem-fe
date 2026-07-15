@@ -33,6 +33,10 @@ interface DataTableProps<TData> {
   emptyMessage?: string;
   renderExpandedRow?: (row: Row<TData>) => ReactNode;
   getRowCanExpand?: (row: Row<TData>) => boolean;
+  /** Tampilkan skeleton loading menggantikan isi tabel. Header & toolbar tetap terlihat. */
+  isLoading?: boolean;
+  /** Jumlah baris skeleton yang ditampilkan saat loading. Default: pageSize aktif. */
+  skeletonRowCount?: number;
 }
 
 // ─── Sort Icon ────────────────────────────────────────────────────────────────
@@ -47,6 +51,74 @@ function SortIcon({ state }: { state: "asc" | "desc" | false }) {
       <CaretDown weight="bold" className="shrink-0 size-3 text-foreground" />
     );
   return <CaretUpDown className="shrink-0 size-3 text-muted-foreground/40" />;
+}
+
+// ─── Skeleton Primitives ────────────────────────────────────────────────────
+//
+// Pola width bervariasi (bukan 100% rata semua) supaya kerasa lebih natural,
+// mirip teks/data asli — bukan blok kaku yang keliatan "loading generic".
+// Deterministic (bukan Math.random) biar gak ada flicker antar re-render.
+const SKELETON_WIDTH_PATTERN = [72, 88, 56, 94, 64, 80, 48, 90] as const;
+
+function getSkeletonWidth(rowIndex: number, colIndex: number) {
+  const idx = (rowIndex * 3 + colIndex) % SKELETON_WIDTH_PATTERN.length;
+  return `${SKELETON_WIDTH_PATTERN[idx]}%`;
+}
+
+function SkeletonBar({
+  width = "100%",
+  height = "h-3.5",
+}: {
+  width?: string;
+  height?: string;
+}) {
+  return (
+    <div
+      className={`${height} rounded-full bg-muted/60 animate-pulse`}
+      style={{ width, maxWidth: "100%" }}
+    />
+  );
+}
+
+// Desktop: satu <tr> skeleton, satu bar per kolom, width mengikuti pola.
+function SkeletonRowDesktop({
+  columnCount,
+  rowIndex,
+}: {
+  columnCount: number;
+  rowIndex: number;
+}) {
+  return (
+    <tr className="border-b border-border last:border-0">
+      {Array.from({ length: columnCount }).map((_, colIndex) => (
+        <td key={colIndex} className="px-5 py-3.5 align-middle">
+          <SkeletonBar width={getSkeletonWidth(rowIndex, colIndex)} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+// Mobile: satu card skeleton, meniru layout label-kiri / value-kanan aslinya.
+function SkeletonCardMobile({
+  columnCount,
+  rowIndex,
+}: {
+  columnCount: number;
+  rowIndex: number;
+}) {
+  return (
+    <div className="px-4 py-3 flex flex-col gap-2.5">
+      {Array.from({ length: columnCount }).map((_, colIndex) => (
+        <div key={colIndex} className="flex items-center justify-between gap-3">
+          <SkeletonBar width="30%" height="h-3" />
+          <div className="flex-1 flex justify-end">
+            <SkeletonBar width={getSkeletonWidth(rowIndex, colIndex)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ─── Pagination Numbers ───────────────────────────────────────────────────────
@@ -113,6 +185,8 @@ export function DataTable<TData>({
   emptyMessage = "Tidak ada data yang ditampilkan.",
   renderExpandedRow,
   getRowCanExpand,
+  isLoading = false,
+  skeletonRowCount,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -147,6 +221,8 @@ export function DataTable<TData>({
   const totalRows = data.length;
   const startRow = pageIndex * pageSize + 1;
   const endRow = Math.min((pageIndex + 1) * pageSize, totalRows);
+  const columnCount = columns.length;
+  const skeletonCount = skeletonRowCount ?? pageSize;
 
   // Ambil header group untuk label di mobile card
   const headerGroup = table.getHeaderGroups()[0];
@@ -165,12 +241,14 @@ export function DataTable<TData>({
           <select
             value={pageSize}
             onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+            disabled={isLoading}
             className="
               text-xs font-medium
               border border-border rounded-lg
               px-2.5 py-1.5
               bg-background text-foreground
               focus:outline-none focus:ring-2 focus:ring-ring
+              disabled:opacity-50 disabled:cursor-not-allowed
               cursor-pointer
             "
           >
@@ -200,21 +278,20 @@ export function DataTable<TData>({
                       key={header.id}
                       className={[
                         "px-5 py-4 text-left text-[11px] font-semibold uppercase tracking-wider",
-                        "text-muted-foreground select-none whitespace-nowrap relative group", // Tambahkan group untuk hover state resizer
-                        canSort
+                        "text-muted-foreground select-none whitespace-nowrap relative group",
+                        canSort && !isLoading
                           ? "hover:text-foreground transition-colors"
                           : "",
                       ].join(" ")}
                       style={{ width: header.getSize() }}
                     >
-                      <div
-                        className="flex items-center justify-between gap-2"
-                        // Pindahkan aksi sort ke div teks, bukan seluruh sel agar tidak konflik dengan resizer
-                      >
+                      <div className="flex items-center justify-between gap-2">
                         <div
-                          className={`inline-flex items-center gap-1.5 ${canSort ? "cursor-pointer" : ""}`}
+                          className={`inline-flex items-center gap-1.5 ${
+                            canSort && !isLoading ? "cursor-pointer" : ""
+                          }`}
                           onClick={
-                            canSort
+                            canSort && !isLoading
                               ? header.column.getToggleSortingHandler()
                               : undefined
                           }
@@ -246,80 +323,94 @@ export function DataTable<TData>({
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: skeletonCount }).map((_, rowIndex) => (
+                <SkeletonRowDesktop
+                  key={`skeleton-${rowIndex}`}
+                  columnCount={columnCount}
+                  rowIndex={rowIndex}
+                />
+              ))
+            ) : table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columnCount}
                   className="px-5 py-14 text-center text-sm text-muted-foreground"
                 >
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
-              <>
-                {table.getRowModel().rows.map((row) => (
-                  <Fragment key={row.id}>
-                    <tr
-                      className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors"
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td
-                          key={cell.id}
-                          className="px-5 py-3.5 text-sm text-foreground align-middle"
-                          style={{ width: cell.column.getSize() }}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </td>
-                      ))}
+              table.getRowModel().rows.map((row) => (
+                <Fragment key={row.id}>
+                  <tr className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        className="px-5 py-3.5 text-sm text-foreground align-middle"
+                        style={{ width: cell.column.getSize() }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                  {row.getIsExpanded() && renderExpandedRow && (
+                    <tr className="border-b border-border bg-muted/15">
+                      <td
+                        colSpan={row.getVisibleCells().length}
+                        className="px-5 py-4"
+                      >
+                        {renderExpandedRow(row)}
+                      </td>
                     </tr>
-                    {row.getIsExpanded() && renderExpandedRow && (
-                      <tr className="border-b border-border bg-muted/15">
-                        <td
-                          colSpan={row.getVisibleCells().length}
-                          className="px-5 py-4"
-                        >
-                          {renderExpandedRow(row)}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </>
+                  )}
+                </Fragment>
+              ))
             )}
           </tbody>
-          <tfoot>
-            {table.getFooterGroups().length > 0 &&
-              table.getFooterGroups().map((footerGroup) => (
-                <tr
-                  key={footerGroup.id}
-                  className="border-t border-border bg-muted/40"
-                >
-                  {footerGroup.headers.map((header) => (
-                    <td
-                      key={header.id}
-                      className="px-5 py-4 text-xs align-middle"
-                      style={{ width: header.getSize() }}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.footer,
-                            header.getContext(),
-                          )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-          </tfoot>
+          {!isLoading && (
+            <tfoot>
+              {table.getFooterGroups().length > 0 &&
+                table.getFooterGroups().map((footerGroup) => (
+                  <tr
+                    key={footerGroup.id}
+                    className="border-t border-border bg-muted/40"
+                  >
+                    {footerGroup.headers.map((header) => (
+                      <td
+                        key={header.id}
+                        className="px-5 py-4 text-xs align-middle"
+                        style={{ width: header.getSize() }}
+                      >
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.footer,
+                              header.getContext(),
+                            )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+            </tfoot>
+          )}
         </table>
       </div>
 
       {/* ── Mobile: Card list per baris (di bawah sm) ───────────────────── */}
       <div className="sm:hidden divide-y divide-border">
-        {table.getRowModel().rows.length === 0 ? (
+        {isLoading ? (
+          Array.from({ length: skeletonCount }).map((_, rowIndex) => (
+            <SkeletonCardMobile
+              key={`skeleton-mobile-${rowIndex}`}
+              columnCount={columnCount}
+              rowIndex={rowIndex}
+            />
+          ))
+        ) : table.getRowModel().rows.length === 0 ? (
           <p className="px-5 py-10 text-center text-sm text-muted-foreground">
             {emptyMessage}
           </p>
@@ -364,24 +455,28 @@ export function DataTable<TData>({
       </div>
 
       {/* ── Footer: record info + pagination ────────────────────────────── */}
-      {pageCount > 0 && (
+      {(pageCount > 0 || isLoading) && (
         <div className="flex items-center justify-between gap-4 px-5 py-3.5 md:py-1 border-t border-border bg-muted/20 flex-wrap">
           {/* Keterangan jumlah data */}
-          <p className="text-xs text-muted-foreground shrink-0">
-            Menampilkan{" "}
-            <span className="font-semibold text-foreground">
-              {startRow}–{endRow}
-            </span>{" "}
-            dari{" "}
-            <span className="font-semibold text-foreground">{totalRows}</span>{" "}
-            data
-          </p>
+          {isLoading ? (
+            <SkeletonBar width="140px" height="h-3" />
+          ) : (
+            <p className="text-xs text-muted-foreground shrink-0">
+              Menampilkan{" "}
+              <span className="font-semibold text-foreground">
+                {startRow}–{endRow}
+              </span>{" "}
+              dari{" "}
+              <span className="font-semibold text-foreground">{totalRows}</span>{" "}
+              data
+            </p>
+          )}
 
           {/* Tombol pagination */}
-          <div className="flex items-center justify-center  gap-1">
+          <div className="flex items-center justify-center gap-1">
             <button
               onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
+              disabled={isLoading || !table.getCanPreviousPage()}
               className="
                 flex items-center gap-1 px-2.5 py-1.5
                 rounded-lg border border-border
@@ -392,18 +487,29 @@ export function DataTable<TData>({
               "
             >
               <ArrowLeft className="size-3" />
-              <span className="">Prev</span>
+              <span>Prev</span>
             </button>
 
-            <PaginationNumbers
-              pageIndex={pageIndex}
-              pageCount={pageCount}
-              onPageChange={(idx) => table.setPageIndex(idx)}
-            />
+            {isLoading ? (
+              <div className="flex items-center gap-1 px-1">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="w-[30px] h-[30px] rounded-lg bg-muted/60 animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : (
+              <PaginationNumbers
+                pageIndex={pageIndex}
+                pageCount={pageCount}
+                onPageChange={(idx) => table.setPageIndex(idx)}
+              />
+            )}
 
             <button
               onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
+              disabled={isLoading || !table.getCanNextPage()}
               className="
                 flex items-center gap-1 px-2.5 py-1.5
                 rounded-lg border border-border
@@ -413,10 +519,11 @@ export function DataTable<TData>({
                 transition-colors
               "
             >
-              <span className="">Next</span>
+              <span>Next</span>
               <ArrowRight className="size-3" />
             </button>
           </div>
+
           {/* ── Toolbar Desktop ───────────────────────── */}
           <div className="flex items-center justify-between gap-4 px-5 py-3 max-sm:hidden">
             {caption ? (
@@ -429,14 +536,16 @@ export function DataTable<TData>({
               <select
                 value={pageSize}
                 onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                disabled={isLoading}
                 className="
-              text-xs font-medium
-              border border-border rounded-lg
-              px-2.5 py-1.5
-              bg-background text-foreground
-              focus:outline-none focus:ring-2 focus:ring-ring
-              cursor-pointer
-            "
+                  text-xs font-medium
+                  border border-border rounded-lg
+                  px-2.5 py-1.5
+                  bg-background text-foreground
+                  focus:outline-none focus:ring-2 focus:ring-ring
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  cursor-pointer
+                "
               >
                 {pageSizeOptions.map((size) => (
                   <option key={size} value={size}>
