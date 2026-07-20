@@ -459,13 +459,19 @@ function SummaryCards({ payments }: { payments: Payment[] }) {
   const countCash = payments
     .filter((p) => p.channel === "cash")
     .reduce((sum, p) => sum + Number(p.paid_off), 0);
+  const countOnline = payments
+    .filter((p) => p.status === "paid" && p.channel !== "cash")
+    .reduce((sum, p) => sum + Number(p.paid_off), 0);
 
   const countPaid = payments.filter((p) => p.status === "paid").length;
   const countPending = payments.filter((p) => p.status === "pending").length;
   const countCashTrans = payments.filter((p) => p.channel === "cash").length;
+  const countOnlineTrans = payments.filter(
+    (p) => p.status === "paid" && p.channel !== "cash",
+  ).length;
 
   return (
-    <div className="min-[1080px]:grid-cols-4 gap-4 grid grid-cols-2 ">
+    <div className="min-[1350px]:grid-cols-5 min-[1080px]:grid-cols-4 gap-4 grid grid-cols-2 ">
       <SummaryCard
         label="Total Lunas"
         value={IDR(totalPaid)}
@@ -488,6 +494,12 @@ function SummaryCards({ payments }: { payments: Payment[] }) {
         label="Cash"
         value={IDR(countCash)}
         subtext={`${countCashTrans} transaksi`}
+        variant="default"
+      />
+      <SummaryCard
+        label="Online"
+        value={IDR(countOnline)}
+        subtext={`${countOnlineTrans} transaksi`}
         variant="default"
       />
     </div>
