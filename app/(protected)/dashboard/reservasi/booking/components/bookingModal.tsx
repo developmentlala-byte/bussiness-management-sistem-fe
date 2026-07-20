@@ -1422,16 +1422,18 @@ function OrderPanel({
                                 <Label>Tidak ada therapist tersedia</Label>
                               </Dropdown.Item>
                             ) : (
-                              bonusAvailableTherapistsForSlot.map((therapist) => (
-                                <Dropdown.Item
-                                  key={therapist.id}
-                                  id={String(therapist.id)}
-                                  textValue={therapist.name}
-                                  className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
-                                >
-                                  <Label>{therapist.name}</Label>
-                                </Dropdown.Item>
-                              ))
+                              bonusAvailableTherapistsForSlot.map(
+                                (therapist) => (
+                                  <Dropdown.Item
+                                    key={therapist.id}
+                                    id={String(therapist.id)}
+                                    textValue={therapist.name}
+                                    className="rounded-xl px-3 py-2 text-[13px] font-medium text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer"
+                                  >
+                                    <Label>{therapist.name}</Label>
+                                  </Dropdown.Item>
+                                ),
+                              )
                             )}
                           </Dropdown.Menu>
                         </Dropdown.Popover>
@@ -2424,9 +2426,7 @@ export default function BookingModal({
     // Check if already selected first so we know what to do after
     const isAlreadySelected = cartLines.some(
       (line) =>
-        line.kind === "service" &&
-        !!line.isFree &&
-        line.variant.id === row.id,
+        line.kind === "service" && !!line.isFree && line.variant.id === row.id,
     );
 
     setCartLines((prev) => {

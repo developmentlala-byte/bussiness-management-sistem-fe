@@ -2,23 +2,15 @@
 
 import { formatWallClockDate } from "@/app/libs/date-format";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   Eye,
-  X,
   CheckCircle,
   Clock,
   XCircle,
   Warning,
   ArrowLeft,
-  User,
-  Receipt,
-  ArrowSquareOut,
-  Copy,
-  Check,
-  Tag,
-  Buildings,
 } from "@phosphor-icons/react";
 import { DataTable } from "@/app/components/data-table";
 import { useApiFetch } from "@/app/libs/use-http";
@@ -526,6 +518,7 @@ function FilterTabs({
   onChange: (v: FilterOption) => void;
   payments: Payment[];
 }) {
+  console.log("🚀 ~ FilterTabs ~ payments:", payments);
   return (
     <div
       className="flex items-center"
@@ -581,13 +574,33 @@ function FilterTabs({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
-  const [statusFilter, setStatusFilter] = useState<FilterOption>("all");
+  const [statusFilter, setStatusFilter] = useState<FilterOption>("paid");
+
+  const queryParams = useMemo(
+    () => ({
+      paid_bookings_only: statusFilter === "paid" ? 1 : undefined,
+      status: statusFilter === "all" ? undefined : statusFilter,
+    }),
+    [statusFilter],
+  );
+
+  const queryKey = useMemo(
+    () => ["payment_bookings", statusFilter, JSON.stringify(queryParams)],
+    [statusFilter, queryParams],
+  );
 
   const { data: paymentResponse, isLoading: paymentLoading } = useApiFetch<
-    PaginatedApiResponse<Payment>
-  >([statusFilter], "/payment/booking-payments");
+    Payment[] | { data: Payment[] }
+  >(queryKey, "/payment/booking-payments", queryParams);
+  console.log("🚀 ~ PaymentsPage ~ paymentResponse:", paymentResponse);
 
-  const allPayments = paymentResponse?.data?.data ?? [];
+  // Handle both direct array and wrapped { data: array } responses
+  const allPayments = Array.isArray(paymentResponse)
+    ? paymentResponse
+    : paymentResponse?.data?.data
+      ? paymentResponse.data?.data
+      : [];
+  console.log("🚀 ~ PaymentsPage ~ allPayments:", allPayments);
 
   if (paymentLoading) {
     return (
@@ -644,8 +657,7 @@ export default function PaymentsPage() {
   const filtered =
     statusFilter === "all"
       ? allPayments
-      : allPayments.filter((p) => p.status === statusFilter);
-
+      : allPayments?.filter((p: Payment) => p.status === statusFilter);
   const columns = usePaymentColumns((p) => setSelectedPayment(p));
 
   return (
