@@ -514,6 +514,7 @@ interface OrderPanelProps {
   submitLabel: string;
   onBack: () => void;
   isMobile: boolean;
+  isEdit: boolean;
   selectedBundle: BundlePromo | null;
   customerBookingCount: number | null;
   isSubmitPending: boolean;
@@ -554,6 +555,7 @@ function OrderPanel({
   submitLabel,
   onBack,
   isMobile,
+  isEdit,
   selectedBundle,
   customerBookingCount,
   isSubmitPending,
@@ -1018,6 +1020,14 @@ function OrderPanel({
         {/* ── STEP: DATETIME ── */}
         {step === "datetime" && cartLines.length > 0 && (
           <>
+            {isEdit && (
+              <div className="px-4 py-3 bg-[#FEF1F4] border-b border-[#F2D7DE]">
+                <p className="text-[12px] text-[#7A736E]">
+                  📝 Anda sedang mengubah jadwal booking. Pilih tanggal dan jam
+                  yang tersedia.
+                </p>
+              </div>
+            )}
             <div className="px-4 py-4 border-b border-[#EDE8E3]">
               <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
                 Pilih Tanggal
@@ -1133,9 +1143,20 @@ function OrderPanel({
           <div className="px-4 py-4 space-y-4">
             {/* Appointment summary */}
             <div>
-              <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em] mb-2">
-                Appointment
-              </p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold text-[#B5AFA9] uppercase tracking-[0.06em]">
+                  Appointment
+                </p>
+                {isEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setStep("datetime")}
+                    className="text-[11px] font-medium text-[#B55368] hover:text-[#C96480] transition-colors"
+                  >
+                    Edit Jadwal
+                  </button>
+                )}
+              </div>
               <div className="bg-white rounded-xl border border-[#EDE8E3] p-3">
                 <p className="text-[13px] text-[#1A1614]">
                   {form.date
@@ -1577,7 +1598,7 @@ function OrderPanel({
         {step === "datetime" && (
           <div className="flex gap-2">
             <button
-              onClick={() => setStep("services")}
+              onClick={() => setStep(isEdit ? "confirm" : "services")}
               className="flex-1 rounded-xl border border-[#EDE8E3] bg-white py-2.5 text-[13px] font-semibold text-[#7A736E] transition-colors hover:bg-[#F8F4F0]"
             >
               Back
@@ -3087,6 +3108,7 @@ export default function BookingModal({
             }
             onBack={() => setMobileView("browse")}
             isMobile={mobileView === "order"}
+            isEdit={isEdit}
             selectedBundle={selectedBundle}
             customerBookingCount={customerBookingCount}
             isSubmitPending={isSubmitPending}
