@@ -2,7 +2,7 @@
 
 import { formatWallClockDate } from "@/app/libs/date-format";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   Eye,
@@ -18,6 +18,10 @@ import { IDR } from "@/app/libs/idr";
 import ReceiptModal from "./components/receiptModal";
 import { PaginatedApiResponse } from "@/app/types/api";
 import { CopyableText } from "@/app/components/copyable-text";
+import {
+  DateRangeFilter,
+  DateRangeValue,
+} from "@/app/components/date-range-filter";
 
 export const STATUS_CONFIG: Record<
   PaymentStatus,
@@ -448,7 +452,7 @@ function SummaryCard({
 
 function SummaryCards({ payments }: { payments: Payment[] }) {
   const totalPaid = payments
-    .filter((p) => p.status === "paid")
+    .filter((p) => p.status === "paid" && p.booking?.payment_status === "Paid")
     .reduce((sum, p) => sum + Number(p.paid_off), 0);
   const totalPending = payments
     .filter((p) => p.status === "pending")
@@ -457,17 +461,37 @@ function SummaryCards({ payments }: { payments: Payment[] }) {
     (p) => p.status === "expired" || p.status === "failed",
   ).length;
   const countCash = payments
-    .filter((p) => p.channel === "cash")
+    .filter(
+      (p) =>
+        p.status === "paid" &&
+        p.channel === "cash" &&
+        p.booking?.payment_status === "Paid",
+    )
     .reduce((sum, p) => sum + Number(p.paid_off), 0);
   const countOnline = payments
-    .filter((p) => p.status === "paid" && p.channel !== "cash")
+    .filter(
+      (p) =>
+        p.status === "paid" &&
+        p.channel !== "cash" &&
+        p.booking?.payment_status === "Paid",
+    )
     .reduce((sum, p) => sum + Number(p.paid_off), 0);
 
-  const countPaid = payments.filter((p) => p.status === "paid").length;
+  const countPaid = payments.filter(
+    (p) => p.status === "paid" && p.booking?.payment_status === "Paid",
+  ).length;
   const countPending = payments.filter((p) => p.status === "pending").length;
-  const countCashTrans = payments.filter((p) => p.channel === "cash").length;
+  const countCashTrans = payments.filter(
+    (p) =>
+      p.status === "paid" &&
+      p.channel === "cash" &&
+      p.booking?.payment_status === "Paid",
+  ).length;
   const countOnlineTrans = payments.filter(
-    (p) => p.status === "paid" && p.channel !== "cash",
+    (p) =>
+      p.status === "paid" &&
+      p.channel !== "cash" &&
+      p.booking?.payment_status === "Paid",
   ).length;
 
   return (
@@ -576,6 +600,8 @@ function FilterTabs({
           </button>
         );
       })}
+
+      {/* Filter Tabs */}
     </div>
   );
 }
@@ -584,8 +610,30 @@ function FilterTabs({
 // PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PaymentsPage() {
+  function toLocalDateString(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterOption>("paid");
+
+  // Set default date range to first -> last day of current month
+  const defaultDateRange = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      startDate: toLocalDateString(start),
+      endDate: toLocalDateString(end),
+    };
+  }, []);
+
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(
+    defaultDateRange,
+  );
 
   // PENTING: selalu fetch SEMUA data (tanpa filter status/paid_bookings_only
   // ke backend). Summary cards & tab counts butuh dataset lengkap untuk
@@ -605,6 +653,26 @@ export default function PaymentsPage() {
       : Array.isArray((paymentResponse as any)?.data?.data)
         ? (paymentResponse as any).data.data
         : [];
+
+  // Filtering dilakukan di client dari dataset lengkap yang sama
+  // dengan yang dipakai summary cards & tab counts di atas.
+  const dateFilteredPayments = useMemo(() => {
+    if (!dateRange) return allPayments;
+
+    const startDateStr = dateRange.startDate
+      ? String(dateRange.startDate)
+      : null;
+    const endDateStr = dateRange.endDate ? String(dateRange.endDate) : null;
+
+    if (!startDateStr || !endDateStr) return allPayments;
+
+    return allPayments.filter((p: Payment) => {
+      if (!p.paid_at && !p.created_at) return false;
+      const dateToCheck = p.paid_at || p.created_at;
+      const paymentDate = toLocalDateString(new Date(dateToCheck));
+      return paymentDate >= startDateStr && paymentDate <= endDateStr;
+    });
+  }, [allPayments, dateRange]);
 
   if (paymentLoading) {
     return (
@@ -658,12 +726,10 @@ export default function PaymentsPage() {
     );
   }
 
-  // Filtering dilakukan di client dari dataset lengkap yang sama
-  // dengan yang dipakai summary cards & tab counts di atas.
   const filtered =
     statusFilter === "all"
-      ? allPayments
-      : allPayments.filter((p: Payment) => p.status === statusFilter);
+      ? dateFilteredPayments
+      : dateFilteredPayments.filter((p: Payment) => p.status === statusFilter);
 
   const columns = usePaymentColumns((p) => setSelectedPayment(p));
 
@@ -702,22 +768,29 @@ export default function PaymentsPage() {
 
       {/* Summary Cards */}
       <div>
-        <SummaryCards payments={allPayments} />
+        <SummaryCards payments={dateFilteredPayments} />
       </div>
 
       {/* Filter Tabs */}
+      {/* Filter Row */}
       <div
+        className="flex items-center gap-4 justify-between"
         style={{
           borderBottom: "1px solid var(--border)",
           paddingBottom: "var(--space-4)",
-          overflowX: "auto",
         }}
       >
-        <FilterTabs
-          value={statusFilter}
-          onChange={setStatusFilter}
-          payments={allPayments}
-        />
+        <div style={{ overflowX: "auto" }}>
+          <FilterTabs
+            value={statusFilter}
+            onChange={setStatusFilter}
+            payments={dateFilteredPayments}
+          />
+        </div>
+
+        <div style={{ flexShrink: 0 }}>
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        </div>
       </div>
 
       {/* Table — pakai DataTable component kamu */}
