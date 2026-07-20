@@ -2,7 +2,7 @@
 
 import { formatWallClockDate } from "@/app/libs/date-format";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   Eye,
@@ -530,7 +530,6 @@ function FilterTabs({
   onChange: (v: FilterOption) => void;
   payments: Payment[];
 }) {
-  console.log("🚀 ~ FilterTabs ~ payments:", payments);
   return (
     <div
       className="flex items-center"
@@ -588,31 +587,24 @@ export default function PaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterOption>("paid");
 
-  const queryParams = useMemo(
-    () => ({
-      paid_bookings_only: statusFilter === "paid" ? 1 : undefined,
-      status: statusFilter === "all" ? undefined : statusFilter,
-    }),
-    [statusFilter],
-  );
-
-  const queryKey = useMemo(
-    () => ["payment_bookings", statusFilter, JSON.stringify(queryParams)],
-    [statusFilter, queryParams],
-  );
-
+  // PENTING: selalu fetch SEMUA data (tanpa filter status/paid_bookings_only
+  // ke backend). Summary cards & tab counts butuh dataset lengkap untuk
+  // menghitung jumlah tiap status dengan benar — kalau backend sudah
+  // memfilter berdasarkan tab aktif, count status lain (pending/expired/dst)
+  // akan selalu 0 karena datanya memang tidak pernah ikut ke-fetch.
   const { data: paymentResponse, isLoading: paymentLoading } = useApiFetch<
-    Payment[] | { data: Payment[] }
-  >(queryKey, "/payment/booking-payments", queryParams);
-  console.log("🚀 ~ PaymentsPage ~ paymentResponse:", paymentResponse);
+    Payment[] | { data: Payment[] } | { data: { data: Payment[] } }
+  >(["payment_bookings"], "/payment/booking-payments", {});
 
-  // Handle both direct array and wrapped { data: array } responses
-  const allPayments = Array.isArray(paymentResponse)
+  // Handle berbagai bentuk response: array langsung, { data: array },
+  // atau { data: { data: array } }
+  const allPayments: Payment[] = Array.isArray(paymentResponse)
     ? paymentResponse
-    : paymentResponse?.data?.data
-      ? paymentResponse.data?.data
-      : [];
-  console.log("🚀 ~ PaymentsPage ~ allPayments:", allPayments);
+    : Array.isArray((paymentResponse as any)?.data)
+      ? (paymentResponse as any).data
+      : Array.isArray((paymentResponse as any)?.data?.data)
+        ? (paymentResponse as any).data.data
+        : [];
 
   if (paymentLoading) {
     return (
@@ -666,10 +658,13 @@ export default function PaymentsPage() {
     );
   }
 
+  // Filtering dilakukan di client dari dataset lengkap yang sama
+  // dengan yang dipakai summary cards & tab counts di atas.
   const filtered =
     statusFilter === "all"
       ? allPayments
-      : allPayments?.filter((p: Payment) => p.status === statusFilter);
+      : allPayments.filter((p: Payment) => p.status === statusFilter);
+
   const columns = usePaymentColumns((p) => setSelectedPayment(p));
 
   return (
