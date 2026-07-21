@@ -3,7 +3,10 @@ import next from "next";
 import fs from "fs";
 import { parse } from "url";
 
-const app = next({ dev: true });
+const app = next({
+  dev: true,
+  turbopack: false, // custom HTTPS server belum stabil di Turbopack Next 16
+});
 const handle = app.getRequestHandler();
 
 const options = {

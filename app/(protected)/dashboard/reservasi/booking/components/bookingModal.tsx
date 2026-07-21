@@ -40,6 +40,29 @@ const durFmt = (m: number): string => {
   return rm ? `${h}h ${rm}m` : `${h}h`;
 };
 
+const parseTimeToMinutes = (time: string): number => {
+  const [rawHour, rawMinute] = time.split(":");
+  const hour = Number(rawHour);
+  const minute = Number(rawMinute);
+  return Number.isFinite(hour) && Number.isFinite(minute)
+    ? hour * 60 + minute
+    : -1;
+};
+
+const isTimeRangeOverlap = (
+  startA: string,
+  durationA: number,
+  startB: string,
+  durationB: number,
+): boolean => {
+  const a0 = parseTimeToMinutes(startA);
+  const b0 = parseTimeToMinutes(startB);
+  if (a0 < 0 || b0 < 0 || durationA <= 0 || durationB <= 0) return false;
+  const a1 = a0 + durationA;
+  const b1 = b0 + durationB;
+  return a0 < b1 && b0 < a1;
+};
+
 /**
  * Parse ISO datetime string tanpa konversi timezone.
  * Backend menyimpan waktu lokal (WIB) tapi kadang pakai suffix Z — jangan
@@ -61,6 +84,44 @@ const toFormDateTime = (isoString: string): { date: string; time: string } => {
     date: datePart ?? "",
     time: timePart,
   };
+};
+
+const isBonusSlotOverlappingPaidBooking = (
+  paidDate: string,
+  paidStartTime: string,
+  paidDuration: number,
+  bonusDate: string,
+  bonusSlotTime: string,
+  bonusDuration: number,
+): boolean => {
+  if (
+    !paidDate ||
+    !paidStartTime ||
+    !bonusDate ||
+    !bonusSlotTime ||
+    paidDuration <= 0 ||
+    bonusDuration <= 0 ||
+    paidDate !== bonusDate
+  ) {
+    return false;
+  }
+
+  const parseTimeToMinutes = (time: string): number => {
+    const [rawHour, rawMinute] = time.split(":");
+    const hour = Number(rawHour);
+    const minute = Number(rawMinute);
+    return Number.isFinite(hour) && Number.isFinite(minute)
+      ? hour * 60 + minute
+      : -1;
+  };
+
+  const startA = parseTimeToMinutes(paidStartTime);
+  const startB = parseTimeToMinutes(bonusSlotTime);
+  if (startA < 0 || startB < 0) return false;
+
+  const endA = startA + paidDuration;
+  const endB = startB + bonusDuration;
+  return startA < endB && startB < endA;
 };
 
 const getCurrentMonth = (): string => {
@@ -535,6 +596,7 @@ interface OrderPanelProps {
   onBonusDateChange: (date: string) => void;
   onBonusSlotSelect: (slot: AvailableSlot) => void;
   onBonusTherapistChange: (therapistId: number) => void;
+  isBonusSlotConflictingWithPaidBooking: (slot: AvailableSlot) => boolean;
 }
 
 function OrderPanel({
@@ -570,6 +632,7 @@ function OrderPanel({
   onBonusDateChange,
   onBonusSlotSelect,
   onBonusTherapistChange,
+  isBonusSlotConflictingWithPaidBooking,
 }: OrderPanelProps) {
   const bundleCalendarBounds = selectedBundle
     ? getBundleCalendarBounds(selectedBundle)
@@ -1371,28 +1434,37 @@ function OrderPanel({
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {bonusAvailableSlots.map((slot) => (
-                          <button
-                            key={`bonus-${slot.slot_time}`}
-                            type="button"
-                            disabled={!slot.is_available}
-                            onClick={() => onBonusSlotSelect(slot)}
-                            className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-                              !slot.is_available
-                                ? "cursor-not-allowed border-[#EDE8E3] bg-[#F3F0ED] text-[#B5AFA9]"
-                                : bonusBookingForm.slotTime === slot.slot_time
-                                  ? "border-[#B55368] bg-[#FEF1F4] text-[#B55368]"
-                                  : "border-[#EDE8E3] bg-white text-[#1A1614]"
-                            }`}
-                          >
-                            <span>{slot.slot_time}</span>
-                            {!!slot.available_therapists?.length && (
-                              <span className="ml-1 text-[10px] opacity-70">
-                                ({slot.available_therapists.length} therapist)
-                              </span>
-                            )}
-                          </button>
-                        ))}
+                        {bonusAvailableSlots.map((slot) => {
+                          const isConflicting = isBonusSlotConflictingWithPaidBooking(slot);
+                          const isDisabled = !slot.is_available || isConflicting;
+                          return (
+                            <button
+                              key={`bonus-${slot.slot_time}`}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => onBonusSlotSelect(slot)}
+                              className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                                isDisabled
+                                  ? "cursor-not-allowed border-[#EDE8E3] bg-[#F3F0ED] text-[#B5AFA9]"
+                                  : bonusBookingForm.slotTime === slot.slot_time
+                                    ? "border-[#B55368] bg-[#FEF1F4] text-[#B55368]"
+                                    : "border-[#EDE8E3] bg-white text-[#1A1614]"
+                              }`}
+                              title={
+                                isConflicting
+                                  ? "Slot bonus bertabrakan dengan jadwal utama"
+                                  : undefined
+                              }
+                            >
+                              <span>{slot.slot_time}</span>
+                              {!!slot.available_therapists?.length && (
+                                <span className="ml-1 text-[10px] opacity-70">
+                                  ({slot.available_therapists.length} therapist)
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2077,6 +2149,27 @@ export default function BookingModal({
     );
   }, 0);
 
+  const isBonusSlotConflictingWithPaidBooking = useCallback(
+    (slot: AvailableSlot): boolean => {
+      if (!selectedFreeVariant) return false;
+      return isBonusSlotOverlappingPaidBooking(
+        form.date,
+        form.slotTime,
+        totalDur,
+        bonusBookingForm.date,
+        slot.slot_time,
+        selectedFreeVariant.duration,
+      );
+    },
+    [
+      selectedFreeVariant,
+      form.date,
+      form.slotTime,
+      totalDur,
+      bonusBookingForm.date,
+    ],
+  );
+
   const lineItemsPayload = useMemo(
     () =>
       cartLines.map((line) =>
@@ -2344,7 +2437,13 @@ export default function BookingModal({
 
   const handleBonusSlotSelect = useCallback(
     (slot: AvailableSlot) => {
-      if (!slot.is_available || !selectedFreeVariant) return;
+      if (
+        !slot.is_available ||
+        !selectedFreeVariant ||
+        isBonusSlotConflictingWithPaidBooking(slot)
+      ) {
+        return;
+      }
       const eligibleIds = eligibleTherapistIdsForCategory(
         slot,
         selectedFreeVariant.categoryId,
@@ -2365,7 +2464,7 @@ export default function BookingModal({
             : [],
       }));
     },
-    [selectedFreeVariant],
+    [selectedFreeVariant, isBonusSlotConflictingWithPaidBooking],
   );
 
   const handleBonusTherapistChange = useCallback(
@@ -2409,6 +2508,16 @@ export default function BookingModal({
     voucherPreview?.bogoCapAmount ?? maxPaidServicePrice,
   );
 
+  const hasPaidBalinese1 = inPaidCart(1);
+  const hasPaidBalinese2 = inPaidCart(2);
+  const hasPaidBalinese6 = inPaidCart(6);
+  const hasPaidBalinese7 = inPaidCart(7);
+  const isBonusBlockedByPaidSelection = (id: number) =>
+    (hasPaidBalinese1 && [1, 2, 6, 7].includes(id)) ||
+    (hasPaidBalinese2 && [2, 1, 6, 7].includes(id)) ||
+    (hasPaidBalinese6 && [7, 2, 1, 6].includes(id)) ||
+    (hasPaidBalinese7 && [6, 7, 2, 1].includes(id));
+
   const isBogoEligibleId = (id: number) =>
     bogoEligibleServices.some((row) => Number(row.id) === Number(id));
 
@@ -2440,6 +2549,13 @@ export default function BookingModal({
     if (Number(row.retail_price ?? 0) > bogoCapAmount) {
       toast.warning(
         "Bonus tidak bisa dipilih karena harganya lebih tinggi dari layanan utama",
+      );
+      return;
+    }
+
+    if (isBonusBlockedByPaidSelection(row.id)) {
+      toast.warning(
+        "Bonus tidak bisa dipilih karena sudah membeli layanan utama yang terkait.",
       );
       return;
     }
@@ -2979,6 +3095,9 @@ export default function BookingModal({
                       {bogoEligibleServices.map((row) => {
                         const disableByPrice =
                           Number(row.retail_price ?? 0) > bogoCapAmount;
+                        const disableByConflict = isBonusBlockedByPaidSelection(
+                          row.id,
+                        );
                         const baseVariant = availableVariants.find(
                           (v) => v.id === row.id,
                         );
@@ -2999,14 +3118,22 @@ export default function BookingModal({
                             key={`bogo-${row.id}`}
                             v={bonusVariant}
                             selected={inFreeCart(row.id)}
-                            disabled={disableByPrice}
+                            disabled={disableByPrice || disableByConflict}
                             helperText={
-                              disableByPrice
-                                ? `Harga item ${idr(Number(row.retail_price ?? 0))}`
-                                : "Bonus gratis"
+                              disableByConflict
+                                ? "Tidak dapat dipilih karena sudah membeli Balinese Massage lainnya"
+                                : disableByPrice
+                                  ? `Harga item ${idr(Number(row.retail_price ?? 0))}`
+                                  : "Bonus gratis"
                             }
                             priceOverride={0}
                             onToggle={() => {
+                              if (disableByConflict) {
+                                toast.warning(
+                                  "Bonus Balinese Massage 60/90 tidak bisa dipilih karena sudah membeli Balinese Massage yang sama atau lebih lama.",
+                                );
+                                return;
+                              }
                               if (disableByPrice) {
                                 toast.warning(
                                   "Bonus tidak bisa dipilih karena lebih mahal dari layanan utama",
@@ -3123,6 +3250,7 @@ export default function BookingModal({
             onBonusDateChange={handleBonusDateChange}
             onBonusSlotSelect={handleBonusSlotSelect}
             onBonusTherapistChange={handleBonusTherapistChange}
+            isBonusSlotConflictingWithPaidBooking={isBonusSlotConflictingWithPaidBooking}
           />
         </div>
       </div>

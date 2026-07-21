@@ -80,12 +80,6 @@ export default function ProtectedLayout({
         </div>
       }
     >
-      <head>
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
-        />
-      </head>
       <ProtectedLayoutInner>{children}</ProtectedLayoutInner>
     </Suspense>
   );
