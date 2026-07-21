@@ -56,6 +56,7 @@ import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
 import { AlertDialog } from "@heroui/react";
 import StatusFilterDropdown from "./components/status-filter-dropdown";
+import StaffFilterDropdown from "./components/staff-filter-dropdown";
 import { CopyableText } from "@/app/components/copyable-text";
 
 const getBookingStatusColor = (status: BookingStatus) => {
@@ -108,6 +109,7 @@ function BookingsPageInner() {
     null,
   );
   const [isChartVisible, setIsChartVisible] = useState<boolean>(true);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -127,8 +129,19 @@ function BookingsPageInner() {
     const base = useScheduleDate
       ? { start_date: startDateStr, end_date: endDateStr }
       : { created_start_date: startDateStr, created_end_date: endDateStr };
-    return debouncedSearch ? { ...base, search: debouncedSearch } : base;
-  }, [endDateStr, startDateStr, useScheduleDate, debouncedSearch]);
+    const params = debouncedSearch
+      ? { ...base, search: debouncedSearch }
+      : base;
+    return selectedStaffIds.length > 0
+      ? { ...params, staff_ids: selectedStaffIds }
+      : params;
+  }, [
+    endDateStr,
+    startDateStr,
+    useScheduleDate,
+    debouncedSearch,
+    selectedStaffIds,
+  ]);
 
   const { data, isLoading: isBookingsLoading } = useApiFetch<{
     data: SpaBooking[];
@@ -139,6 +152,7 @@ function BookingsPageInner() {
       endDateStr,
       useScheduleDate ? "schedule_date" : "created_at",
       debouncedSearch,
+      selectedStaffIds.join(","),
     ],
     "/master/bookings",
     bookingQueryParams,
@@ -1066,6 +1080,12 @@ function BookingsPageInner() {
             onChange={(ids) => setActiveStatusIds(ids)}
             className="hidden! sm:inline-flex!"
           />
+
+          <StaffFilterDropdown
+            selectedStaffIds={selectedStaffIds}
+            onSelectStaff={setSelectedStaffIds}
+            className="hidden! sm:inline-flex!"
+          />
         </div>
 
         {/* BARIS 2: PENCARIAN + AKSI — search dapat ruang lebar, aksi di kanan */}
@@ -1104,6 +1124,12 @@ function BookingsPageInner() {
             statuses={BOOKING_STATUS_OPTIONS}
             defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
             onChange={(ids) => setActiveStatusIds(ids)}
+            className="sm:hidden! w-full!"
+          />
+
+          <StaffFilterDropdown
+            selectedStaffIds={selectedStaffIds}
+            onSelectStaff={setSelectedStaffIds}
             className="sm:hidden! w-full!"
           />
 
