@@ -35,6 +35,7 @@ import {
   ArrowsSplitIcon,
   MagnifyingGlass,
   X,
+  InvoiceIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -85,6 +86,7 @@ type CreatedBookingsReport = {
 };
 
 function BookingsPageInner() {
+  const { push } = useRouter();
   const timeZone = getLocalTimeZone();
   const currentDateObj = today(timeZone);
 
@@ -709,6 +711,22 @@ function BookingsPageInner() {
       enableSorting: false,
       cell: (info) => (
         <div className="flex justify-end gap-2">
+          <Button
+            isIconOnly
+            size="sm"
+            variant="primary"
+            aria-label="View details"
+            onClick={() =>
+              push(
+                process.env.NEXT_PUBLIC_API_BASE_URL +
+                  "/bookings/" +
+                  info.row.original.booking_code +
+                  "/invoice",
+              )
+            }
+          >
+            <InvoiceIcon className="size-4" weight="regular" />
+          </Button>
           <Button
             isIconOnly
             size="sm"
