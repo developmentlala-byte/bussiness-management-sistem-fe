@@ -715,7 +715,7 @@ function BookingsPageInner() {
             isIconOnly
             size="sm"
             variant="primary"
-            aria-label="View details"
+            aria-label="Download invoice"
             onClick={() =>
               push(
                 process.env.NEXT_PUBLIC_API_BASE_URL +
