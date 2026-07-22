@@ -2681,18 +2681,15 @@ export default function BookingModal({
         setFocusBogo(true);
       }
       toast.success("Voucher berhasil diterapkan");
-    } catch (error: unknown) {
+    } catch (error: any) {
       setCartLines((prev) =>
         prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
       );
       setVoucherPreview(null);
       const message =
-        typeof error === "object" &&
-        error !== null &&
-        "message" in error &&
-        typeof error.message === "string"
-          ? error.message
-          : "Voucher tidak valid untuk booking ini";
+        error.response?.data?.message ||
+        error.message ||
+        "Voucher tidak valid untuk booking ini";
       toast.warning(message);
     } finally {
       setIsApplyingVoucher(false);
