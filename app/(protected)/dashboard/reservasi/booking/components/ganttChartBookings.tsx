@@ -220,13 +220,28 @@ const getEventServiceName = (event: SpaBooking): string => {
 const isBonusChildBooking = (event: SpaBooking) =>
   event.booking_type === "bonus_child" || Boolean(event.parent_booking_id);
 
+const getBookingDuration = (booking: SpaBooking) => {
+  if (
+    booking.child_bookings &&
+    booking.child_bookings.length > 0 &&
+    Array.isArray(booking.service_variants) &&
+    booking.service_variants.length > 0
+  ) {
+    return booking.service_variants
+      .map((variant) => Number(variant.duration_minutes || 0))
+      .reduce((sum, current) => sum + current, 0);
+  }
+
+  return booking.duration_minutes;
+};
+
 const addBookingToMap = (
   map: Map<string, ScheduledBooking[]>,
   booking: SpaBooking,
 ) => {
   const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
   const list = map.get(dateStr) ?? [];
-  list.push({ ...booking, timeStr });
+  list.push({ ...booking, timeStr, duration_minutes: getBookingDuration(booking) });
   map.set(dateStr, list);
 };
 
