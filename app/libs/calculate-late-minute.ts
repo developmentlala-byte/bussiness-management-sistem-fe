@@ -23,10 +23,10 @@ export const calculateLateMinutes = (clockIn: string | null, shiftStartTime?: st
       officeTime.setHours(hours, minutes, 0, 0);
     }
   } else {
-    // Fallback to 8am
+    // Fallback to 9:30am
     officeTime = parseAttendanceDateTime(clockIn);
     if (officeTime) {
-      officeTime.setHours(8, 0, 0, 0);
+      officeTime.setHours(9, 30, 0, 0);
     }
   }
   if (!officeTime) return 0;

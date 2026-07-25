@@ -21,7 +21,7 @@ import { useApiFetch } from "@/app/libs/use-http";
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
-const START_HOUR = 11;
+const START_HOUR = 10;
 const END_HOUR = 22;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_WIDTH = 136; // px per hour

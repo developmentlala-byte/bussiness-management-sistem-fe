@@ -411,7 +411,17 @@ function requiredCountByVariantFromUnits(
   units: Array<{ variantId: number }>,
 ): Map<number, number> {
   const map = new Map<number, number>();
-  units.forEach((u) => map.set(u.variantId, (map.get(u.variantId) ?? 0) + 1));
+  // 1 terapis bisa menangani hingga 2 layanan (sekuensial).
+  // Jadi jumlah terapis unik yang dibutuhkan per varian adalah ceil(jumlah_unit / 2).
+  const counts = new Map<number, number>();
+  units.forEach((u) =>
+    counts.set(u.variantId, (counts.get(u.variantId) ?? 0) + 1),
+  );
+
+  counts.forEach((count, variantId) => {
+    map.set(variantId, Math.ceil(count / 2));
+  });
+
   return map;
 }
 
@@ -783,22 +793,46 @@ function OrderPanel({
       if (variant) variantCategoryMap.set(variantId, variant.categoryId);
     });
 
-    const usedByVariant = new Map<number, Record<number, true>>();
+    const staffUsageCount = new Map<number, number>();
+    const staffVariants = new Map<number, Set<number>>();
     const newAssignments: LocalStaffAssignment[] = [];
 
     for (const unit of selectedServiceVariantUnits) {
       const categoryId = variantCategoryMap.get(unit.variantId);
       const eligibleIds = eligibleTherapistIdsForCategory(slot, categoryId);
-      const usedForVariant =
-        usedByVariant.get(unit.variantId) ?? ({} as Record<number, true>);
+
       let selectedId: number | null = null;
+
+      // 1. Prioritas: Cari terapis yang sudah digunakan tapi masih punya kapasitas (max 2 layanan)
+      // SYARAT: Terapis tersebut belum mengambil variant yang sama (Concurrent Qty)
       for (const id of eligibleIds) {
-        if (!usedForVariant[id]) {
+        const usage = staffUsageCount.get(id) ?? 0;
+        const variants = staffVariants.get(id) ?? new Set();
+        if (usage === 1 && !variants.has(unit.variantId)) {
           selectedId = id;
           break;
         }
       }
-      if (!selectedId) selectedId = eligibleIds[0] ?? null;
+
+      // 2. Jika tidak ada, cari terapis yang belum digunakan sama sekali
+      if (!selectedId) {
+        for (const id of eligibleIds) {
+          if (!staffUsageCount.has(id)) {
+            selectedId = id;
+            break;
+          }
+        }
+      }
+
+      // 3. Fallback: Cari yang masih < 2
+      if (!selectedId) {
+        for (const id of eligibleIds) {
+          if ((staffUsageCount.get(id) ?? 0) < 2) {
+            selectedId = id;
+            break;
+          }
+        }
+      }
 
       if (selectedId !== null) {
         newAssignments.push({
@@ -806,8 +840,13 @@ function OrderPanel({
           service_variant_id: unit.variantId,
           staff_id: selectedId,
         });
-        usedForVariant[selectedId] = true;
-        usedByVariant.set(unit.variantId, usedForVariant);
+        staffUsageCount.set(
+          selectedId,
+          (staffUsageCount.get(selectedId) ?? 0) + 1,
+        );
+        const variants = staffVariants.get(selectedId) ?? new Set();
+        variants.add(unit.variantId);
+        staffVariants.set(selectedId, variants);
       }
     }
 
@@ -858,24 +897,52 @@ function OrderPanel({
       );
       if (missingUnits.length === 0) return prev;
 
-      const usedByVariant = new Map<number, Record<number, true>>();
+      // Hitung penggunaan terapis secara global di booking ini
+      const staffUsageCount = new Map<number, number>();
+      const staffVariants = new Map<number, Set<number>>();
+
       prev.staffAssignments.forEach((a) => {
-        if (a.staff_id <= 0) return;
-        const used = usedByVariant.get(a.service_variant_id) ?? {};
-        used[a.staff_id] = true;
-        usedByVariant.set(a.service_variant_id, used);
+        if (a.staff_id > 0) {
+          staffUsageCount.set(
+            a.staff_id,
+            (staffUsageCount.get(a.staff_id) ?? 0) + 1,
+          );
+          const variants = staffVariants.get(a.staff_id) ?? new Set();
+          variants.add(a.service_variant_id);
+          staffVariants.set(a.staff_id, variants);
+        }
       });
 
       const newAssignments = missingUnits.map((unit) => {
         const variant = availableVariants.find((v) => v.id === unit.variantId);
         const categoryId = variant?.categoryId ?? 0;
         const eligibleIds = eligibleTherapistIdsForCategory(slot, categoryId);
-        const usedForVariant = usedByVariant.get(unit.variantId) ?? {};
-        const staffId =
-          eligibleIds.find((id) => !usedForVariant[id]) ?? eligibleIds[0] ?? 0;
+        let staffId = 0;
+
+        // 1. Prioritas: Terapis yang sudah dipakai tapi masih < 2 (Sequential)
+        // SYARAT: Belum ambil variant yang sama (Concurrent Qty)
+        staffId =
+          eligibleIds.find((id) => {
+            const usage = staffUsageCount.get(id) ?? 0;
+            const variants = staffVariants.get(id) ?? new Set();
+            return usage === 1 && !variants.has(unit.variantId);
+          }) ?? 0;
+
+        // 2. Terapis baru
+        if (staffId === 0) {
+          staffId = eligibleIds.find((id) => !staffUsageCount.has(id)) ?? 0;
+        }
+
+        // 3. Fallback: Cari yang masih < 2
+        if (staffId === 0) {
+          staffId =
+            eligibleIds.find((id) => (staffUsageCount.get(id) ?? 0) < 2) ?? 0;
+        }
         if (staffId > 0) {
-          usedForVariant[staffId] = true;
-          usedByVariant.set(unit.variantId, usedForVariant);
+          staffUsageCount.set(staffId, (staffUsageCount.get(staffId) ?? 0) + 1);
+          const variants = staffVariants.get(staffId) ?? new Set();
+          variants.add(unit.variantId);
+          staffVariants.set(staffId, variants);
         }
         return {
           client_key: unit.key,
@@ -1332,9 +1399,18 @@ function OrderPanel({
                             ) : (
                               therapistOptions.map((t) =>
                                 (() => {
+                                  const usageCount =
+                                    form.staffAssignments.filter(
+                                      (a) =>
+                                        a.staff_id === t.id &&
+                                        a.client_key !== unit.key,
+                                    ).length;
+
                                   const isDisabled =
-                                    requiredCount > 1 &&
-                                    usedForSameVariant.has(t.id);
+                                    (requiredCount > 1 &&
+                                      usedForSameVariant.has(t.id)) ||
+                                    usageCount >= 2;
+
                                   return (
                                     <Dropdown.Item
                                       key={t.id}
@@ -1344,11 +1420,23 @@ function OrderPanel({
                                       className={[
                                         "rounded-xl px-3 py-2 text-[13px] font-medium",
                                         isDisabled
-                                          ? "text-[#B5AFA9] cursor-not-allowed"
+                                          ? "text-[#B5AFA9] cursor-not-allowed opacity-50"
                                           : "text-[#1A1614] hover:bg-[#FEF1F4] hover:text-[#B55368] cursor-pointer",
                                       ].join(" ")}
                                     >
-                                      <Label>{t.name}</Label>
+                                      <div className="flex items-center justify-between w-full">
+                                        <Label>{t.name}</Label>
+                                        {usageCount > 0 && !isDisabled && (
+                                          <span className="text-[10px] bg-[#EDE8E3] px-1.5 py-0.5 rounded-full">
+                                            {usageCount} layanan
+                                          </span>
+                                        )}
+                                        {isDisabled && usageCount >= 2 && (
+                                          <span className="text-[10px] text-[#B55368] font-bold">
+                                            Penuh (2/2)
+                                          </span>
+                                        )}
+                                      </div>
                                     </Dropdown.Item>
                                   );
                                 })(),
@@ -1435,8 +1523,10 @@ function OrderPanel({
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {bonusAvailableSlots.map((slot) => {
-                          const isConflicting = isBonusSlotConflictingWithPaidBooking(slot);
-                          const isDisabled = !slot.is_available || isConflicting;
+                          const isConflicting =
+                            isBonusSlotConflictingWithPaidBooking(slot);
+                          const isDisabled =
+                            !slot.is_available || isConflicting;
                           return (
                             <button
                               key={`bonus-${slot.slot_time}`}
@@ -3247,7 +3337,9 @@ export default function BookingModal({
             onBonusDateChange={handleBonusDateChange}
             onBonusSlotSelect={handleBonusSlotSelect}
             onBonusTherapistChange={handleBonusTherapistChange}
-            isBonusSlotConflictingWithPaidBooking={isBonusSlotConflictingWithPaidBooking}
+            isBonusSlotConflictingWithPaidBooking={
+              isBonusSlotConflictingWithPaidBooking
+            }
           />
         </div>
       </div>

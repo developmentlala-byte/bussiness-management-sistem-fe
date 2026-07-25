@@ -11,8 +11,8 @@ import { cn } from "@heroui/react"; // Sesuaikan dengan path utility class Anda
 import { FlowerLotus, Hand, Drop, Sparkle } from "@phosphor-icons/react";
 
 // --- KONFIGURASI TIMELINE ---
-const START_HOUR = 8; // 08:00
-const END_HOUR = 20; // 20:00
+const START_HOUR = 10; // 10:00
+const END_HOUR = 22; // 22:00
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_WIDTH = 120; // 120px per jam
 const MINUTE_WIDTH = HOUR_WIDTH / 60; // 2px per menit
