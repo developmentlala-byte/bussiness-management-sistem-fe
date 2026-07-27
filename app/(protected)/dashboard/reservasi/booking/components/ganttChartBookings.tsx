@@ -62,6 +62,9 @@ interface SpaBooking {
     duration_minutes: number;
     name: string;
     retail_price: number;
+    pivot?: {
+      quantity: number;
+    };
   }[];
   status: "Confirmed" | "Pending" | "Completed" | "Cancelled";
   payment_status: string;
@@ -206,7 +209,10 @@ const getTherapistNames = (event: SpaBooking): string => {
 
 const getEventServiceName = (event: SpaBooking): string => {
   const variantNames = event.service_variants
-    ?.map((line) => line?.name)
+    ?.map((line) => {
+      const qty = line?.pivot?.quantity ?? 1;
+      return `${line?.name} (${qty}x)`;
+    })
     .filter(Boolean) as string[];
 
   if (variantNames?.length) return variantNames.join(", ");
@@ -986,9 +992,11 @@ export default function GanttChartBookings() {
                       const th = STATUS[event.status] ?? STATUS.Confirmed;
                       const isBonus = isBonusChildBooking(event);
 
+                      const firstVariant = event?.service_variants?.[0];
+                      const firstVariantQty = firstVariant?.pivot?.quantity ?? 1;
                       const serviceName =
                         event?.service_variants?.length >= 2
-                          ? event.service_variants[0].name
+                          ? `${firstVariant?.name} (${firstVariantQty}x)`
                           : displayServiceName;
 
                       const showService = widthPx >= 100;
@@ -1000,7 +1008,7 @@ export default function GanttChartBookings() {
                           key={event.id}
                           title={[
                             event.customer_name,
-                            event.service_name,
+                            displayServiceName,
                             `Therapist: ${getTherapistNames(event)}`,
                             `${event.timeStr} – ${endTime}`,
                             `Durasi: ${fmtDur(event.duration_minutes)}`,

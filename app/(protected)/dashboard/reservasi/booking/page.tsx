@@ -885,6 +885,7 @@ function BookingsPageInner() {
     );
   };
 
+  console.log("🚀 ~ BookingsPageInner ~ selectedBooking:", selectedBooking);
   return (
     <div
       className="relative flex flex-col w-full"
@@ -1387,22 +1388,33 @@ function BookingsPageInner() {
                                       </p>
                                     )}
                                   </div>
-                                  <div className="text-right">
-                                    {isBundlePromoLine(line) && (
-                                      <p className="text-xs text-muted-foreground line-through">
+                                  <div className="grid grid-rows-2">
+                                    <div className="text-right">
+                                      {isBundlePromoLine(line) && (
+                                        <p className="text-xs text-muted-foreground line-through">
+                                          {new Intl.NumberFormat("id-ID", {
+                                            style: "currency",
+                                            currency: "IDR",
+                                            maximumFractionDigits: 0,
+                                          }).format(line.subtotal)}
+                                        </p>
+                                      )}
+                                      <p className="text-sm font-semibold">
                                         {new Intl.NumberFormat("id-ID", {
                                           style: "currency",
                                           currency: "IDR",
                                           maximumFractionDigits: 0,
-                                        }).format(line.subtotal)}
+                                        }).format(line.retail_price ?? 0)}
                                       </p>
-                                    )}
-                                    <p className="text-sm font-semibold">
-                                      {new Intl.NumberFormat("id-ID", {
-                                        style: "currency",
-                                        currency: "IDR",
-                                        maximumFractionDigits: 0,
-                                      }).format(line.retail_price ?? 0)}
+                                    </div>
+                                    <p className="text-sm font-semibold flex items-center justify-between">
+                                      qty :
+                                      <p className="">
+                                        {line?.pivot
+                                          ? line?.pivot?.quantity
+                                          : 1}
+                                        x
+                                      </p>
                                     </p>
                                   </div>
                                 </div>
