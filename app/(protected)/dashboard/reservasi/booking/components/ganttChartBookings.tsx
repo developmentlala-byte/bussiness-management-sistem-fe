@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@heroui/react";
 import {
@@ -9,6 +9,9 @@ import {
   Drop,
   Sparkle,
   UserCircle,
+  UsersThree,
+  Copy,
+  CheckCircle,
   X,
   Clock,
   Wallet,
@@ -16,7 +19,11 @@ import {
   CaretRight,
   CaretLeft,
 } from "@phosphor-icons/react";
-import { useApiFetch } from "@/app/libs/use-http";
+import {
+  SpaBooking,
+  isBundlePromoLine,
+  getSpaBookingDuration,
+} from "@/app/types/booking";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -24,63 +31,35 @@ import { useApiFetch } from "@/app/libs/use-http";
 const START_HOUR = 10;
 const END_HOUR = 22;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
-const HOUR_WIDTH = 136; // px per hour
-const MIN_WIDTH = HOUR_WIDTH / 60;
+const HOUR_WIDTH_DAILY = 136;
+const HOUR_WIDTH_THERAPIST = 200;
 const Y_AXIS_W = 150;
 const LANE_H = 82;
 const LANE_PAD = 8;
 const DAYS_IN_VIEW = 7;
+const MIN_LABEL_WIDTH = 108; // px minimum biar nama service kebaca
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
-interface BookingTherapist {
-  id: number;
-  booking_id: number;
-  bms_ms_staff_id: number;
-  bms_ms_service_variant_id: number;
-  name: string;
-  staff?: {
-    id: number;
-    first_name: string;
-    last_name?: string | null;
-  };
-}
-
-interface SpaBooking {
-  id: string | number;
-  booking_code: string;
-  customer_name: string;
-  customer_phone: string;
-  service_name?: string;
-  therapist_name?: string;
-  therapists?: Array<string | BookingTherapist>;
-  schedule_date: string;
-  duration_minutes: number;
-  service_variants: {
-    id: number;
-    duration_minutes: number;
-    name: string;
-    retail_price: number;
-    pivot?: {
-      quantity: number;
-    };
-  }[];
-  status: "Confirmed" | "Pending" | "Completed" | "Cancelled";
-  payment_status: string;
-  total_amount: number;
-  subtotal_amount?: number;
-  discount_amount?: number;
-  booking_bundle_promos?: Array<{ bundle_name?: string }>;
-  booking_type?: "standard" | "bonus_child";
-  parent_booking_id?: number | null;
-  child_bookings?: SpaBooking[];
-  applied_voucher?: { code?: string; name?: string } | null;
-  voucher_snapshot?: { code?: string; name?: string } | null;
-}
-
 type ScheduledBooking = SpaBooking & { timeStr: string };
 type BookingMeta = ScheduledBooking & { lane: number; laneCount: number };
+
+// Rekap per-terapis: dipakai buat modal "Rekap Terapis" (Per Terapis tab)
+type TherapistRecapItem = {
+  key: string;
+  time: string;
+  endTime: string;
+  serviceName: string;
+  durationMinutes: number;
+  status: string;
+};
+
+type TherapistRecapGroup = {
+  therapistName: string;
+  items: TherapistRecapItem[];
+  totalDurationMinutes: number;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATE / TIME HELPERS
@@ -131,6 +110,11 @@ const addMin = (time: string, min: number) => {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(
     t % 60,
   ).padStart(2, "0")}`;
+};
+
+const parseTimeToMinutes = (time: string): number => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
 };
 
 const fmtDur = (min: number) => {
@@ -198,48 +182,69 @@ const CAT_ICONS: Record<Cat, React.ReactNode> = {
 };
 
 const getTherapistNames = (event: SpaBooking): string => {
-  const therapists = event.therapists ?? [event.therapist_name];
-  return (
-    therapists
-      .map((t) => (typeof t === "string" ? t : t?.name))
-      .filter(Boolean)
-      .join(", ") || "—"
-  );
+  const therapists = event.therapists ?? [];
+
+  if (therapists.length > 0) {
+    return (
+      therapists
+        .map((t) => {
+          if (typeof t === "string") return t;
+          if (t?.name) return t.name;
+          if (t?.staff) {
+            const s = t.staff;
+            return trim(`${s.first_name} ${s.last_name ?? ""}`);
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .join(", ") || "—"
+    );
+  }
+
+  return event.therapist_name || "—";
 };
 
-const getEventServiceName = (event: SpaBooking): string => {
-  const variantNames = event.service_variants
-    ?.map((line) => {
-      const qty = line?.pivot?.quantity ?? 1;
-      return `${line?.name} (${qty}x)`;
-    })
-    .filter(Boolean) as string[];
+// Helper for trim
+const trim = (s: string) => s.trim();
 
-  if (variantNames?.length) return variantNames.join(", ");
-  if (event.service_name) return event.service_name;
-  if (event.booking_bundle_promos?.[0]?.bundle_name) {
-    return event.booking_bundle_promos[0].bundle_name;
+const getEventServiceName = (event: SpaBooking): string => {
+  const parts: string[] = [];
+
+  // 1. Bundle Promos
+  if (event.booking_bundle_promos && event.booking_bundle_promos.length > 0) {
+    event.booking_bundle_promos.forEach((b) => {
+      parts.push(b.bundle_name || b.name || "Bundle Promo");
+    });
   }
+
+  // 2. Service Variants (only those NOT in a bundle to avoid double-listing, or all if preferred)
+  // Actually, isBundlePromoLine already helps us distinguish
+  event.service_variants?.forEach((line) => {
+    if (isBundlePromoLine(line)) {
+      // If we already added bundle names above, we might skip this
+      // but some old data might not have booking_bundle_promos but has isBundlePromoLine
+      const name = line.bundle_name || line.name;
+      if (name && !parts.includes(name)) {
+        parts.push(name);
+      }
+    } else {
+      const qty = line?.quantity ?? 1;
+      parts.push(`${line?.name} (${qty}x)`);
+    }
+  });
+
+  if (parts.length > 0) {
+    return Array.from(new Set(parts)).join(", ");
+  }
+
+  // Priority 3: Fallback to service_name
+  if (event.service_name) return event.service_name;
+
   return "Spa Service";
 };
 
 const isBonusChildBooking = (event: SpaBooking) =>
   event.booking_type === "bonus_child" || Boolean(event.parent_booking_id);
-
-const getBookingDuration = (booking: SpaBooking) => {
-  if (
-    booking.child_bookings &&
-    booking.child_bookings.length > 0 &&
-    Array.isArray(booking.service_variants) &&
-    booking.service_variants.length > 0
-  ) {
-    return booking.service_variants
-      .map((variant) => Number(variant.duration_minutes || 0))
-      .reduce((sum, current) => sum + current, 0);
-  }
-
-  return booking.duration_minutes;
-};
 
 const addBookingToMap = (
   map: Map<string, ScheduledBooking[]>,
@@ -247,9 +252,84 @@ const addBookingToMap = (
 ) => {
   const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
   const list = map.get(dateStr) ?? [];
-  list.push({ ...booking, timeStr, duration_minutes: getBookingDuration(booking) });
+  list.push({
+    ...booking,
+    timeStr,
+    duration_minutes: getSpaBookingDuration(booking),
+  });
   map.set(dateStr, list);
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THERAPIST RECAP HELPERS
+// Dipakai buat modal "Rekap Terapis" — mengelompokkan events (yang sudah
+// dipecah per-terapis-per-layanan lewat byDateSplit) berdasarkan nama
+// terapis, lalu urut berdasarkan jam. Ini yang menjawab pertanyaan
+// "staff X hari ini pegang berapa layanan & jam berapa aja".
+// ─────────────────────────────────────────────────────────────────────────────
+function buildTherapistRecap(
+  events: ScheduledBooking[],
+): TherapistRecapGroup[] {
+  const groups = new Map<string, TherapistRecapItem[]>();
+
+  events.forEach((event) => {
+    const name = getTherapistNames(event);
+    const therapistName = name && name !== "—" ? name : "Belum Ditugaskan";
+    const list = groups.get(therapistName) ?? [];
+
+    list.push({
+      key: String(event.id),
+      time: event.timeStr,
+      endTime: addMin(event.timeStr, event.duration_minutes),
+      serviceName: getEventServiceName(event),
+      durationMinutes: event.duration_minutes,
+      status: event.status,
+    });
+
+    groups.set(therapistName, list);
+  });
+
+  return Array.from(groups.entries())
+    .map(([therapistName, items]) => ({
+      therapistName,
+      items: [...items].sort((a, b) => a.time.localeCompare(b.time)),
+      totalDurationMinutes: items.reduce(
+        (sum, i) => sum + i.durationMinutes,
+        0,
+      ),
+    }))
+    .sort((a, b) => a.therapistName.localeCompare(b.therapistName));
+}
+
+// Format rekap jadi plain text supaya gampang di-copy & di-paste (WA, laporan, dll)
+function buildTherapistRecapText(
+  date: Date,
+  groups: TherapistRecapGroup[],
+): string {
+  const lines: string[] = [];
+  lines.push(`Rekap Terapis — ${DATE_LONG_FMT.format(date)}`);
+  lines.push("");
+
+  if (groups.length === 0) {
+    lines.push("Tidak ada jadwal terapis pada tanggal ini.");
+    return lines.join("\n");
+  }
+
+  groups.forEach((g) => {
+    lines.push(
+      `${g.therapistName} — ${g.items.length} layanan (${fmtDur(g.totalDurationMinutes)})`,
+    );
+    g.items.forEach((item) => {
+      const statusTag = item.status !== "Confirmed" ? ` [${item.status}]` : "";
+      lines.push(
+        `  ${item.time}–${item.endTime}  ${item.serviceName}${statusTag}`,
+      );
+    });
+    lines.push("");
+  });
+
+  return lines.join("\n").trim();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STATUS THEME  — follows globals.css CSS variables
@@ -294,21 +374,41 @@ const STATUS: Record<string, Theme> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LANE ASSIGNMENT  (greedy interval scheduling — O(n log n))
+// LANE ASSIGNMENT  (greedy interval scheduling with diagonal waterfall)
 //
-// Bookings sorted by start time. Each booking is placed in the first
-// available lane whose last occupant has already ended. If none is free,
-// a new lane is opened. This prevents any visual overlap.
+// Bookings sorted by start time. To ensure that multiple services belonging
+// to the SAME booking (same booking_code) do not visually merge into a single
+// horizontal line, we force each service unit within a booking to take a UNIQUE
+// lane (waterfall effect). We track which lanes a booking has already used.
 // ─────────────────────────────────────────────────────────────────────────────
 function assignLanes(events: ScheduledBooking[]): BookingMeta[] {
   const sorted = [...events].sort((a, b) => a.timeStr.localeCompare(b.timeStr));
   const laneEnds: string[] = []; // last end-time per lane
+  const bookingLanes = new Map<string, Set<number>>(); // lanes used by each booking
 
   const assigned = sorted.map((ev) => {
     const end = addMin(ev.timeStr, ev.duration_minutes);
-    let lane = laneEnds.findIndex((e) => e <= ev.timeStr);
-    if (lane < 0) lane = laneEnds.length;
+    const bCode = ev.booking_code || ev.id || "unknown";
+
+    if (!bookingLanes.has(bCode)) {
+      bookingLanes.set(bCode, new Set());
+    }
+    const usedLanesForThisBooking = bookingLanes.get(bCode)!;
+
+    let lane = 0;
+    while (true) {
+      const isFree = !laneEnds[lane] || laneEnds[lane] <= ev.timeStr;
+      const isUnusedByBooking = !usedLanesForThisBooking.has(lane);
+
+      if (isFree && isUnusedByBooking) {
+        break;
+      }
+      lane++;
+    }
+
     laneEnds[lane] = end;
+    usedLanesForThisBooking.add(lane);
+
     return { ...ev, lane };
   });
 
@@ -405,6 +505,387 @@ function DayNavControl({
       >
         <CaretRight weight="bold" className="size-3.5" />
       </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOOKING HOVER CARD
+// Custom-built (no HeroUI Pro) — replaces the native `title` tooltip with a
+// styled floating preview. Portal-rendered to escape the scrollable Gantt
+// container, positioned via getBoundingClientRect with auto flip.
+// ─────────────────────────────────────────────────────────────────────────────
+interface HoverCardData {
+  event: BookingMeta;
+  rect: DOMRect;
+}
+
+function BookingHoverCard({ event, rect }: HoverCardData) {
+  const CARD_W = 260;
+  const GAP = 10;
+
+  const openUpward = rect.top > 220;
+
+  let left = rect.left + rect.width / 2 - CARD_W / 2;
+  left = Math.max(12, Math.min(left, window.innerWidth - CARD_W - 12));
+
+  const top = openUpward ? rect.top - GAP : rect.bottom + GAP;
+
+  const endTime = addMin(event.timeStr, event.duration_minutes);
+  const displayServiceName = getEventServiceName(event);
+  const therapistName = getTherapistNames(event);
+  const th = STATUS[event.status] ?? STATUS.Confirmed;
+  const isBonus = isBonusChildBooking(event);
+
+  return createPortal(
+    <div
+      className="fixed z-[200] pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+      style={{
+        left,
+        top,
+        width: CARD_W,
+        transform: openUpward ? "translateY(-100%)" : undefined,
+      }}
+    >
+      <div className="rounded-xl border border-[var(--border)] bg-background overflow-hidden shadow-xl shadow-black/20">
+        <div className={cn("h-[3px] w-full", th.dot)} />
+
+        <div className="p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                th.badge,
+              )}
+            >
+              {event.status}
+            </span>
+            <span className="text-[10.5px] font-bold tabular-nums text-[var(--muted)]">
+              {event.timeStr}&thinsp;—&thinsp;{endTime}
+            </span>
+          </div>
+
+          <p className="text-[13.5px] font-bold leading-tight text-[var(--foreground)] truncate">
+            {event.customer_name}
+          </p>
+
+          <div className="flex items-start gap-1.5">
+            <span className="shrink-0 mt-[1px] text-[var(--muted)]">
+              {CAT_ICONS[toCat(displayServiceName)]}
+            </span>
+            <span className="text-[11.5px] leading-snug text-[var(--muted)]">
+              {displayServiceName}
+              {isBonus && (
+                <span className="ml-1.5 rounded-full bg-[var(--accent)]/10 px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-[0.14em] text-[var(--accent)]">
+                  Bonus
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <UserCircle
+              weight="duotone"
+              className="size-3.5 shrink-0 text-[var(--muted)]"
+            />
+            <span className="text-[11.5px] text-[var(--muted)] truncate">
+              {therapistName}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/50">
+            <div className="flex items-center gap-1">
+              <Clock
+                weight="duotone"
+                className="size-3 shrink-0 text-[var(--muted)]"
+              />
+              <span className="text-[10px] font-semibold text-[var(--muted)]">
+                {fmtDur(event.duration_minutes)}
+              </span>
+            </div>
+            <span className="text-[12px] font-extrabold text-[var(--foreground)]">
+              {fmtIDR(event.total_amount)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TIMELINE ROW
+// Shared render for the hour-grid + booking blocks of a single row.
+// Used for every day row, in both "Per Hari" and "Per Terapis" modes —
+// only the *source events* fed into it differ (see byDate vs byDateSplit
+// below), the grid/band/booking-block rendering logic lives here once.
+// ─────────────────────────────────────────────────────────────────────────────
+function TimelineRow({
+  laneEvents,
+  rowH,
+  isToday,
+  nowPx,
+  onBlockClick,
+  mode = "daily",
+}: {
+  laneEvents: BookingMeta[];
+  rowH: number;
+  isToday: boolean;
+  nowPx: { px: number; show: boolean };
+  onBlockClick: (event: BookingMeta) => void;
+  mode?: "daily" | "therapist";
+}) {
+  const isTherapistMode = mode === "therapist";
+  const hourWidth = isTherapistMode ? HOUR_WIDTH_THERAPIST : HOUR_WIDTH_DAILY;
+  const minWidth = hourWidth / 60;
+
+  const [hovered, setHovered] = useState<HoverCardData | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEnter = (
+    e: React.MouseEvent<HTMLDivElement>,
+    event: BookingMeta,
+  ) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    const rect = e.currentTarget.getBoundingClientRect();
+    openTimer.current = setTimeout(() => setHovered({ event, rect }), 250);
+  };
+
+  const handleLeave = () => {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    closeTimer.current = setTimeout(() => setHovered(null), 120);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (openTimer.current) clearTimeout(openTimer.current);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  // helper: cari event berikutnya di lane yang sama (buat batas max width)
+  const findNextInLane = (currentIdx: number, lane: number) => {
+    for (let i = currentIdx + 1; i < laneEvents.length; i++) {
+      if (laneEvents[i].lane === lane) return laneEvents[i];
+    }
+    return null;
+  };
+
+  return (
+    <div
+      className={cn(
+        "relative",
+        isToday ? "bg-[var(--background)]" : "bg-[var(--surface)]",
+      )}
+      style={{ width: TOTAL_HOURS * hourWidth, minHeight: rowH }}
+    >
+      {/* Alternating hour bands */}
+      {Array.from({ length: TOTAL_HOURS }).map((_, i) =>
+        i % 2 === 1 ? (
+          <div
+            key={`band-${i}`}
+            className="absolute inset-y-0 bg-[var(--surface-secondary)]/40"
+            style={{ left: i * hourWidth, width: hourWidth }}
+          />
+        ) : null,
+      )}
+
+      {/* Hour vertical lines */}
+      {Array.from({ length: TOTAL_HOURS - 1 }).map((_, i) => (
+        <div
+          key={`vl-${i}`}
+          className="absolute inset-y-0 border-r-[0.5px] border-[var(--border)]"
+          style={{ left: (i + 1) * hourWidth }}
+        />
+      ))}
+
+      {/* Half-hour dashed ticks */}
+      {Array.from({ length: TOTAL_HOURS }).map((_, i) => (
+        <div
+          key={`hl-${i}`}
+          className="absolute inset-y-0 border-r-[0.5px] border-dashed border-[var(--border)]/50"
+          style={{ left: i * hourWidth + hourWidth / 2 }}
+        />
+      ))}
+
+      {/* "Now" indicator */}
+      {isToday && nowPx.show && (
+        <div
+          className="absolute top-0 bottom-0 z-20 pointer-events-none"
+          style={{ left: nowPx.px * (minWidth / (HOUR_WIDTH_DAILY / 60)) }}
+        >
+          <div className="absolute top-0 bottom-0 w-px bg-[var(--accent)]/55" />
+          <div className="absolute -top-px -translate-x-1/2 w-2 h-2 rounded-full bg-[var(--accent)]" />
+        </div>
+      )}
+
+      {/* Booking blocks — lane-positioned, zero overlap */}
+      {laneEvents.map((event, idx) => {
+        const [hStr, mStr] = event.timeStr.split(":");
+        const minFromStart =
+          (parseInt(hStr) - START_HOUR) * 60 + parseInt(mStr);
+        if (minFromStart < 0 || minFromStart >= TOTAL_HOURS * 60) {
+          return null;
+        }
+
+        const leftPx = minFromStart * minWidth;
+        const naturalWidthPx = event.duration_minutes * minWidth;
+
+        // cari batas max: sampai event berikutnya di lane yg sama, atau akhir grid
+        const nextInLane = findNextInLane(idx, event.lane);
+        const nextStartMin = nextInLane
+          ? (parseInt(nextInLane.timeStr.split(":")[0]) - START_HOUR) * 60 +
+            parseInt(nextInLane.timeStr.split(":")[1])
+          : TOTAL_HOURS * 60;
+        const maxAvailablePx = Math.max(
+          naturalWidthPx,
+          (nextStartMin - minFromStart) * minWidth - 4,
+        );
+
+        // lebar akhir: minimal MIN_LABEL_WIDTH, tapi ga boleh nabrak block sebelahnya
+        const widthPx = Math.min(
+          Math.max(naturalWidthPx, MIN_LABEL_WIDTH),
+          maxAvailablePx,
+        );
+
+        const topPx = event.lane * LANE_H + LANE_PAD;
+        const blockH = LANE_H - LANE_PAD * 2;
+
+        const endTime = addMin(event.timeStr, event.duration_minutes);
+        const displayServiceName = getEventServiceName(event);
+        const cat = toCat(displayServiceName);
+        const th = STATUS[event.status] ?? STATUS.Confirmed;
+        const isBonus = isBonusChildBooking(event);
+
+        const firstVariant = event?.service_variants?.[0];
+        const firstVariantQty = firstVariant?.quantity ?? 1;
+        const serviceName =
+          event?.service_variants?.length >= 2
+            ? `${firstVariant?.name} (${firstVariantQty}x)`
+            : displayServiceName;
+
+        const showService = widthPx >= 60;
+        const showTherapist = widthPx >= 80;
+        const showDurBadge = widthPx >= 100;
+
+        const therapistName = getTherapistNames(event);
+        const hasTherapist = therapistName !== "—";
+
+        return (
+          <div
+            key={`${event.id}-${idx}`}
+            className="absolute z-10 cursor-pointer hover:z-30"
+            style={{
+              left: leftPx + 2,
+              width: widthPx - 4,
+              top: topPx,
+              height: blockH,
+            }}
+            onClick={() => onBlockClick(event)}
+            onMouseEnter={(e) => handleEnter(e, event)}
+            onMouseLeave={handleLeave}
+          >
+            <div
+              className={cn(
+                "absolute inset-0 flex flex-col gap-[3px] rounded-lg overflow-hidden",
+                "border border-[var(--border)]/80 border-l-[3px]",
+                "px-2.5 py-2",
+                "transition-all duration-150",
+                "hover:shadow-md hover:shadow-black/10 hover:-translate-y-px",
+                th.block,
+              )}
+            >
+              {/* Row 1: Time range + duration badge */}
+              <div className="flex items-center justify-between gap-1 min-w-0">
+                <span
+                  className={cn(
+                    "text-[9px] font-bold tracking-tight shrink-0 whitespace-nowrap",
+                    th.metaTx,
+                  )}
+                >
+                  {event.timeStr}&thinsp;—&thinsp;{endTime}
+                </span>
+                {showDurBadge && (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 leading-none",
+                      "text-[9px] font-bold uppercase tracking-wide",
+                      th.badge,
+                    )}
+                  >
+                    {fmtDur(event.duration_minutes)}
+                  </span>
+                )}
+              </div>
+
+              {/* Row 2: Title */}
+              <p
+                className={cn(
+                  "truncate text-[12px] font-bold leading-none",
+                  th.clientTx,
+                )}
+              >
+                {isTherapistMode ? serviceName : event.customer_name}
+              </p>
+
+              {/* Row 3: Subtitle (Service or Therapist) */}
+              {showService && (
+                <div className="flex items-center gap-1 min-w-0">
+                  {isTherapistMode || (!showTherapist && hasTherapist) ? (
+                    <UserCircle
+                      weight="duotone"
+                      className={cn("shrink-0 size-3", th.metaTx)}
+                    />
+                  ) : (
+                    <span className={cn("shrink-0", th.metaTx)}>
+                      {CAT_ICONS[cat]}
+                    </span>
+                  )}
+                  <p
+                    className={cn(
+                      "truncate text-[10px] leading-none",
+                      th.metaTx,
+                    )}
+                  >
+                    {isTherapistMode || (!showTherapist && hasTherapist)
+                      ? therapistName
+                      : displayServiceName}
+                  </p>
+                  {isBonus && (
+                    <span className="rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      Bonus
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Row 4: Therapist name (only in daily mode and if wide enough) */}
+              {!isTherapistMode && showTherapist && hasTherapist && (
+                <div className="flex items-center gap-1 min-w-0">
+                  <UserCircle
+                    weight="duotone"
+                    className={cn("shrink-0 size-3", th.metaTx)}
+                  />
+                  <span
+                    className={cn(
+                      "truncate text-[10px] leading-none opacity-80",
+                      th.metaTx,
+                    )}
+                  >
+                    {therapistName}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {hovered && (
+        <BookingHoverCard event={hovered.event} rect={hovered.rect} />
+      )}
     </div>
   );
 }
@@ -704,20 +1185,248 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THERAPIST RECAP MODAL
+// Dibuka dari tab "Per Terapis". Untuk setiap terapis di hari itu, tampilkan
+// jumlah layanan yang dipegang + urutan jam kerjanya. Struktur sengaja dibuat
+// sederhana (grup per nama, list jam di bawahnya) supaya gampang dipindai
+// dan gampang di-copy sebagai teks polos (tombol "Copy Rekap").
+// ─────────────────────────────────────────────────────────────────────────────
+interface TherapistRecapModalProps {
+  date: Date;
+  groups: TherapistRecapGroup[];
+  onClose: () => void;
+}
+
+function TherapistRecapModal({
+  date,
+  groups,
+  onClose,
+}: TherapistRecapModalProps) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const totalServices = useMemo(
+    () => groups.reduce((sum, g) => sum + g.items.length, 0),
+    [groups],
+  );
+
+  const handleCopy = async () => {
+    const text = buildTherapistRecapText(date, groups);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard API blocked (permission/https) — fail silently, no crash.
+    }
+  };
+
+  const content = (
+    <div
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[6px]" />
+
+      {/* Modal card */}
+      <div
+        className={cn(
+          "relative z-10 w-full sm:max-w-[560px] max-h-[90dvh] flex flex-col",
+          "rounded-t-3xl sm:rounded-2xl",
+          "bg-background border border-border",
+          "shadow-2xl shadow-black/30",
+          "animate-in fade-in slide-in-from-bottom-6 duration-300 ease-out",
+        )}
+      >
+        {/* Mobile drag handle */}
+        <div className="sm:hidden flex justify-center pt-3 shrink-0">
+          <div className="w-9 h-[3px] rounded-full bg-[var(--muted)]/25" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
+              <UsersThree
+                weight="duotone"
+                className="size-[22px] text-[var(--accent)]"
+              />
+            </div>
+            <div>
+              <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-[var(--muted)] mb-0.5">
+                Rekap Terapis
+              </p>
+              <h3 className="text-[15px] font-semibold text-[var(--foreground)] leading-tight capitalize">
+                {DATE_LONG_FMT.format(date)}
+              </h3>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className={cn(
+              "shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center",
+              "bg-[var(--surface)] hover:bg-[var(--surface-secondary)]",
+              "text-[var(--muted)] hover:text-[var(--foreground)]",
+              "transition-colors",
+            )}
+          >
+            <X weight="bold" className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Summary + copy button */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border shrink-0">
+          <span className="text-[11px] text-[var(--muted)]">
+            <span className="font-semibold text-[var(--foreground)]">
+              {groups.length}
+            </span>{" "}
+            terapis ·{" "}
+            <span className="font-semibold text-[var(--foreground)]">
+              {totalServices}
+            </span>{" "}
+            layanan
+          </span>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold shrink-0",
+              "bg-[var(--surface-secondary)] hover:bg-[var(--surface-secondary)]/70",
+              "text-[var(--foreground)] transition-colors",
+            )}
+          >
+            {copied ? (
+              <>
+                <CheckCircle
+                  weight="fill"
+                  className="size-3.5 text-[var(--success)]"
+                />
+                Tersalin
+              </>
+            ) : (
+              <>
+                <Copy weight="bold" className="size-3.5" />
+                Copy Rekap
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Per-therapist groups */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
+          {groups.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <UsersThree
+                weight="duotone"
+                className="size-12 text-[var(--muted)]/30 mb-3"
+              />
+              <p className="text-sm font-medium text-[var(--muted)]">
+                Tidak ada jadwal terapis
+              </p>
+              <p className="text-xs text-[var(--muted)]/60 mt-1">
+                Belum ada reservasi untuk tanggal ini
+              </p>
+            </div>
+          ) : (
+            groups.map((g) => (
+              <div
+                key={g.therapistName}
+                className="rounded-xl border border-[var(--border)]/60 overflow-hidden"
+              >
+                {/* Therapist header */}
+                <div className="flex items-center justify-between gap-2 bg-[var(--surface-secondary)]/50 px-3.5 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <UserCircle
+                      weight="duotone"
+                      className="size-4 text-[var(--accent)] shrink-0"
+                    />
+                    <span className="text-[13px] font-bold text-[var(--foreground)] truncate">
+                      {g.therapistName}
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-[10px] font-semibold text-[var(--muted)]">
+                    {g.items.length} layanan · {fmtDur(g.totalDurationMinutes)}
+                  </span>
+                </div>
+
+                {/* Time-ordered service list */}
+                <div className="divide-y divide-[var(--border)]/40">
+                  {g.items.map((item) => {
+                    const th = STATUS[item.status] ?? STATUS.Confirmed;
+                    return (
+                      <div
+                        key={item.key}
+                        className="flex items-center gap-3 px-3.5 py-2"
+                      >
+                        <span className="shrink-0 text-[11px] font-extrabold tabular-nums text-[var(--foreground)] w-[92px]">
+                          {item.time}–{item.endTime}
+                        </span>
+                        <span className="flex-1 min-w-0 truncate text-[11px] text-[var(--muted)]">
+                          {item.serviceName}
+                        </span>
+                        {item.status !== "Confirmed" && (
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-1.5 py-[2px] text-[8.5px] font-bold uppercase tracking-wide",
+                              th.badge,
+                            )}
+                          >
+                            {item.status}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(content, document.body);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-export default function GanttChartBookings() {
-  const { data } = useApiFetch<{ data: SpaBooking[] }>(
-    ["bookings"],
-    "/master/bookings",
-  );
-  const bookings = useMemo(() => data?.data ?? [], [data]);
-
-  // Which day's detail modal is open (null = closed)
+export default function GanttChartBookings({
+  bookings = [],
+}: {
+  bookings?: SpaBooking[];
+}) {
+  // Which day's detail modal is open (null = closed) — "Per Hari" mode
   const [selectedDay, setSelectedDay] = useState<{
     date: Date;
     events: ScheduledBooking[];
   } | null>(null);
+
+  // Which day's therapist recap modal is open (null = closed) — "Per Terapis" mode
+  const [therapistRecapDay, setTherapistRecapDay] = useState<{
+    date: Date;
+    groups: TherapistRecapGroup[];
+  } | null>(null);
+
+  const [viewMode, setViewMode] = useState<"daily" | "therapist">("daily");
 
   // `today` is fixed once per mount — purely for rendering "this is today's
   // column" and as the anchor point for the sliding window below. It is NOT
@@ -762,6 +1471,9 @@ export default function GanttChartBookings() {
   );
 
   // ── Group all bookings (+ their bonus child bookings) by calendar date ─
+  // Used as-is for "Per Hari", and also used as the source of truth for
+  // the day-detail modal in "Per Hari" mode (so the modal always shows
+  // real, unsplit bookings with correct totals/amounts).
   const byDate = useMemo(() => {
     const map = new Map<string, ScheduledBooking[]>();
     bookings.forEach((booking) => {
@@ -773,13 +1485,208 @@ export default function GanttChartBookings() {
     return map;
   }, [bookings]);
 
+  // ── "Per Terapis" split, flattened back into ONE list per date ────────
+  // Same row layout as "Per Hari" (one row per day, lanes handle overlap),
+  // but instead of showing the raw booking as a single block, a booking
+  // with multiple service_variants / multiple therapists is broken into
+  // one block per therapist-assigned unit — so within that single day row
+  // you can see exactly which slice of time belongs to which therapist.
+  // This is also the source used to build the "Rekap Terapis" modal.
+  const byDateSplit = useMemo(() => {
+    const map = new Map<string, ScheduledBooking[]>();
+
+    const addSplitEvent = (booking: SpaBooking) => {
+      const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
+      const list = map.get(dateStr) ?? [];
+
+      // Ambil list assignments yang valid (punya client_key)
+      const therapistsList = (booking.therapists ?? []).filter(
+        (t): t is BookingTherapist => typeof t !== "string",
+      );
+
+      const isParallel = booking.is_parallel ?? false;
+      const usedTherapistIds = new Set<number>();
+
+      // Check if we have precise timing data in the therapists list
+      const hasPreciseTiming =
+        therapistsList.length > 0 &&
+        therapistsList.every((t) => t.start_time && t.end_time);
+
+      if (hasPreciseTiming) {
+        therapistsList.forEach((t, idx) => {
+          // Find the corresponding service variant data for the label
+          const variant = booking.service_variants?.find(
+            (v) => v.id === t.bms_ms_service_variant_id,
+          );
+
+          // Calculate duration from start_time and end_time
+          const startMin = parseTimeToMinutes(t.start_time!);
+          const endMin = parseTimeToMinutes(t.end_time!);
+          const duration = endMin - startMin;
+
+          list.push({
+            ...booking,
+            timeStr: t.start_time!,
+            duration_minutes: duration,
+            service_variants: variant
+              ? [{ ...variant, quantity: 1 }]
+              : booking.service_variants,
+            therapists: [t],
+            id: `${booking.id}-split-${t.id}-${idx}`,
+          });
+        });
+
+        map.set(dateStr, list);
+        return;
+      }
+
+      // Helper untuk memproses sekelompok unit (dari variant tunggal atau item bundle)
+      const processUnits = (
+        variantId: number,
+        qty: number,
+        variantData: any,
+        startTime: string,
+      ): { events: ScheduledBooking[]; nextStartTime: string } => {
+        const events: ScheduledBooking[] = [];
+        let currentSequentialStart = startTime;
+
+        if (isParallel) {
+          for (let unitIdx = 1; unitIdx <= qty; unitIdx++) {
+            const targetKey = `${variantId}:${unitIdx}`;
+            const assignedT =
+              therapistsList.find((t) => t.client_key === targetKey) ??
+              therapistsList.find(
+                (t) =>
+                  t.bms_ms_service_variant_id === variantId &&
+                  !usedTherapistIds.has(t.id),
+              ) ??
+              therapistsList.find(
+                (t) => t.bms_ms_service_variant_id === variantId,
+              ) ??
+              ({ name: booking.therapist_name } as any);
+
+            if (assignedT?.id) usedTherapistIds.add(assignedT.id);
+
+            events.push({
+              ...booking,
+              timeStr: startTime,
+              duration_minutes: variantData.duration_minutes ?? 0,
+              service_variants: [{ ...variantData, quantity: 1 }],
+              therapists: assignedT ? [assignedT] : [],
+              id: `${booking.id}-v${variantId}-u${unitIdx}-${Math.random().toString(36).slice(2, 5)}`,
+            });
+          }
+          return { events, nextStartTime: startTime };
+        } else {
+          let unitIndex = 0;
+          while (unitIndex < qty) {
+            const targetKey = `${variantId}:${unitIndex + 1}`;
+            const currentT =
+              therapistsList.find((t) => t.client_key === targetKey) ??
+              therapistsList.find(
+                (t) =>
+                  t.bms_ms_service_variant_id === variantId &&
+                  !usedTherapistIds.has(t.id),
+              ) ??
+              therapistsList.find(
+                (t) => t.bms_ms_service_variant_id === variantId,
+              ) ??
+              ({ name: booking.therapist_name } as any);
+
+            const currentStaffId = currentT?.bms_ms_staff_id ?? -1;
+            if (currentT?.id) usedTherapistIds.add(currentT.id);
+
+            let consecutiveUnits = 1;
+            while (unitIndex + consecutiveUnits < qty) {
+              const nextKey = `${variantId}:${unitIndex + consecutiveUnits + 1}`;
+              const nextT = therapistsList.find(
+                (t) => t.client_key === nextKey,
+              );
+              if (!nextT || nextT.bms_ms_staff_id !== currentStaffId) break;
+              consecutiveUnits++;
+            }
+
+            const blockDur =
+              (variantData.duration_minutes ?? 0) * consecutiveUnits;
+            events.push({
+              ...booking,
+              timeStr: currentSequentialStart,
+              duration_minutes: blockDur,
+              service_variants: [
+                { ...variantData, quantity: consecutiveUnits },
+              ],
+              therapists: [currentT],
+              id: `${booking.id}-v${variantId}-t${currentStaffId}-${unitIndex}-${Math.random().toString(36).slice(2, 5)}`,
+            });
+
+            currentSequentialStart = addMin(currentSequentialStart, blockDur);
+            unitIndex += consecutiveUnits;
+          }
+          return { events, nextStartTime: currentSequentialStart };
+        }
+      };
+
+      if (booking.service_variants && booking.service_variants.length > 0) {
+        let currentStartTime = timeStr;
+
+        booking.service_variants.forEach((variant) => {
+          if (variant.type === "bundle_promo") {
+            // Jika bundle, proses setiap item di dalamnya
+            variant.items.forEach((item) => {
+              const res = processUnits(
+                item.id,
+                item.quantity ?? 1,
+                item,
+                currentStartTime,
+              );
+              list.push(...res.events);
+              if (!isParallel) currentStartTime = res.nextStartTime;
+            });
+          } else {
+            // Standalone variant
+            const qty = variant.quantity ?? variant.pivot?.quantity ?? 1;
+            const res = processUnits(
+              variant.id,
+              qty,
+              variant,
+              currentStartTime,
+            );
+            list.push(...res.events);
+            if (!isParallel) currentStartTime = res.nextStartTime;
+          }
+        });
+      } else {
+        // Fallback jika tidak ada service_variants (legacy)
+        const therapists = booking.therapists ?? [booking.therapist_name];
+        therapists.forEach((t, idx) => {
+          list.push({
+            ...booking,
+            timeStr,
+            duration_minutes: getBookingDuration(booking),
+            therapists: [t],
+            id: `${booking.id}-fallback-${idx}`,
+          });
+        });
+      }
+
+      map.set(dateStr, list);
+    };
+
+    bookings.forEach((booking) => {
+      addSplitEvent(booking);
+      (booking.child_bookings ?? []).forEach((child) => addSplitEvent(child));
+    });
+
+    return map;
+  }, [bookings]);
+
   // ── "Now" line position — only meaningful when today is in view ───────
   const nowPx = useMemo(() => {
     const now = new Date();
     const minutesFromStart =
       (now.getHours() - START_HOUR) * 60 + now.getMinutes();
     return {
-      px: minutesFromStart * MIN_WIDTH,
+      px: minutesFromStart * HOUR_WIDTH_DAILY,
       show: minutesFromStart > 0 && minutesFromStart < TOTAL_HOURS * 60,
     };
   }, []);
@@ -797,16 +1704,43 @@ export default function GanttChartBookings() {
 
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b-[0.5px] border-border bg-muted/40">
-          <div>
+          <div className="flex flex-col gap-2">
             <h2 className="text-2xl font-semibold tracking-wide text-[var(--foreground)]">
               Schedule Overview
             </h2>
-            <p className="text-xs text-[var(--muted)] mt-0.5">
-              Timeline reservasi 7 hari berjalan.{" "}
-              <span className="opacity-60">
-                Klik tanggal untuk lihat detail.
-              </span>
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center bg-[var(--surface-secondary)] rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("daily")}
+                  className={cn(
+                    "px-3 py-1 text-[11px] font-medium rounded-md transition-colors",
+                    viewMode === "daily"
+                      ? "bg-background text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]",
+                  )}
+                >
+                  Per Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("therapist")}
+                  className={cn(
+                    "px-3 py-1 text-[11px] font-medium rounded-md transition-colors",
+                    viewMode === "therapist"
+                      ? "bg-background text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]",
+                  )}
+                >
+                  Per Terapis
+                </button>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                {viewMode === "daily"
+                  ? "Timeline reservasi 7 hari berjalan (satu booking utuh)."
+                  : "Klik tanggal atau blok untuk lihat rekap tiap terapis: jumlah layanan & jam kerjanya."}
+              </p>
+            </div>
           </div>
 
           <DayNavControl
@@ -827,7 +1761,16 @@ export default function GanttChartBookings() {
 
         {/* Scrollable timeline */}
         <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
-          <div style={{ minWidth: Y_AXIS_W + TOTAL_HOURS * HOUR_WIDTH }}>
+          <div
+            style={{
+              minWidth:
+                Y_AXIS_W +
+                TOTAL_HOURS *
+                  (viewMode === "therapist"
+                    ? HOUR_WIDTH_THERAPIST
+                    : HOUR_WIDTH_DAILY),
+            }}
+          >
             {/* Hour header (sticky top) */}
             <div className="flex border-b-[0.5px] border-border bg-background/40 sticky top-0 z-30">
               <div
@@ -835,33 +1778,67 @@ export default function GanttChartBookings() {
                 style={{ width: Y_AXIS_W }}
               />
               <div className="relative flex flex-1">
-                {hours.map((h, i) => (
-                  <div
-                    key={h}
-                    className="shrink-0 relative py-2.5"
-                    style={{ width: i < hours.length - 1 ? HOUR_WIDTH : 0 }}
-                  >
-                    <span className="absolute -left-4 text-[10px]/[14px] font-semibold text-[var(--muted)] whitespace-nowrap">
-                      {String(h).padStart(2, "0")}:00
-                    </span>
-                  </div>
-                ))}
+                {hours.map((h, i) => {
+                  const currentHourWidth =
+                    viewMode === "therapist"
+                      ? HOUR_WIDTH_THERAPIST
+                      : HOUR_WIDTH_DAILY;
+                  return (
+                    <div
+                      key={h}
+                      className="shrink-0 relative py-2.5"
+                      style={{
+                        width: i < hours.length - 1 ? currentHourWidth : 0,
+                      }}
+                    >
+                      <span className="absolute -left-4 text-[10px]/[14px] font-semibold text-[var(--muted)] whitespace-nowrap">
+                        {String(h).padStart(2, "0")}:00
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Day rows */}
+            {/* Day rows — one row per day, in both view modes. The only
+                difference between modes is which map (byDate vs
+                byDateSplit) feeds the blocks for that row. */}
             {days.map((dayDate) => {
               const dateStr = toDateStr(dayDate);
               const isToday = dateStr === todayStr;
-              const rawEvents = byDate.get(dateStr) ?? [];
+
+              // Real, unsplit bookings — always used for the "Per Hari"
+              // modal so totals/amounts/status stay accurate.
+              const originalEvents = byDate.get(dateStr) ?? [];
+
+              // Blocks actually drawn in the row
+              const rawEvents =
+                viewMode === "daily"
+                  ? originalEvents
+                  : (byDateSplit.get(dateStr) ?? []);
 
               const laneEvents = assignLanes(rawEvents);
               const laneCount = laneEvents[0]?.laneCount ?? 1;
               const rowH = Math.max(laneCount * LANE_H, 104);
 
-              const activeCount = rawEvents.filter(
+              const activeCount = originalEvents.filter(
                 (e) => e.status !== "Cancelled",
               ).length;
+
+              // Clicking a day (label or block): in "Per Hari" mode open the
+              // regular booking-list modal; in "Per Terapis" mode open the
+              // per-staff recap built from the already-split events for
+              // that day.
+              const openDayDetail = () => {
+                if (viewMode === "therapist") {
+                  setTherapistRecapDay({
+                    date: dayDate,
+                    groups: buildTherapistRecap(rawEvents),
+                  });
+                } else {
+                  setSelectedDay({ date: dayDate, events: originalEvents });
+                }
+              };
 
               return (
                 <div
@@ -871,9 +1848,7 @@ export default function GanttChartBookings() {
                   {/* Date label — clickable button */}
                   <button
                     type="button"
-                    onClick={() =>
-                      setSelectedDay({ date: dayDate, events: rawEvents })
-                    }
+                    onClick={openDayDetail}
                     className={cn(
                       "sticky left-0 z-20 shrink-0 flex flex-col justify-center gap-0.5",
                       "border-r-[0.5px] border-border px-5 py-4 text-left",
@@ -910,208 +1885,21 @@ export default function GanttChartBookings() {
                     )}
                     <span className="mt-2 flex items-center gap-0.5 opacity-0 group-hover/datebtn:opacity-100 transition-opacity duration-150 text-[var(--accent)]">
                       <span className="text-[8px] font-bold uppercase tracking-widest">
-                        Detail
+                        {viewMode === "therapist" ? "Rekap Terapis" : "Detail"}
                       </span>
                       <CaretRight weight="bold" className="size-2.5" />
                     </span>
                   </button>
 
                   {/* Timeline area */}
-                  <div
-                    className={cn(
-                      "relative",
-                      isToday
-                        ? "bg-[var(--background)]"
-                        : "bg-[var(--surface)]",
-                    )}
-                    style={{ width: TOTAL_HOURS * HOUR_WIDTH, minHeight: rowH }}
-                  >
-                    {/* Alternating hour bands */}
-                    {Array.from({ length: TOTAL_HOURS }).map((_, i) =>
-                      i % 2 === 1 ? (
-                        <div
-                          key={`band-${i}`}
-                          className="absolute inset-y-0 bg-[var(--surface-secondary)]/40"
-                          style={{ left: i * HOUR_WIDTH, width: HOUR_WIDTH }}
-                        />
-                      ) : null,
-                    )}
-
-                    {/* Hour vertical lines */}
-                    {Array.from({ length: TOTAL_HOURS - 1 }).map((_, i) => (
-                      <div
-                        key={`vl-${i}`}
-                        className="absolute inset-y-0 border-r-[0.5px] border-[var(--border)]"
-                        style={{ left: (i + 1) * HOUR_WIDTH }}
-                      />
-                    ))}
-
-                    {/* Half-hour dashed ticks */}
-                    {Array.from({ length: TOTAL_HOURS }).map((_, i) => (
-                      <div
-                        key={`hl-${i}`}
-                        className="absolute inset-y-0 border-r-[0.5px] border-dashed border-[var(--border)]/50"
-                        style={{ left: i * HOUR_WIDTH + HOUR_WIDTH / 2 }}
-                      />
-                    ))}
-
-                    {/* "Now" indicator */}
-                    {isToday && nowPx.show && (
-                      <div
-                        className="absolute top-0 bottom-0 z-20 pointer-events-none"
-                        style={{ left: nowPx.px }}
-                      >
-                        <div className="absolute top-0 bottom-0 w-px bg-[var(--accent)]/55" />
-                        <div className="absolute -top-px -translate-x-1/2 w-2 h-2 rounded-full bg-[var(--accent)]" />
-                      </div>
-                    )}
-
-                    {/* Booking blocks — lane-positioned, zero overlap */}
-                    {laneEvents.map((event) => {
-                      const [hStr, mStr] = event.timeStr.split(":");
-                      const minFromStart =
-                        (parseInt(hStr) - START_HOUR) * 60 + parseInt(mStr);
-                      if (
-                        minFromStart < 0 ||
-                        minFromStart >= TOTAL_HOURS * 60
-                      ) {
-                        return null;
-                      }
-
-                      const leftPx = minFromStart * MIN_WIDTH;
-                      const widthPx = event.duration_minutes * MIN_WIDTH;
-                      const topPx = event.lane * LANE_H + LANE_PAD;
-                      const blockH = LANE_H - LANE_PAD * 2;
-
-                      const endTime = addMin(
-                        event.timeStr,
-                        event.duration_minutes,
-                      );
-                      const displayServiceName = getEventServiceName(event);
-                      const cat = toCat(displayServiceName);
-                      const th = STATUS[event.status] ?? STATUS.Confirmed;
-                      const isBonus = isBonusChildBooking(event);
-
-                      const firstVariant = event?.service_variants?.[0];
-                      const firstVariantQty = firstVariant?.pivot?.quantity ?? 1;
-                      const serviceName =
-                        event?.service_variants?.length >= 2
-                          ? `${firstVariant?.name} (${firstVariantQty}x)`
-                          : displayServiceName;
-
-                      const showService = widthPx >= 100;
-                      const showTherapist = widthPx >= 155;
-                      const showDurBadge = widthPx >= 125;
-
-                      return (
-                        <div
-                          key={event.id}
-                          title={[
-                            event.customer_name,
-                            displayServiceName,
-                            `Therapist: ${getTherapistNames(event)}`,
-                            `${event.timeStr} – ${endTime}`,
-                            `Durasi: ${fmtDur(event.duration_minutes)}`,
-                            `Status: ${event.status}`,
-                          ].join("\n")}
-                          className="absolute z-10 cursor-pointer hover:z-30"
-                          style={{
-                            left: leftPx + 2,
-                            width: widthPx - 4,
-                            top: topPx,
-                            height: blockH,
-                          }}
-                          onClick={() =>
-                            setSelectedDay({ date: dayDate, events: rawEvents })
-                          }
-                        >
-                          <div
-                            className={cn(
-                              "absolute inset-0 flex flex-col gap-[3px] rounded-lg overflow-hidden",
-                              "border border-[var(--border)]/80 border-l-[3px]",
-                              "px-2.5 py-2",
-                              "transition-all duration-150",
-                              "hover:shadow-md hover:shadow-black/10 hover:-translate-y-px",
-                              th.block,
-                            )}
-                          >
-                            {/* Row 1: Time range + duration badge */}
-                            <div className="flex items-center justify-between gap-1 min-w-0">
-                              <span
-                                className={cn(
-                                  "text-[9px] font-bold tracking-tight shrink-0 whitespace-nowrap",
-                                  th.metaTx,
-                                )}
-                              >
-                                {event.timeStr}&thinsp;—&thinsp;{endTime}
-                              </span>
-                              {showDurBadge && (
-                                <span
-                                  className={cn(
-                                    "shrink-0 rounded-full px-1.5 py-0.5 leading-none",
-                                    "text-[9px] font-bold uppercase tracking-wide",
-                                    th.badge,
-                                  )}
-                                >
-                                  {fmtDur(event.duration_minutes)}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Row 2: Client name */}
-                            <p
-                              className={cn(
-                                "truncate text-[12px] font-bold leading-none",
-                                th.clientTx,
-                              )}
-                            >
-                              {event.customer_name}
-                            </p>
-
-                            {/* Row 3: Service + icon */}
-                            {showService && (
-                              <div className="flex items-center gap-1 min-w-0">
-                                <span className={cn("shrink-0", th.metaTx)}>
-                                  {CAT_ICONS[cat]}
-                                </span>
-                                <p
-                                  className={cn(
-                                    "truncate text-[10px] leading-none",
-                                    th.metaTx,
-                                  )}
-                                >
-                                  {serviceName}
-                                </p>
-                                {isBonus && (
-                                  <span className="rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                                    Bonus
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Row 4: Therapist */}
-                            {showTherapist && (
-                              <div className="flex items-center gap-1 min-w-0">
-                                <UserCircle
-                                  weight="duotone"
-                                  className={cn("shrink-0 size-3", th.metaTx)}
-                                />
-                                <span
-                                  className={cn(
-                                    "truncate text-[10px] leading-none opacity-80",
-                                    th.metaTx,
-                                  )}
-                                >
-                                  {getTherapistNames(event)}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <TimelineRow
+                    laneEvents={laneEvents}
+                    rowH={rowH}
+                    isToday={isToday}
+                    nowPx={nowPx}
+                    mode={viewMode}
+                    onBlockClick={openDayDetail}
+                  />
                 </div>
               );
             })}
@@ -1119,12 +1907,21 @@ export default function GanttChartBookings() {
         </div>
       </div>
 
-      {/* Day Detail Modal — portal-rendered, outside scroll container */}
+      {/* Day Detail Modal — "Per Hari" mode, portal-rendered outside scroll container */}
       {selectedDay && (
         <DayDetailModal
           date={selectedDay.date}
           events={selectedDay.events}
           onClose={() => setSelectedDay(null)}
+        />
+      )}
+
+      {/* Therapist Recap Modal — "Per Terapis" mode */}
+      {therapistRecapDay && (
+        <TherapistRecapModal
+          date={therapistRecapDay.date}
+          groups={therapistRecapDay.groups}
+          onClose={() => setTherapistRecapDay(null)}
         />
       )}
     </>

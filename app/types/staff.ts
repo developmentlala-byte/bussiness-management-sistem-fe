@@ -1,4 +1,4 @@
-import { Category } from "./product-&-layanan";
+import { Category, Service } from "./product-&-layanan";
 
 export interface Staff {
   id: number;
@@ -17,9 +17,16 @@ export interface Staff {
   updated_at: string;
   capabilityCategories?: Category[];
   capability_categories?: Category[];
+  serviceCapabilities?: Service[];
+  service_capabilities?: Service[];
+  variantCapabilities?: ServiceItem[];
+  variant_capabilities?: ServiceItem[];
   user?: {
     id: number;
     name: string;
     email: string;
   } | null;
+  pivot?: {
+    status: "bisa" | "training" | "tidak_bisa";
+  };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { cn } from "@heroui/react";
 import {
   ColumnDef,
   SortingState,
@@ -37,6 +38,15 @@ interface DataTableProps<TData> {
   isLoading?: boolean;
   /** Jumlah baris skeleton yang ditampilkan saat loading. Default: pageSize aktif. */
   skeletonRowCount?: number;
+  onRowClick?: (row: TData) => void;
+
+  /** Server-side pagination support */
+  manualPagination?: boolean;
+  pageCount?: number;
+  pageIndex?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  totalRows?: number;
 }
 
 // ─── Sort Icon ────────────────────────────────────────────────────────────────
@@ -187,10 +197,17 @@ export function DataTable<TData>({
   getRowCanExpand,
   isLoading = false,
   skeletonRowCount,
+  onRowClick,
+  manualPagination = false,
+  pageCount: manualPageCount,
+  pageIndex: manualPageIndex,
+  onPageChange,
+  onPageSizeChange,
+  totalRows: manualTotalRows,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [internalPageSize, setInternalPageSize] = useState(defaultPageSize);
   const [expanded, setExpanded] = useState({});
 
   const table = useReactTable({
@@ -198,7 +215,9 @@ export function DataTable<TData>({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: manualPagination
+      ? undefined
+      : getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
@@ -206,20 +225,64 @@ export function DataTable<TData>({
     columnResizeMode: "onChange",
     enableColumnResizing: true,
     getRowCanExpand,
-    state: { sorting, columnSizing, expanded },
-    initialState: { pagination: { pageSize } },
+    manualPagination,
+    pageCount: manualPageCount,
+    state: {
+      sorting,
+      columnSizing,
+      expanded,
+      ...(manualPagination
+        ? {
+            pagination: {
+              pageIndex: manualPageIndex ?? 0,
+              pageSize: internalPageSize,
+            },
+          }
+        : {}),
+    },
+    onPaginationChange: (updater) => {
+      if (manualPagination) {
+        if (typeof updater === "function") {
+          const currentPagination = {
+            pageIndex: manualPageIndex ?? 0,
+            pageSize: internalPageSize,
+          };
+          const nextPagination = updater(currentPagination);
+          if (nextPagination.pageIndex !== currentPagination.pageIndex) {
+            onPageChange?.(nextPagination.pageIndex);
+          }
+          if (nextPagination.pageSize !== currentPagination.pageSize) {
+            setInternalPageSize(nextPagination.pageSize);
+            onPageSizeChange?.(nextPagination.pageSize);
+          }
+        }
+      } else {
+        // Internal pagination handled by table.setPageSize/setPageIndex
+      }
+    },
+    initialState: {
+      pagination: { pageSize: defaultPageSize },
+    },
   });
 
   function handlePageSizeChange(newSize: number) {
-    setPageSize(newSize);
-    table.setPageSize(newSize);
-    table.setPageIndex(0);
+    if (manualPagination) {
+      setInternalPageSize(newSize);
+      onPageSizeChange?.(newSize);
+      onPageChange?.(0);
+    } else {
+      setInternalPageSize(newSize);
+      table.setPageSize(newSize);
+      table.setPageIndex(0);
+    }
   }
 
-  const { pageIndex } = table.getState().pagination;
-  const pageCount = table.getPageCount();
-  const totalRows = data.length;
-  const startRow = pageIndex * pageSize + 1;
+  const { pageIndex, pageSize } = table.getState().pagination;
+  const pageCount = manualPagination
+    ? (manualPageCount ?? 0)
+    : table.getPageCount();
+  const totalRows = manualPagination ? (manualTotalRows ?? 0) : data.length;
+  const startRow = totalRows === 0 ? 0 : pageIndex * pageSize + 1;
   const endRow = Math.min((pageIndex + 1) * pageSize, totalRows);
   const columnCount = columns.length;
   const skeletonCount = skeletonRowCount ?? pageSize;
@@ -343,7 +406,13 @@ export function DataTable<TData>({
             ) : (
               table.getRowModel().rows.map((row) => (
                 <Fragment key={row.id}>
-                  <tr className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
+                  <tr
+                    className={cn(
+                      "border-b border-border last:border-0 hover:bg-muted/40 transition-colors",
+                      onRowClick ? "cursor-pointer" : "",
+                    )}
+                    onClick={() => onRowClick?.(row.original)}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
@@ -418,7 +487,11 @@ export function DataTable<TData>({
           table.getRowModel().rows.map((row) => (
             <div
               key={row.id}
-              className="px-4 py-3 flex flex-col gap-2 hover:bg-muted/40 transition-colors"
+              className={cn(
+                "px-4 py-3 flex flex-col gap-2 hover:bg-muted/40 transition-colors",
+                onRowClick ? "cursor-pointer" : "",
+              )}
+              onClick={() => onRowClick?.(row.original)}
             >
               {row.getVisibleCells().map((cell, idx) => {
                 const header = headerGroup?.headers[idx];

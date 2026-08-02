@@ -58,6 +58,7 @@ export interface BundlePromo {
   image_path: string | null;
   bundle_type: BundleType;
   discount_value: string | number;
+  is_parallel: boolean;
   start_date: string;
   end_date: string;
   is_active: boolean;

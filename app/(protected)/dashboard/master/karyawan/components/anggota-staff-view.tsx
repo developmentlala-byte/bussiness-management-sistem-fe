@@ -16,10 +16,13 @@ import { useState, useMemo } from "react";
 import { useApiFetch } from "@/app/libs/use-http";
 import Link from "next/link";
 
+import { resolvePhotoUrl } from "@/app/libs/resolve-url";
+
 // Import Type dan Komponen Modal
 import { Staff } from "@/app/types/staff";
 import { EditStaffModal } from "../modal/edit-staff-modal";
 import { DeleteStaffModal } from "../modal/delete-staff-modal";
+import { StaffAvatar } from "@/app/components/staff-avatar";
 
 export default function AnggotaStaffView() {
   const [search, setSearch] = useState("");
@@ -172,20 +175,7 @@ export default function AnggotaStaffView() {
                 >
                   <td className="px-4 py-5 whitespace-nowrap">
                     <div className="flex items-center gap-4">
-                      <Avatar className="border border-border/50 bg-border/20">
-                        <Avatar.Image
-                          className="size-12.5 object-cover rounded-full"
-                          src={
-                            staff.avatar_path
-                              ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${staff.avatar_path}`
-                              : ""
-                          }
-                          alt={staff.first_name}
-                        />
-                        <Avatar.Fallback className="text-muted font-bold">
-                          {staff.first_name.charAt(0)}
-                        </Avatar.Fallback>
-                      </Avatar>
+                      <StaffAvatar staff={staff} size="lg" />
                       <div className="flex flex-col">
                         <span className="text-sm font-extrabold text-foreground">
                           {staff.first_name} {staff.last_name || ""}
@@ -225,9 +215,13 @@ export default function AnggotaStaffView() {
                   </td>
                   <td className="px-4 py-5 whitespace-nowrap">
                     <span className="text-sm text-muted font-semibold">
-                      {new Intl.DateTimeFormat("id-ID", {
-                        dateStyle: "medium",
-                      }).format(new Date(staff.join_date))}
+                      {staff.join_date && !isNaN(new Date(staff.join_date).getTime()) ? (
+                        new Intl.DateTimeFormat("id-ID", {
+                          dateStyle: "medium",
+                        }).format(new Date(staff.join_date))
+                      ) : (
+                        "-"
+                      )}
                     </span>
                   </td>
                   <td className="px-4 py-5 whitespace-nowrap">

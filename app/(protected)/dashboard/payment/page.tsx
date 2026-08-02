@@ -256,9 +256,9 @@ function usePaymentColumns(onView: (p: Payment) => void) {
           return (
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap gap-1">
-                {service_variants.map((sv) => (
+                {service_variants.map((sv, _) => (
                   <span
-                    key={sv.id}
+                    key={_}
                     className="inline-block rounded-md bg-primary/8 px-1.5 py-0.5 text-[10px] font-medium text-primary"
                   >
                     • {sv.name}
@@ -450,80 +450,54 @@ function SummaryCard({
   );
 }
 
-function SummaryCards({ payments }: { payments: Payment[] }) {
-  const totalPaid = payments
-    .filter((p) => p.status === "paid" && p.booking?.payment_status === "Paid")
-    .reduce((sum, p) => sum + Number(p.paid_off), 0);
-  const totalPending = payments
-    .filter((p) => p.status === "pending")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
-  const countExpiredFailed = payments.filter(
-    (p) => p.status === "expired" || p.status === "failed",
-  ).length;
-  const countCash = payments
-    .filter(
-      (p) =>
-        p.status === "paid" &&
-        p.channel === "cash" &&
-        p.booking?.payment_status === "Paid",
-    )
-    .reduce((sum, p) => sum + Number(p.paid_off), 0);
-  const countOnline = payments
-    .filter(
-      (p) =>
-        p.status === "paid" &&
-        p.channel !== "cash" &&
-        p.booking?.payment_status === "Paid",
-    )
-    .reduce((sum, p) => sum + Number(p.paid_off), 0);
-
-  const countPaid = payments.filter(
-    (p) => p.status === "paid" && p.booking?.payment_status === "Paid",
-  ).length;
-  const countPending = payments.filter((p) => p.status === "pending").length;
-  const countCashTrans = payments.filter(
-    (p) =>
-      p.status === "paid" &&
-      p.channel === "cash" &&
-      p.booking?.payment_status === "Paid",
-  ).length;
-  const countOnlineTrans = payments.filter(
-    (p) =>
-      p.status === "paid" &&
-      p.channel !== "cash" &&
-      p.booking?.payment_status === "Paid",
-  ).length;
-
+function SummaryCards({
+  summary,
+  counts,
+}: {
+  summary: {
+    total_paid: number;
+    total_pending: number;
+    count_expired_failed: number;
+    total_cash: number;
+    total_online: number;
+  };
+  counts: {
+    paid: number;
+    pending: number;
+    cash: number;
+    online: number;
+  };
+}) {
   return (
     <div className="min-[1350px]:grid-cols-5 min-[1080px]:grid-cols-4 gap-4 grid grid-cols-2 ">
       <SummaryCard
         label="Total Lunas"
-        value={IDR(totalPaid)}
-        subtext={`${countPaid} transaksi`}
+        value={IDR(summary.total_paid)}
+        subtext={`${counts.paid ?? 0} transaksi`}
         variant="success"
       />
       <SummaryCard
         label="Menunggu Bayar"
-        value={IDR(totalPending)}
-        subtext={`${countPending} transaksi`}
+        value={IDR(summary.total_pending)}
+        subtext={`${counts.pending ?? 0} transaksi`}
         variant="warning"
       />
       <SummaryCard
         label="Expired / Gagal"
-        value={String(countExpiredFailed)}
+        value={String(summary.count_expired_failed ?? 0)}
         subtext="transaksi"
         variant="danger"
       />
       <SummaryCard
         label="Cash"
-        value={IDR(countCash)}
-        subtext={`${countCashTrans} transaksi`}
+        value={IDR(summary.total_cash)}
+        subtext={`${counts.cash || 0} transaksi`}
         variant="default"
       />
       <SummaryCard
         label="Online"
-        value={IDR(countOnline)}
-        subtext={`${countOnlineTrans} transaksi`}
+        value={IDR(summary.total_online)}
+        subtext={`${counts.online || 0} transaksi`}
         variant="default"
       />
     </div>
@@ -548,11 +522,11 @@ type FilterOption = (typeof FILTER_OPTIONS)[number];
 function FilterTabs({
   value,
   onChange,
-  payments,
+  counts,
 }: {
   value: FilterOption;
   onChange: (v: FilterOption) => void;
-  payments: Payment[];
+  counts: Record<string, number>;
 }) {
   return (
     <div
@@ -562,10 +536,7 @@ function FilterTabs({
       }}
     >
       {FILTER_OPTIONS.map((s) => {
-        const count =
-          s === "all"
-            ? payments.length
-            : payments.filter((p) => p.status === s).length;
+        const count = counts[s] ?? 0;
         return (
           <button
             key={s}
@@ -600,8 +571,6 @@ function FilterTabs({
           </button>
         );
       })}
-
-      {/* Filter Tabs */}
     </div>
   );
 }
@@ -619,6 +588,8 @@ export default function PaymentsPage() {
 
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterOption>("paid");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   // Set default date range to first -> last day of current month
   const defaultDateRange = useMemo(() => {
@@ -635,101 +606,50 @@ export default function PaymentsPage() {
     defaultDateRange,
   );
 
-  // PENTING: selalu fetch SEMUA data (tanpa filter status/paid_bookings_only
-  // ke backend). Summary cards & tab counts butuh dataset lengkap untuk
-  // menghitung jumlah tiap status dengan benar — kalau backend sudah
-  // memfilter berdasarkan tab aktif, count status lain (pending/expired/dst)
-  // akan selalu 0 karena datanya memang tidak pernah ikut ke-fetch.
-  const { data: paymentResponse, isLoading: paymentLoading } = useApiFetch<
-    Payment[] | { data: Payment[] } | { data: { data: Payment[] } }
-  >(["payment_bookings"], "/payment/booking-payments", {});
+  const queryParams = useMemo(() => {
+    return {
+      page,
+      per_page: perPage,
+      status: statusFilter,
+      start_date: dateRange?.startDate || null,
+      end_date: dateRange?.endDate || null,
+    };
+  }, [page, perPage, statusFilter, dateRange]);
 
-  // Handle berbagai bentuk response: array langsung, { data: array },
-  // atau { data: { data: array } }
-  const allPayments: Payment[] = Array.isArray(paymentResponse)
-    ? paymentResponse
-    : Array.isArray((paymentResponse as any)?.data)
-      ? (paymentResponse as any).data
-      : Array.isArray((paymentResponse as any)?.data?.data)
-        ? (paymentResponse as any).data.data
-        : [];
+  const { data: response, isLoading: paymentLoading } = useApiFetch<{
+    data: {
+      data: {
+        data: Payment[];
+        total: number;
+        current_page: number;
+        last_page: number;
+      };
+      summary: {
+        total_paid: number;
+        total_pending: number;
+        count_expired_failed: number;
+        total_cash: number;
+        total_online: number;
+      };
+      counts: Record<string, number>;
+    };
+  }>(
+    ["payment_bookings", JSON.stringify(queryParams)],
+    "/payment/booking-payments",
+    queryParams,
+  );
+  console.log("🚀 ~ PaymentsPage ~ response:", response);
 
-  // Filtering dilakukan di client dari dataset lengkap yang sama
-  // dengan yang dipakai summary cards & tab counts di atas.
-  const dateFilteredPayments = useMemo(() => {
-    if (!dateRange) return allPayments;
-
-    const startDateStr = dateRange.startDate
-      ? String(dateRange.startDate)
-      : null;
-    const endDateStr = dateRange.endDate ? String(dateRange.endDate) : null;
-
-    if (!startDateStr || !endDateStr) return allPayments;
-
-    return allPayments.filter((p: Payment) => {
-      if (!p.paid_at && !p.created_at) return false;
-      const dateToCheck = p.paid_at || p.created_at;
-      const paymentDate = toLocalDateString(new Date(dateToCheck));
-      return paymentDate >= startDateStr && paymentDate <= endDateStr;
-    });
-  }, [allPayments, dateRange]);
-
-  if (paymentLoading) {
-    return (
-      <div
-        className="min-h-screen"
-        style={{
-          backgroundColor: "var(--background)",
-          padding: "var(--page-padding-y) var(--page-padding-x)",
-        }}
-      >
-        <div
-          className="animate-pulse rounded-lg"
-          style={{
-            backgroundColor: "var(--surface)",
-            padding: "var(--card-padding-md)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-          }}
-        >
-          <div
-            className="mb-4"
-            style={{
-              height: "var(--text-xl)",
-              width: "33%",
-              backgroundColor: "var(--surface-secondary)",
-              borderRadius: "var(--radius-sm)",
-            }}
-          />
-          <div
-            className="mb-6"
-            style={{
-              height: "var(--text-sm)",
-              width: "25%",
-              backgroundColor: "var(--surface-secondary)",
-              borderRadius: "var(--radius-sm)",
-            }}
-          />
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div
-              key={i}
-              style={{
-                height: "var(--table-row-height)",
-                backgroundColor: "var(--surface-secondary)",
-                borderRadius: "var(--radius-sm)",
-                marginBottom: "var(--space-2)",
-              }}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const filtered =
-    statusFilter === "all"
-      ? dateFilteredPayments
-      : dateFilteredPayments.filter((p: Payment) => p.status === statusFilter);
+  const paginatedData = response?.data?.data;
+  const allPayments = paginatedData?.data ?? [];
+  const summary = response?.data?.summary ?? {
+    total_paid: 0,
+    total_pending: 0,
+    count_expired_failed: 0,
+    total_cash: 0,
+    total_online: 0,
+  };
+  const counts = response?.data?.counts ?? {};
 
   const columns = usePaymentColumns((p) => setSelectedPayment(p));
 
@@ -768,7 +688,7 @@ export default function PaymentsPage() {
 
       {/* Summary Cards */}
       <div>
-        <SummaryCards payments={dateFilteredPayments} />
+        <SummaryCards summary={summary} counts={counts as any} />
       </div>
 
       {/* Filter Tabs */}
@@ -783,22 +703,40 @@ export default function PaymentsPage() {
         <div style={{ overflowX: "auto" }}>
           <FilterTabs
             value={statusFilter}
-            onChange={setStatusFilter}
-            payments={dateFilteredPayments}
+            onChange={(v) => {
+              setStatusFilter(v);
+              setPage(1);
+            }}
+            counts={counts}
           />
         </div>
 
         <div style={{ flexShrink: 0 }}>
-          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          <DateRangeFilter
+            value={dateRange}
+            onChange={(v) => {
+              setDateRange(v);
+              setPage(1);
+            }}
+          />
         </div>
       </div>
 
       {/* Table — pakai DataTable component kamu */}
       <DataTable
-        data={filtered}
+        data={allPayments}
         columns={columns}
-        defaultPageSize={10}
+        isLoading={paymentLoading}
         emptyMessage="Tidak ada data pembayaran."
+        manualPagination={true}
+        pageCount={paginatedData?.last_page || 0}
+        pageIndex={page - 1}
+        onPageChange={(idx) => setPage(idx + 1)}
+        onPageSizeChange={(size) => {
+          setPerPage(size);
+          setPage(1);
+        }}
+        totalRows={paginatedData?.total || 0}
       />
 
       {/* Receipt Modal */}

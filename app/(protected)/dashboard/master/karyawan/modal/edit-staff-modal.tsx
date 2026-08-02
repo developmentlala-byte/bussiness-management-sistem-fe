@@ -27,6 +27,8 @@ import {
 } from "@heroui/react";
 import { parseDate, today, getLocalTimeZone } from "@internationalized/date";
 import { usePost } from "@/app/libs/use-http";
+import { resolvePhotoUrl } from "@/app/libs/resolve-url";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ==========================================
 // 1. MOCK DATA JABATAN
@@ -120,9 +122,7 @@ export const EditStaffModal: React.FC<EditStaffModalProps> = ({
       });
 
       if (staffData.avatar_path) {
-        setImagePreview(
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}${staffData.avatar_path}`,
-        );
+        setImagePreview(resolvePhotoUrl(staffData.avatar_path));
       } else {
         setImagePreview(null);
       }
@@ -130,24 +130,64 @@ export const EditStaffModal: React.FC<EditStaffModalProps> = ({
     }
   }, [staffData, isOpen, reset, currentDateStr]);
 
+  const queryClient = useQueryClient();
+
   // Menggunakan usePost dengan target URL spesifik ID, dan menyisipkan _method=PUT nanti
   const { mutate: updateStaff, isPending } = usePost<unknown, FormData>(
     `/master/staffs/${staffData?.id}`,
     {
-      invalidate: [["staffs"]], // Invalidate ini yang bikin tabel Real-Time ter-update tanpa refresh
+      onMutate: async (formData) => {
+        // Cancel any outgoing refetches
+        await queryClient.cancelQueries({ queryKey: ["staffs"] });
+
+        // Snapshot the previous value
+        const previousStaffs = queryClient.getQueryData(["staffs"]);
+
+        // Optimistically update to the new value
+        queryClient.setQueryData(["staffs"], (old: any) => {
+          if (!old?.data) return old;
+
+          const updatedStaff = {
+            ...staffData,
+            first_name: formData.get("first_name"),
+            last_name: formData.get("last_name"),
+            email: formData.get("email"),
+            phone_number: formData.get("phone_number"),
+            job_title: formData.get("job_title"),
+            join_date: formData.get("join_date"),
+            status: formData.get("status"),
+            // Jika ada image preview baru, gunakan itu untuk sementara
+            avatar_path: imageFile ? imagePreview : staffData.avatar_path,
+          };
+
+          return {
+            ...old,
+            data: old.data.map((s: any) =>
+              s.id === staffData.id ? updatedStaff : s,
+            ),
+          };
+        });
+
+        return { previousStaffs };
+      },
+      onError: (err: any, newStaff, context: any) => {
+         if (context?.previousStaffs) {
+           queryClient.setQueryData(["staffs"], context.previousStaffs);
+         }
+         toast.danger("Gagal memperbarui data", {
+           description:
+             err?.response?.data?.message ||
+             "Terjadi kesalahan internal pada server.",
+         });
+       },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey: ["staffs"] });
+      },
       onSuccess: () => {
         toast.success("Profil Staf Diperbarui", {
           description: "Data perubahan staf berhasil disimpan.",
         });
         onClose();
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onError: (error: any) => {
-        toast.danger("Gagal memperbarui data", {
-          description:
-            error?.response?.data?.message ||
-            "Terjadi kesalahan internal pada server.",
-        });
       },
     },
   );

@@ -28,6 +28,12 @@ export interface BookingServiceVariantLine {
   slug: string;
   quantity?: number;
   is_free?: boolean;
+  pivot?: {
+    quantity: number;
+    bms_ms_bundle_promo_id?: number | null;
+    unit_price?: number;
+    is_free?: boolean;
+  };
 }
 
 export interface BookingBundlePromoLine {
@@ -53,9 +59,12 @@ export type BookingLineSnapshot =
 export interface BookingTherapist {
   id: number;
   booking_id: number;
-  staff_id: number;
-  service_variant_id: number;
+  bms_ms_staff_id: number;
+  bms_ms_service_variant_id: number;
+  client_key?: string | null;
   name: string;
+  start_time?: string | null;
+  end_time?: string | null;
   staff?: {
     id: number;
     first_name: string;
@@ -66,6 +75,17 @@ export interface BookingTherapist {
 export interface BookingStaffAssignment {
   service_variant_id: number;
   staff_id: number;
+  client_key?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+}
+
+export interface BookingResourceAssignment {
+  service_variant_id: number;
+  resource_id: number;
+  client_key?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
 }
 
 export interface AppliedVoucherSnapshot {
@@ -83,13 +103,20 @@ export interface AppliedVoucherSnapshot {
 export interface AvailableTherapist {
   id: number;
   name: string;
+  last_assigned_at?: string | null;
+  available_unit_indices?: number[];
 }
 
 export interface AvailableSlot {
   slot_time: string;
   available_therapists: AvailableTherapist[];
   available_therapists_by_category: Record<number, number[]>;
+  available_therapists_by_variant: Record<number, number[]>;
+  available_resources_by_variant?: Record<number, number[]>;
+  suggested_assignments?: BookingStaffAssignment[];
+  suggested_resource_assignments?: BookingResourceAssignment[];
   is_available: boolean;
+  fail_reason?: string | null;
 }
 
 export interface AvailableSlotsResponseData {
@@ -119,9 +146,113 @@ export function isBundlePromoLine(
 
 export function getBookingLineLabel(line: BookingLineSnapshot): string {
   if (isBundlePromoLine(line)) {
-    return line.name;
+    return line.bundle_name || line.name || "Bundle Promo";
   }
   return line.name;
+}
+
+/**
+ * Menghitung durasi untuk satu baris booking (bisa variant atau bundle).
+ */
+export function getBookingLineDuration(line: BookingLineSnapshot): number {
+  const baseDur = line.duration_minutes ?? 0;
+  if (baseDur > 0) return baseDur;
+
+  if (isBundlePromoLine(line)) {
+    // Jika durasi bundle 0, totalin durasi item di dalamnya (sekuensial sebagai fallback)
+    return (line.items ?? []).reduce(
+      (s, item) => s + (item.duration_minutes ?? 0) * (item.quantity ?? 1),
+      0,
+    );
+  }
+  return 0;
+}
+
+/**
+ * Menghitung total durasi booking.
+ * Jika durasi bundle 0, akan menjumlahkan (sekuensial) atau mengambil max (paralel) dari item di dalamnya.
+ */
+export function getSpaBookingDuration(booking: SpaBooking): number {
+  const isParallel = booking.is_parallel ?? false;
+
+  if (
+    Array.isArray(booking.service_variants) &&
+    booking.service_variants.length > 0
+  ) {
+    // Jika paralel, kita gunakan Greedy Partition (2 therapist stack) agar match backend
+    if (isParallel) {
+      const durations: number[] = [];
+      booking.service_variants.forEach((variant) => {
+        if (isBundlePromoLine(variant)) {
+          const bundleBaseDur = variant.duration_minutes ?? 0;
+          if (bundleBaseDur > 0) {
+            durations.push(bundleBaseDur);
+          } else {
+            (variant.items ?? []).forEach((item) => {
+              const q = item.quantity || 1;
+              for (let i = 0; i < q; i++) {
+                durations.push(item.duration_minutes ?? 0);
+              }
+            });
+          }
+        } else {
+          const q = variant.quantity ?? variant.pivot?.quantity ?? 1;
+          for (let i = 0; i < q; i++) {
+            durations.push(variant.duration_minutes ?? 0);
+          }
+        }
+      });
+
+      if (durations.length === 0) return 0;
+      durations.sort((a, b) => b - a);
+
+      let s1 = 0;
+      let s2 = 0;
+      for (const d of durations) {
+        if (s1 <= s2) s1 += d;
+        else s2 += d;
+      }
+      return Math.max(s1, s2);
+    }
+
+    // Default: Sekuensial (Sum)
+    return booking.service_variants.reduce((sum, variant) => {
+      let variantDur = 0;
+      if (isBundlePromoLine(variant)) {
+        const bundleBaseDur = variant.duration_minutes ?? 0;
+        if (bundleBaseDur > 0) {
+          variantDur = bundleBaseDur;
+        } else {
+          variantDur = (variant.items ?? []).reduce(
+            (s, item) =>
+              s + (item.duration_minutes ?? 0) * (item.quantity ?? 1),
+            0,
+          );
+        }
+      } else {
+        const qty = variant.quantity ?? 1;
+        const dur = variant.duration_minutes ?? 0;
+        variantDur = dur * qty;
+      }
+      return sum + variantDur;
+    }, 0);
+  }
+
+  return booking.duration_minutes || 0;
+}
+
+export interface BookingRating {
+  id: number;
+  booking_id: number;
+  care_concern: number;
+  comfort: number;
+  friendliness_communication: number;
+  cleanliness_neatness: number;
+  treatment_suitability: number;
+  overall_score: number;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SpaBooking {
@@ -137,6 +268,7 @@ export interface SpaBooking {
   therapist_name?: string;
   therapists?: Array<string | BookingTherapist>;
   staff_assignments?: BookingStaffAssignment[];
+  resource_assignments?: BookingResourceAssignment[];
   schedule_date: string;
   duration_minutes: number;
   service_variants: BookingLineSnapshot[];
@@ -147,6 +279,7 @@ export interface SpaBooking {
   payment_status: PaymentStatus;
   created_at: string;
   updated_at: string;
+  is_parallel?: boolean;
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   totalAmount?: number;
@@ -155,4 +288,5 @@ export interface SpaBooking {
   service_variant?: {
     id: number;
   }[];
+  rating?: BookingRating | null;
 }

@@ -17,6 +17,7 @@ import { DynamicIcon } from "@/app/components/dynamic-icon";
 // Import Modal Components
 import { CreateCategoryModal } from "./modal/create-category-modal";
 import { textStyle } from "@/app/libs/text-style";
+import { Staff } from "@/app/types/staff";
 import { DeleteCategoryModal } from "./modal/delete-category-modal";
 import { EditCategoryModal } from "./modal/edit-category-modal";
 import { CreateServiceModal } from "./modal/create-service-modal";
@@ -26,6 +27,7 @@ import { CreateItemModal } from "./modal/create-item-modal";
 import { EditItemModal } from "./modal/edit-item-modal";
 import { DeleteItemModal } from "./modal/delete-item-modal";
 import { DiscountItemModal } from "./modal/discount-item-modal";
+import { VariantDetailModal } from "./modal/variant-detail-modal";
 
 // Hapus import ServiceBlock ini jika ServiceBlock digabungkan di file yang sama
 import { ServiceBlock } from "./components/service-block";
@@ -55,6 +57,7 @@ export interface ServiceVariant {
   is_active: boolean;
   final_price?: number;
   discounts?: Discount[];
+  capable_staff?: Staff[];
 }
 
 export interface Service {
@@ -96,10 +99,17 @@ export default function MasterProductPage() {
     isError,
   } = useApiFetch<any>(["categories"], "/master/categories");
 
+  const { data: staffData } = useApiFetch<any>(
+    ["staffs-all"],
+    "/master/staffs",
+  );
+
   const categories: Category[] = useMemo(
     () => responseData?.data || [],
     [responseData],
   );
+
+  const allStaff: Staff[] = useMemo(() => staffData?.data || [], [staffData]);
 
   useEffect(() => {
     if (categories.length > 0 && !activeCategoryId) {
@@ -120,6 +130,7 @@ export default function MasterProductPage() {
   const [isEditItemOpen, setIsEditItemOpen] = useState(false);
   const [isDeleteItemOpen, setIsDeleteItemOpen] = useState(false);
   const [isDiscountItemOpen, setIsDiscountItemOpen] = useState(false);
+  const [isDetailItemOpen, setIsDetailItemOpen] = useState(false);
   const [activeDiscount, setActiveDiscount] = useState<Discount | null>(null);
 
   // Action Data States
@@ -606,6 +617,7 @@ export default function MasterProductPage() {
                 <ServiceBlock
                   key={svc.id}
                   service={svc}
+                  allStaff={allStaff}
                   setActionService={setActionService}
                   setActionVariant={setActionVariant}
                   setIsCreateItemOpen={setIsCreateItemOpen}
@@ -614,6 +626,7 @@ export default function MasterProductPage() {
                   setIsDeleteServiceOpen={setIsDeleteServiceOpen}
                   setIsEditItemOpen={setIsEditItemOpen}
                   setIsDeleteItemOpen={setIsDeleteItemOpen}
+                  setIsDetailItemOpen={setIsDetailItemOpen}
                   setActiveDiscount={setActiveDiscount}
                 />
               ))
@@ -672,6 +685,7 @@ export default function MasterProductPage() {
               <ServiceBlock
                 key={svc.id}
                 service={svc}
+                allStaff={allStaff}
                 setActionService={setActionService}
                 setActionVariant={setActionVariant}
                 setIsCreateItemOpen={setIsCreateItemOpen}
@@ -680,6 +694,7 @@ export default function MasterProductPage() {
                 setIsDeleteServiceOpen={setIsDeleteServiceOpen}
                 setIsEditItemOpen={setIsEditItemOpen}
                 setIsDeleteItemOpen={setIsDeleteItemOpen}
+                setIsDetailItemOpen={setIsDetailItemOpen}
                 setActiveDiscount={setActiveDiscount}
               />
             ))
@@ -799,6 +814,13 @@ export default function MasterProductPage() {
           setIsDiscountItemOpen={setIsDiscountItemOpen}
           variant={actionVariant}
           existingDiscount={activeDiscount} // null untuk Create, isi object untuk Edit
+        />
+      )}
+
+      {isDetailItemOpen && actionVariant && (
+        <VariantDetailModal
+          setIsDetailOpen={setIsDetailItemOpen}
+          variant={actionVariant}
         />
       )}
     </div>

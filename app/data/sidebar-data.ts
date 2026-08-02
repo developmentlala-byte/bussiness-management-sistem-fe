@@ -27,6 +27,11 @@ const SIDEBAR_DATA = {
           url: "/master/product-&-layanan",
           icon: Storefront,
         },
+        {
+          title: "Ruangan & Resource",
+          url: "/master/resources",
+          icon: Storefront,
+        },
         { title: "Karyawan", url: "/master/karyawan", icon: Users },
         { title: "Bundle Promo", url: "/master/bundle-promo", icon: Tag },
         { title: "Voucher", url: "/master/voucher", icon: Ticket },
@@ -49,6 +54,7 @@ const SIDEBAR_DATA = {
       isActive: true,
       items: [
         { title: "Daftar Booking", url: "/reservasi/booking" },
+        { title: "Jadwal Theraphis", url: "/reservasi/theraphis" },
         { title: "Daftar Membership", url: "/keanggotaan" },
       ],
     },

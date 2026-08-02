@@ -35,10 +35,34 @@ export function calcBundlePricing(bundle: BundlePromo): BundlePricing {
       : Math.min(discountValue, subtotal);
 
   const finalPrice = Math.max(0, subtotal - discountAmount);
-  const totalDuration = items.reduce((sum, item) => {
-    const duration = item.duration_minutes ?? item.service_variant?.duration_minutes ?? 0;
-    return sum + duration * item.quantity;
-  }, 0);
+
+  let totalDuration = 0;
+  if (bundle.is_parallel) {
+    const durations: number[] = [];
+    items.forEach((it) => {
+      const d =
+        it.duration_minutes ?? it.service_variant?.duration_minutes ?? 0;
+      const q = it.quantity || 1;
+      for (let i = 0; i < q; i++) durations.push(d);
+    });
+
+    if (durations.length > 0) {
+      durations.sort((a, b) => b - a);
+      let s1 = 0;
+      let s2 = 0;
+      for (const d of durations) {
+        if (s1 <= s2) s1 += d;
+        else s2 += d;
+      }
+      totalDuration = Math.max(s1, s2);
+    }
+  } else {
+    totalDuration = items.reduce((sum, item) => {
+      const duration =
+        item.duration_minutes ?? item.service_variant?.duration_minutes ?? 0;
+      return sum + duration * item.quantity;
+    }, 0);
+  }
 
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -71,13 +95,17 @@ export function formatDurationShort(minutes: number): string {
 }
 
 function toDateParts(iso: string) {
-  const d = new Date(iso);
+  const d = iso ? new Date(iso) : new Date();
+  const isValid = !isNaN(d.getTime());
+  const finalDate = isValid ? d : new Date();
+
   return {
-    year: d.getFullYear(),
-    month: d.getMonth() + 1,
-    day: d.getDate(),
-    hours: d.getHours(),
-    minutes: d.getMinutes(),
+    year: finalDate.getFullYear(),
+    month: finalDate.getMonth() + 1,
+    day: finalDate.getDate(),
+    hours: finalDate.getHours(),
+    minutes: finalDate.getMinutes(),
+    isValid,
   };
 }
 
@@ -92,12 +120,16 @@ export function getBundleCalendarBounds(bundle: BundlePromo): {
   const start = toDateParts(bundle.start_date);
   const end = toDateParts(bundle.end_date);
 
+  // Fallback if invalid: use current year +/- 10 years to avoid crash
+  const fallbackStart = { year: 2000, month: 1, day: 1 };
+  const fallbackEnd = { year: 2100, month: 12, day: 31 };
+
   return {
     minValue: parseDate(
-      `${start.year}-${String(start.month).padStart(2, "0")}-${String(start.day).padStart(2, "0")}`,
+      `${(start.isValid ? start : fallbackStart).year}-${String((start.isValid ? start : fallbackStart).month).padStart(2, "0")}-${String((start.isValid ? start : fallbackStart).day).padStart(2, "0")}`,
     ),
     maxValue: parseDate(
-      `${end.year}-${String(end.month).padStart(2, "0")}-${String(end.day).padStart(2, "0")}`,
+      `${(end.isValid ? end : fallbackEnd).year}-${String((end.isValid ? end : fallbackEnd).month).padStart(2, "0")}-${String((end.isValid ? end : fallbackEnd).day).padStart(2, "0")}`,
     ),
   };
 }

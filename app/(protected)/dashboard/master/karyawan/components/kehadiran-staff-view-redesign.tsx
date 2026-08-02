@@ -46,6 +46,9 @@ interface Attendance {
   staff?: Staff;
 }
 
+import { resolvePhotoUrl } from "@/app/libs/resolve-url";
+import { StaffAvatar } from "@/app/components/staff-avatar";
+
 type AttendanceAction = "clock_in" | "clock_out";
 type QueueItem = {
   id: string;
@@ -61,14 +64,8 @@ type QueueItem = {
 type SheetView = "action" | "detail";
 
 const QUEUE_KEY = "attendance-selfie-queue-v1";
-const APP_BASE_URL =
-  process.env.NEXT_PUBLIC_API_STORAGE_URL ??
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, "") ??
-  "http://localhost:8000";
 
 // --- HELPER FUNCTIONS ---
-const resolvePhotoUrl = (path?: string | null) =>
-  path ? `${APP_BASE_URL}${path}` : null;
 
 const normalizeAttendanceDateKey = (dateInput: string) => {
   if (!dateInput) return "";
@@ -258,12 +255,7 @@ const AttendanceSheet = ({
             </button>
           )}
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <Avatar className="h-8 w-8 shrink-0 ring-1 ring-border/40">
-              <Avatar.Image src={resolvePhotoUrl(staff.avatar_path) ?? ""} />
-              <Avatar.Fallback className="text-xs font-bold text-muted">
-                {staff.first_name?.charAt(0) || "U"}
-              </Avatar.Fallback>
-            </Avatar>
+            <StaffAvatar staff={staff} size="lg" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-sm font-semibold text-foreground truncate">
@@ -905,14 +897,7 @@ export default function KehadiranStaffView() {
                   >
                     <td className="sticky left-0 z-20 min-w-[220px] max-w-[220px] border-r border-border/50 bg-background px-4 py-3 shadow-[1px_0_0_0_var(--color-border)] group-hover/row:bg-surface/90">
                       <div className="flex items-center gap-2.5">
-                        <Avatar className="h-8 w-8 shrink-0 ring-1 ring-border/40">
-                          <Avatar.Image
-                            src={resolvePhotoUrl(staff.avatar_path) ?? ""}
-                          />
-                          <Avatar.Fallback className="text-xs font-bold text-muted">
-                            {staff.first_name?.charAt(0) || "U"}
-                          </Avatar.Fallback>
-                        </Avatar>
+                        <StaffAvatar staff={staff} size="lg" />
                         <div className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-foreground">
                             {staff.first_name} {staff.last_name || ""}
@@ -973,14 +958,7 @@ export default function KehadiranStaffView() {
               className="rounded-2xl border border-border bg-surface overflow-hidden shadow-sm"
             >
               <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 bg-background/50">
-                <Avatar className="h-9 w-9 shrink-0 ring-1 ring-border/40">
-                  <Avatar.Image
-                    src={resolvePhotoUrl(staff.avatar_path) ?? ""}
-                  />
-                  <Avatar.Fallback className="text-xs font-bold text-muted">
-                    {staff.first_name?.charAt(0) || "U"}
-                  </Avatar.Fallback>
-                </Avatar>
+                <StaffAvatar staff={staff} size="lg" />
                 <div>
                   <span className="block text-sm font-semibold text-foreground">
                     {staff.first_name} {staff.last_name || ""}

@@ -29,6 +29,9 @@ import {
   Avatar,
 } from "@heroui/react";
 
+import { resolvePhotoUrl } from "@/app/libs/resolve-url";
+import { StaffAvatar } from "@/app/components/staff-avatar";
+
 // --- INTERFACES ---
 interface Shift {
   id: number | string;
@@ -690,18 +693,11 @@ export default function JamKerjaView() {
                   {/* Kolom Profil Staf (Styling dari Mock) */}
                   <td className="py-5 px-4 bg-background group-hover/row:bg-background/90 sticky left-0 z-10 border-r border-border/50 shadow-[1px_0_0_0_var(--color-border)]">
                     <div className="flex items-center gap-3">
-                      <Avatar className="w-10 h-10 ring-1 ring-border/50 bg-border/20">
-                        <Avatar.Image
-                          src={
-                            staff.avatar_path
-                              ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}${staff.avatar_path}`
-                              : ""
-                          }
-                        />
-                        <Avatar.Fallback className="text-muted font-bold">
-                          {staff.first_name?.charAt(0) || "U"}
-                        </Avatar.Fallback>
-                      </Avatar>
+                      <StaffAvatar
+                        staff={staff}
+                        outline="ring"
+                        className="bg-border/20"
+                      />
                       <div className="flex flex-col">
                         <span className="font-bold text-foreground text-sm">
                           {staff.first_name} {staff.last_name || ""}

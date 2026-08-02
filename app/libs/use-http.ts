@@ -94,6 +94,15 @@ interface CustomMutationOptions<
     variables: TVariables,
     context: TContext | undefined,
   ) => Promise<unknown> | void;
+  onMutate?: (
+    variables: TVariables,
+  ) => Promise<TContext | undefined> | TContext | undefined;
+  onSettled?: (
+    data: TData | undefined,
+    error: Error | null,
+    variables: TVariables,
+    context: TContext | undefined,
+  ) => Promise<unknown> | void;
 }
 
 // ==========================================
@@ -115,6 +124,7 @@ export const usePost = <
       // Always send the payload, even when URL is a function
       return apiPost(finalUrl, data);
     },
+    onMutate: options.onMutate,
     onSuccess: (data, variables, context) => {
       if (Array.isArray(options.invalidate)) {
         options.invalidate.forEach((key) => {
@@ -127,6 +137,7 @@ export const usePost = <
       }
     },
     onError: options.onError,
+    onSettled: options.onSettled,
   });
 };
 
@@ -148,6 +159,7 @@ export const usePut = <
       const finalUrl = typeof url === "function" ? url(data) : url;
       return apiPut(finalUrl, data);
     },
+    onMutate: options.onMutate,
     onSuccess: (data, variables, context) => {
       if (Array.isArray(options.invalidate)) {
         options.invalidate.forEach((key) => {
@@ -160,6 +172,7 @@ export const usePut = <
       }
     },
     onError: options.onError,
+    onSettled: options.onSettled,
   });
 };
 
@@ -181,6 +194,7 @@ export const useRemove = <
       const finalUrl = typeof url === "function" ? url(data) : url;
       return apiDelete(finalUrl);
     },
+    onMutate: options.onMutate,
     onSuccess: (data, variables, context) => {
       if (Array.isArray(options.invalidate)) {
         options.invalidate.forEach((key) => {
@@ -193,5 +207,6 @@ export const useRemove = <
       }
     },
     onError: options.onError,
+    onSettled: options.onSettled,
   });
 };

@@ -19,6 +19,8 @@ import {
   SpaBooking,
   getBookingLineLabel,
   isBundlePromoLine,
+  getBookingLineDuration,
+  getSpaBookingDuration,
 } from "@/app/types/booking";
 import {
   CalendarBlank,
@@ -57,7 +59,10 @@ import { apiGet } from "@/app/services/api";
 import { AlertDialog } from "@heroui/react";
 import StatusFilterDropdown from "./components/status-filter-dropdown";
 import StaffFilterDropdown from "./components/staff-filter-dropdown";
+import RatingFilterDropdown from "./components/rating-filter-dropdown";
+import RatingDrawer from "./components/ratingDrawer";
 import { CopyableText } from "@/app/components/copyable-text";
+import { Star } from "@phosphor-icons/react";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -101,6 +106,7 @@ function BookingsPageInner() {
   const drawerHeight = useVisualViewportHeight();
   const createBookingDrawer = useOverlayState();
   const detailDrawer = useOverlayState();
+  const ratingDrawer = useOverlayState();
   const [bookingModalAction, setBookingModalAction] = useState<
     "create" | "edit"
   >("create");
@@ -108,8 +114,11 @@ function BookingsPageInner() {
   const [selectedBooking, setSelectedBooking] = useState<SpaBooking | null>(
     null,
   );
+  const [selectedBookingForRating, setSelectedBookingForRating] =
+    useState<SpaBooking | null>(null);
   const [isChartVisible, setIsChartVisible] = useState<boolean>(true);
   const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -132,15 +141,20 @@ function BookingsPageInner() {
     const params = debouncedSearch
       ? { ...base, search: debouncedSearch }
       : base;
-    return selectedStaffIds.length > 0
-      ? { ...params, staff_ids: selectedStaffIds }
-      : params;
+    const withStaff =
+      selectedStaffIds.length > 0
+        ? { ...params, staff_ids: selectedStaffIds }
+        : params;
+    return selectedRating !== null
+      ? { ...withStaff, rating: selectedRating }
+      : withStaff;
   }, [
     endDateStr,
     startDateStr,
     useScheduleDate,
     debouncedSearch,
     selectedStaffIds,
+    selectedRating,
   ]);
 
   const { data, isLoading: isBookingsLoading } = useApiFetch<{
@@ -153,9 +167,11 @@ function BookingsPageInner() {
       useScheduleDate ? "schedule_date" : "created_at",
       debouncedSearch,
       selectedStaffIds.join(","),
+      selectedRating ?? "all",
     ],
     "/master/bookings",
     bookingQueryParams,
+    !!bookingQueryParams,
   );
 
   const createPayment = usePost<
@@ -254,11 +270,25 @@ function BookingsPageInner() {
     const confirmedTotalAmount = directAmount + adsAmount;
 
     const describeBooking = (b: SpaBooking, idx: number) => {
+      const parts: string[] = [];
+      if (b.booking_bundle_promos?.length) {
+        b.booking_bundle_promos.forEach((bundle) => {
+          parts.push(bundle.bundle_name || bundle.name || "Bundle Promo");
+        });
+      }
+
       const lines = b.service_variants ?? [];
+      lines.forEach((line) => {
+        if (!isBundlePromoLine(line)) {
+          parts.push(getBookingLineLabel(line));
+        }
+      });
+
       const serviceLabel =
-        lines.length > 0
-          ? lines.map((line) => getBookingLineLabel(line)).join(", ")
+        parts.length > 0
+          ? Array.from(new Set(parts)).join(", ")
           : "Spa Service";
+
       const amount = formatRupiah(Number(b.total_amount || 0));
       const source = (b.source ?? "direct").toUpperCase();
       return `${idx + 1}. ${b.customer_name} - ${serviceLabel} - ${source} - ${amount}`;
@@ -411,6 +441,11 @@ function BookingsPageInner() {
     createBookingDrawer.open();
   };
 
+  const handleOpenRating = (booking: SpaBooking) => {
+    setSelectedBookingForRating(booking);
+    ratingDrawer.open();
+  };
+
   const handleRetryPayment = async () => {
     if (!selectedBooking?.id || createPayment.isPending) return;
     const payload = {
@@ -480,7 +515,10 @@ function BookingsPageInner() {
         return (
           <button
             type="button"
-            onClick={() => info.row.toggleExpanded()}
+            onClick={(e) => {
+              e.stopPropagation();
+              info.row.toggleExpanded();
+            }}
             aria-label="Toggle bonus booking"
             aria-expanded={isExpanded}
             className="group relative inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-muted cursor-pointer"
@@ -546,8 +584,11 @@ function BookingsPageInner() {
     columnHelper.accessor("service_name", {
       header: "Service & Therapist",
       cell: (info) => {
-        const isBundle = info.row.original?.booking_bundle_promos?.length > 0;
-        const lines = info.row.original?.service_variants ?? [];
+        const booking = info.row.original;
+        const bundle = booking.booking_bundle_promos?.[0];
+        const isBundle = !!bundle;
+
+        const lines = booking.service_variants ?? [];
         const serviceName =
           lines.length > 0
             ? lines.map((line) => getBookingLineLabel(line)).join(", ")
@@ -556,7 +597,7 @@ function BookingsPageInner() {
         const therapistNames =
           Array.from(
             new Set(
-              (info.row.original.therapists ?? [])
+              (booking.therapists ?? [])
                 .map((t) => {
                   if (typeof t === "string") return t;
                   return t.name;
@@ -565,22 +606,13 @@ function BookingsPageInner() {
             ),
           ).join(", ") || "—";
 
-        if (isBundle) {
-          return (
-            <div className="flex flex-col">
-              <span className="text-sm">
-                {info.row.original?.booking_bundle_promos?.[0]?.bundle_name ??
-                  ""}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                by {therapistNames}
-              </span>
-            </div>
-          );
-        }
+        const displayName = isBundle
+          ? bundle.bundle_name || bundle.name || "Bundle Promo"
+          : serviceName;
+
         return (
           <div className="flex flex-col">
-            <span className="text-sm">{serviceName}</span>
+            <span className="text-sm font-medium">{displayName}</span>
             <span className="text-xs text-muted-foreground">
               by {therapistNames}
             </span>
@@ -599,8 +631,25 @@ function BookingsPageInner() {
               })}
             </span>
             <span className="text-xs text-muted-foreground">
-              ({info.row.original.duration_minutes} min)
+              ({getSpaBookingDuration(info.row.original)} min)
             </span>
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor("rating", {
+      header: "Rating",
+      cell: (info) => {
+        const rating = info.getValue();
+        if (!rating || !rating.overall_score)
+          return <span className="text-muted-foreground/40">—</span>;
+
+        return (
+          <div className="flex items-center gap-1.5 bg-amber-400/10 px-2 py-1 rounded-full w-fit">
+            <span className="text-xs font-bold text-amber-600">
+              {Number(rating.overall_score).toFixed(1)}
+            </span>
+            <Star weight="fill" className="size-3 text-amber-500" />
           </div>
         );
       },
@@ -724,7 +773,10 @@ function BookingsPageInner() {
       header: "",
       enableSorting: false,
       cell: (info) => (
-        <div className="flex justify-end gap-2">
+        <div
+          className="flex justify-end gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           <Button
             isIconOnly
             size="sm"
@@ -885,6 +937,7 @@ function BookingsPageInner() {
     );
   };
 
+  console.log("🚀 ~ BookingsPageInner ~ selectedBooking:", selectedBooking);
   console.log("🚀 ~ BookingsPageInner ~ selectedBooking:", selectedBooking);
   return (
     <div
@@ -1087,6 +1140,12 @@ function BookingsPageInner() {
             onSelectStaff={setSelectedStaffIds}
             className="hidden! sm:inline-flex!"
           />
+
+          <RatingFilterDropdown
+            selectedRating={selectedRating}
+            onChange={setSelectedRating}
+            className="hidden! sm:inline-flex!"
+          />
         </div>
 
         {/* BARIS 2: PENCARIAN + AKSI — search dapat ruang lebar, aksi di kanan */}
@@ -1131,6 +1190,12 @@ function BookingsPageInner() {
           <StaffFilterDropdown
             selectedStaffIds={selectedStaffIds}
             onSelectStaff={setSelectedStaffIds}
+            className="sm:hidden! w-full!"
+          />
+
+          <RatingFilterDropdown
+            selectedRating={selectedRating}
+            onChange={setSelectedRating}
             className="sm:hidden! w-full!"
           />
 
@@ -1200,7 +1265,7 @@ function BookingsPageInner() {
       >
         <div className="overflow-hidden">
           <div className="pt-1 pb-4">
-            <GanttChartBookings />
+            <GanttChartBookings bookings={filteredBookings} />
           </div>
         </div>
       </div>
@@ -1214,6 +1279,7 @@ function BookingsPageInner() {
           (row.original.child_bookings ?? []).length > 0
         }
         renderExpandedRow={renderExpandedBookingRow}
+        onRowClick={handleOpenRating}
       />
 
       {/* DETAIL DRAWER */}
@@ -1375,7 +1441,8 @@ function BookingsPageInner() {
                                       {getBookingLineLabel(line)}
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                      Durasi: {line.duration_minutes ?? 0} menit
+                                      Durasi: {getBookingLineDuration(line)}{" "}
+                                      menit
                                     </p>
                                     {isBundlePromoLine(line) && (
                                       <p className="text-xs text-muted-foreground mt-1">
@@ -1410,10 +1477,7 @@ function BookingsPageInner() {
                                     <p className="text-sm font-semibold flex items-center justify-between">
                                       qty :
                                       <p className="">
-                                        {line?.pivot
-                                          ? line?.pivot?.quantity
-                                          : 1}
-                                        x
+                                        {line?.quantity ? line?.quantity : 1}x
                                       </p>
                                     </p>
                                   </div>
@@ -1456,10 +1520,7 @@ function BookingsPageInner() {
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       Durasi bonus:{" "}
-                                      {child.total_duration_minutes ??
-                                        child.duration_minutes ??
-                                        0}{" "}
-                                      menit
+                                      {getSpaBookingDuration(child)} menit
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       {child.therapists
@@ -1515,6 +1576,24 @@ function BookingsPageInner() {
                   )}
                 </div>
               </div>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
+
+      {/* RATING DRAWER */}
+      <Drawer state={ratingDrawer}>
+        <Drawer.Backdrop isDismissable={false} className="bg-black/40">
+          <Drawer.Content placement="bottom">
+            <Drawer.Dialog
+              className="flex w-full max-w-lg mx-auto flex-col overflow-hidden p-0 rounded-t-2xl bg-white"
+              style={{ maxHeight: "88vh" }}
+            >
+              <RatingDrawer
+                booking={selectedBookingForRating}
+                isOpen={ratingDrawer.isOpen}
+                onClose={ratingDrawer.close}
+              />
             </Drawer.Dialog>
           </Drawer.Content>
         </Drawer.Backdrop>

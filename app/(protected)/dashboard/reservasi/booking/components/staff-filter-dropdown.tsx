@@ -32,9 +32,11 @@ export default function StaffFilterDropdown({
   const { contains } = useFilter({ sensitivity: "base" });
 
   const { data: staffResponse, isLoading } = useQuery({
-    queryKey: ["staffs"],
+    queryKey: ["staffs", "active"],
     queryFn: async () => {
-      const response = await apiGet("/master/staffs");
+      const response = await apiGet("/master/staffs", {
+        "filter[status]": "active",
+      });
       return response as {
         data: Staff[];
         meta: { current_page: number; last_page: number; per_page: number; total: number };

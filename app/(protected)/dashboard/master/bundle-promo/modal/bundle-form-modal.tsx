@@ -68,6 +68,7 @@ export function BundleFormModal({
     bundle?.max_quantity ? String(bundle.max_quantity) : "",
   );
   const [isActive, setIsActive] = useState(bundle?.is_active ?? true);
+  const [isParallel, setIsParallel] = useState(bundle?.is_parallel ?? false);
   const [items, setItems] = useState<BundleItemInput[]>(
     bundle?.bundle_items?.length
       ? bundle.bundle_items.map((item) => ({
@@ -194,6 +195,7 @@ export function BundleFormModal({
       discount_value: Number(discountValue),
       max_quantity: maxQuantity ? Number(maxQuantity) : null,
       is_active: isActive,
+      is_parallel: isParallel,
       start_date: toDateTimeStart(dateRange.start.toString(), startTime),
       end_date: toDateTimeEnd(dateRange.end.toString(), endTime),
       items: validItems.map((item, index) => ({
@@ -314,15 +316,27 @@ export function BundleFormModal({
             </InputGroup>
           </TextField>
 
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="rounded border-border"
-            />
-            Bundle aktif
-          </label>
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="rounded border-border"
+              />
+              Bundle aktif
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={isParallel}
+                onChange={(e) => setIsParallel(e.target.checked)}
+                className="rounded border-border"
+              />
+              Booking Paralel (Default 2 Orang)
+            </label>
+          </div>
 
           <BundlePeriodPicker
             dateRange={dateRange}

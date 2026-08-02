@@ -27,6 +27,7 @@ import { useApiFetch } from "@/app/libs/use-http";
 import { IDR } from "@/app/libs/idr";
 import { formatNumber } from "@/app/libs/formatNumber";
 import { formatWallClockDate } from "@/app/libs/date-format";
+import { resolvePhotoUrl } from "@/app/libs/resolve-url";
 import WeeklyBookingCard from "./components/dashboardWeeklyBooking";
 
 type DateRange = { start: DateValue; end: DateValue } | null;
@@ -895,7 +896,7 @@ export default function DashboardOverviewPage() {
               })
             : "—",
           status: isPresent ? "H" : "A",
-          img: undefined,
+          img: resolvePhotoUrl(staff.avatar_path) ?? undefined,
           color: isPresent ? "var(--accent)" : "var(--danger)",
         };
       }),
