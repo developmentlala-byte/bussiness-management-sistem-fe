@@ -229,7 +229,7 @@ export const AttendanceSelfieModal = ({
       {/* ── FACE GUIDE FRAME ── */}
       {!previewUrl && !cameraError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="w-[170px] h-[215px] rounded-[50%] border-2 border-white/40 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+          {/* <div className="w-[170px] h-[215px] rounded-[50%] border-2 border-white/40 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" /> */}
           <p className="mt-5 text-[12px] text-white/55 tracking-wide text-center px-8">
             Pastikan wajah terlihat jelas dalam bingkai
           </p>
