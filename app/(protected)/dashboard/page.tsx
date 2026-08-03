@@ -268,7 +268,10 @@ function ActivityFeed({ items }: { items: BookingItem[] }) {
       booking.booking_bundle_promos && booking.booking_bundle_promos.length > 0;
 
     if (isBundle) {
-      return booking.booking_bundle_promos?.[0]?.bundle_name ?? "Spa Service";
+      const b = booking.booking_bundle_promos?.[0];
+      return (
+        b?.bundle_name || b?.name || b?.bundle_promo?.name || "Spa Service"
+      );
     }
 
     if (booking.service_variants && booking.service_variants.length > 0) {
@@ -644,7 +647,9 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
                     <div className="flex flex-col">
                       <span>
                         {isBundle
-                          ? booking.booking_bundle_promos?.[0]?.bundle_name
+                          ? booking.booking_bundle_promos?.[0]?.bundle_name ||
+                            booking.booking_bundle_promos?.[0]?.bundle_promo
+                              ?.name
                           : (serviceName ?? "Spa Service")}
                       </span>
                       <span
