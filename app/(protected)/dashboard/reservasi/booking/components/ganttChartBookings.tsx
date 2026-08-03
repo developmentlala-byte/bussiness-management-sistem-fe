@@ -34,10 +34,13 @@ const TOTAL_HOURS = END_HOUR - START_HOUR;
 const HOUR_WIDTH_DAILY = 136;
 const HOUR_WIDTH_THERAPIST = 200;
 const Y_AXIS_W = 150;
-const LANE_H = 82;
+// LANE_H dinaikin dari 82 -> 116 supaya cukup buat 4 baris info
+// (jam+durasi, nama client, service, terapis) tanpa ada yang kepotong overflow-hidden.
+const LANE_H = 100;
 const LANE_PAD = 8;
 const DAYS_IN_VIEW = 7;
-const MIN_LABEL_WIDTH = 108; // px minimum biar nama service kebaca
+// MIN_LABEL_WIDTH dinaikin biar teks nggak kepaksa truncate parah di block pendek.
+const MIN_LABEL_WIDTH = 150;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -45,7 +48,6 @@ const MIN_LABEL_WIDTH = 108; // px minimum biar nama service kebaca
 type ScheduledBooking = SpaBooking & { timeStr: string };
 type BookingMeta = ScheduledBooking & { lane: number; laneCount: number };
 
-// Rekap per-terapis: dipakai buat modal "Rekap Terapis" (Per Terapis tab)
 type TherapistRecapItem = {
   key: string;
   time: string;
@@ -75,25 +77,11 @@ const addDays = (base: Date, amount: number) => {
   return d;
 };
 
-// ── TIMEZONE-SAFE PARSING ───────────────────────────────────────────────────
-// The API returns schedule_date as e.g. "2026-06-29T16:00:00.000000Z".
-// That trailing "Z" tells `new Date(...)` to treat 16:00 as UTC and convert
-// it to the browser's local timezone — in WIB (UTC+7) that becomes
-// 2026-06-29 23:00 *local*, or even rolls over to the next calendar day.
-// But these timestamps are actually wall-clock spa hours (08:00–20:00),
-// not real UTC instants — they were just serialized with a "Z" suffix by
-// the backend without an actual timezone conversion.
-//
-// So instead of letting `new Date()` reinterpret the time, we read the
-// date/time digits directly out of the string with a regex and use them
-// as-is. No Date object, no timezone math, no shifting.
 const SCHEDULE_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
 
 const parseSchedule = (raw: string) => {
   const m = SCHEDULE_RE.exec(raw);
   if (!m) {
-    // Fallback for unexpected formats — best effort, may be off by
-    // timezone, but at least doesn't crash.
     const d = new Date(raw);
     return { dateStr: toDateStr(d), timeStr: "00:00" };
   }
@@ -181,48 +169,41 @@ const CAT_ICONS: Record<Cat, React.ReactNode> = {
   spa: <Drop weight="duotone" className="size-3" />,
 };
 
+const trim = (s: string) => s.trim();
+
 const getTherapistNames = (event: SpaBooking): string => {
   const therapists = event.therapists ?? [];
 
   if (therapists.length > 0) {
-    return (
-      therapists
-        .map((t) => {
-          if (typeof t === "string") return t;
-          if (t?.name) return t.name;
-          if (t?.staff) {
-            const s = t.staff;
-            return trim(`${s.first_name} ${s.last_name ?? ""}`);
-          }
-          return null;
-        })
-        .filter(Boolean)
-        .join(", ") || "—"
-    );
+    const joined = therapists
+      .map((t) => {
+        if (typeof t === "string") return t;
+        if (t?.name) return t.name;
+        if (t?.staff) {
+          const s = t.staff;
+          return trim(`${s.first_name} ${s.last_name ?? ""}`);
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .join(", ");
+    return joined || "Belum Ditugaskan";
   }
 
-  return event.therapist_name || "—";
+  return event.therapist_name || "Belum Ditugaskan";
 };
-
-// Helper for trim
-const trim = (s: string) => s.trim();
 
 const getEventServiceName = (event: SpaBooking): string => {
   const parts: string[] = [];
 
-  // 1. Bundle Promos
   if (event.booking_bundle_promos && event.booking_bundle_promos.length > 0) {
     event.booking_bundle_promos.forEach((b) => {
       parts.push(b.bundle_name || b.name || "Bundle Promo");
     });
   }
 
-  // 2. Service Variants (only those NOT in a bundle to avoid double-listing, or all if preferred)
-  // Actually, isBundlePromoLine already helps us distinguish
   event.service_variants?.forEach((line) => {
     if (isBundlePromoLine(line)) {
-      // If we already added bundle names above, we might skip this
-      // but some old data might not have booking_bundle_promos but has isBundlePromoLine
       const name = line.bundle_name || line.name;
       if (name && !parts.includes(name)) {
         parts.push(name);
@@ -237,11 +218,15 @@ const getEventServiceName = (event: SpaBooking): string => {
     return Array.from(new Set(parts)).join(", ");
   }
 
-  // Priority 3: Fallback to service_name
   if (event.service_name) return event.service_name;
 
   return "Spa Service";
 };
+
+// Fallback nama client — kalau data kosong, tetep tampilkan label yang jelas
+// daripada block-nya keliatan "kosong"/blank.
+const getClientDisplayName = (event: SpaBooking): string =>
+  event.customer_name?.trim() || "Tanpa Nama";
 
 const isBonusChildBooking = (event: SpaBooking) =>
   event.booking_type === "bonus_child" || Boolean(event.parent_booking_id);
@@ -262,10 +247,6 @@ const addBookingToMap = (
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THERAPIST RECAP HELPERS
-// Dipakai buat modal "Rekap Terapis" — mengelompokkan events (yang sudah
-// dipecah per-terapis-per-layanan lewat byDateSplit) berdasarkan nama
-// terapis, lalu urut berdasarkan jam. Ini yang menjawab pertanyaan
-// "staff X hari ini pegang berapa layanan & jam berapa aja".
 // ─────────────────────────────────────────────────────────────────────────────
 function buildTherapistRecap(
   events: ScheduledBooking[],
@@ -273,8 +254,7 @@ function buildTherapistRecap(
   const groups = new Map<string, TherapistRecapItem[]>();
 
   events.forEach((event) => {
-    const name = getTherapistNames(event);
-    const therapistName = name && name !== "—" ? name : "Belum Ditugaskan";
+    const therapistName = getTherapistNames(event);
     const list = groups.get(therapistName) ?? [];
 
     list.push({
@@ -301,7 +281,6 @@ function buildTherapistRecap(
     .sort((a, b) => a.therapistName.localeCompare(b.therapistName));
 }
 
-// Format rekap jadi plain text supaya gampang di-copy & di-paste (WA, laporan, dll)
 function buildTherapistRecapText(
   date: Date,
   groups: TherapistRecapGroup[],
@@ -332,7 +311,7 @@ function buildTherapistRecapText(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATUS THEME  — follows globals.css CSS variables
+// STATUS THEME
 // ─────────────────────────────────────────────────────────────────────────────
 type Theme = {
   block: string;
@@ -374,17 +353,12 @@ const STATUS: Record<string, Theme> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LANE ASSIGNMENT  (greedy interval scheduling with diagonal waterfall)
-//
-// Bookings sorted by start time. To ensure that multiple services belonging
-// to the SAME booking (same booking_code) do not visually merge into a single
-// horizontal line, we force each service unit within a booking to take a UNIQUE
-// lane (waterfall effect). We track which lanes a booking has already used.
+// LANE ASSIGNMENT
 // ─────────────────────────────────────────────────────────────────────────────
 function assignLanes(events: ScheduledBooking[]): BookingMeta[] {
   const sorted = [...events].sort((a, b) => a.timeStr.localeCompare(b.timeStr));
-  const laneEnds: string[] = []; // last end-time per lane
-  const bookingLanes = new Map<string, Set<number>>(); // lanes used by each booking
+  const laneEnds: string[] = [];
+  const bookingLanes = new Map<string, Set<number>>();
 
   const assigned = sorted.map((ev) => {
     const end = addMin(ev.timeStr, ev.duration_minutes);
@@ -436,8 +410,6 @@ function LegendItem({ label, status }: { label: string; status: string }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DAY NAVIGATION
-// Minimal ghost-icon buttons flanking a quiet text label. No boxed pill,
-// no heavy border — feels like part of the header, not a separate control.
 // ─────────────────────────────────────────────────────────────────────────────
 function DayNavControl({
   isAtToday,
@@ -511,9 +483,6 @@ function DayNavControl({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOKING HOVER CARD
-// Custom-built (no HeroUI Pro) — replaces the native `title` tooltip with a
-// styled floating preview. Portal-rendered to escape the scrollable Gantt
-// container, positioned via getBoundingClientRect with auto flip.
 // ─────────────────────────────────────────────────────────────────────────────
 interface HoverCardData {
   event: BookingMeta;
@@ -534,6 +503,7 @@ function BookingHoverCard({ event, rect }: HoverCardData) {
   const endTime = addMin(event.timeStr, event.duration_minutes);
   const displayServiceName = getEventServiceName(event);
   const therapistName = getTherapistNames(event);
+  const clientName = getClientDisplayName(event);
   const th = STATUS[event.status] ?? STATUS.Confirmed;
   const isBonus = isBonusChildBooking(event);
 
@@ -566,7 +536,7 @@ function BookingHoverCard({ event, rect }: HoverCardData) {
           </div>
 
           <p className="text-[13.5px] font-bold leading-tight text-[var(--foreground)] truncate">
-            {event.customer_name}
+            {clientName}
           </p>
 
           <div className="flex items-start gap-1.5">
@@ -616,10 +586,11 @@ function BookingHoverCard({ event, rect }: HoverCardData) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMELINE ROW
-// Shared render for the hour-grid + booking blocks of a single row.
-// Used for every day row, in both "Per Hari" and "Per Terapis" modes —
-// only the *source events* fed into it differ (see byDate vs byDateSplit
-// below), the grid/band/booking-block rendering logic lives here once.
+// PERUBAHAN UTAMA: dulu ada showService/showTherapist/showDurBadge yang
+// nyembunyiin baris kalau widthPx kekecilan — itu penyebab info (nama client,
+// nama terapis) ilang total di block yang sempit. Sekarang SEMUA baris info
+// selalu dirender (pakai truncate biar tetep rapi kalau kepanjangan), jadi
+// info paling parah cuma "..." dipotong, bukan hilang sama sekali.
 // ─────────────────────────────────────────────────────────────────────────────
 function TimelineRow({
   laneEvents,
@@ -665,7 +636,6 @@ function TimelineRow({
     };
   }, []);
 
-  // helper: cari event berikutnya di lane yang sama (buat batas max width)
   const findNextInLane = (currentIdx: number, lane: number) => {
     for (let i = currentIdx + 1; i < laneEvents.length; i++) {
       if (laneEvents[i].lane === lane) return laneEvents[i];
@@ -733,7 +703,6 @@ function TimelineRow({
         const leftPx = minFromStart * minWidth;
         const naturalWidthPx = event.duration_minutes * minWidth;
 
-        // cari batas max: sampai event berikutnya di lane yg sama, atau akhir grid
         const nextInLane = findNextInLane(idx, event.lane);
         const nextStartMin = nextInLane
           ? (parseInt(nextInLane.timeStr.split(":")[0]) - START_HOUR) * 60 +
@@ -744,7 +713,6 @@ function TimelineRow({
           (nextStartMin - minFromStart) * minWidth - 4,
         );
 
-        // lebar akhir: minimal MIN_LABEL_WIDTH, tapi ga boleh nabrak block sebelahnya
         const widthPx = Math.min(
           Math.max(naturalWidthPx, MIN_LABEL_WIDTH),
           maxAvailablePx,
@@ -758,6 +726,21 @@ function TimelineRow({
         const cat = toCat(displayServiceName);
         const th = STATUS[event.status] ?? STATUS.Confirmed;
         const isBonus = isBonusChildBooking(event);
+        const clientName = getClientDisplayName(event);
+        const therapistName = getTherapistNames(event);
+
+        const firstTherapist = event?.therapists?.[0] as any;
+        const targetClientKey =
+          firstTherapist?.client_key || firstVariant?.client_key;
+
+        const resourceAssignment = event.resource_assignments?.find(
+          (r) =>
+            (targetClientKey && r.client_key === targetClientKey) ||
+            (!targetClientKey && r.service_variant_id === firstVariant?.id),
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const resourceName = (resourceAssignment as any)?.resource_code ?? "";
+        console.log("🚀 ~ TimelineRow ~ resourceName:", resourceAssignment);
 
         const firstVariant = event?.service_variants?.[0];
         const firstVariantQty = firstVariant?.quantity ?? 1;
@@ -765,13 +748,6 @@ function TimelineRow({
           event?.service_variants?.length >= 2
             ? `${firstVariant?.name} (${firstVariantQty}x)`
             : displayServiceName;
-
-        const showService = widthPx >= 60;
-        const showTherapist = widthPx >= 80;
-        const showDurBadge = widthPx >= 100;
-
-        const therapistName = getTherapistNames(event);
-        const hasTherapist = therapistName !== "—";
 
         return (
           <div
@@ -797,7 +773,7 @@ function TimelineRow({
                 th.block,
               )}
             >
-              {/* Row 1: Time range + duration badge */}
+              {/* Row 1: Time range + duration badge — selalu tampil */}
               <div className="flex items-center justify-between gap-1 min-w-0">
                 <span
                   className={cn(
@@ -807,77 +783,68 @@ function TimelineRow({
                 >
                   {event.timeStr}&thinsp;—&thinsp;{endTime}
                 </span>
-                {showDurBadge && (
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-1.5 py-0.5 leading-none",
-                      "text-[9px] font-bold uppercase tracking-wide",
-                      th.badge,
-                    )}
-                  >
-                    {fmtDur(event.duration_minutes)}
-                  </span>
-                )}
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-1.5 py-0.5 leading-none",
+                    "text-[9px] font-bold uppercase tracking-wide",
+                    th.badge,
+                  )}
+                >
+                  {fmtDur(event.duration_minutes)}
+                </span>
               </div>
 
-              {/* Row 2: Title */}
+              {/* Row 2: Title — nama client (daily) / nama service (therapist mode) */}
               <p
                 className={cn(
                   "truncate text-[12px] font-bold leading-none",
                   th.clientTx,
                 )}
               >
-                {isTherapistMode ? serviceName : event.customer_name}
+                {isTherapistMode ? serviceName : clientName}
               </p>
 
-              {/* Row 3: Subtitle (Service or Therapist) */}
-              {showService && (
-                <div className="flex items-center gap-1 min-w-0">
-                  {isTherapistMode || (!showTherapist && hasTherapist) ? (
-                    <UserCircle
-                      weight="duotone"
-                      className={cn("shrink-0 size-3", th.metaTx)}
-                    />
-                  ) : (
-                    <span className={cn("shrink-0", th.metaTx)}>
-                      {CAT_ICONS[cat]}
-                    </span>
-                  )}
-                  <p
-                    className={cn(
-                      "truncate text-[10px] leading-none",
-                      th.metaTx,
-                    )}
-                  >
-                    {isTherapistMode || (!showTherapist && hasTherapist)
-                      ? therapistName
-                      : displayServiceName}
-                  </p>
-                  {isBonus && (
-                    <span className="rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Bonus
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Row 4: Therapist name (only in daily mode and if wide enough) */}
-              {!isTherapistMode && showTherapist && hasTherapist && (
-                <div className="flex items-center gap-1 min-w-0">
+              {/* Row 3: Subtitle — selalu tampil, ga lagi digantung sama width */}
+              <div className="flex items-center gap-1 min-w-0">
+                {isTherapistMode ? (
                   <UserCircle
                     weight="duotone"
                     className={cn("shrink-0 size-3", th.metaTx)}
                   />
-                  <span
-                    className={cn(
-                      "truncate text-[10px] leading-none opacity-80",
-                      th.metaTx,
-                    )}
-                  >
-                    {therapistName}
+                ) : (
+                  <span className={cn("shrink-0", th.metaTx)}>
+                    {CAT_ICONS[cat]}
                   </span>
-                </div>
-              )}
+                )}
+                <p
+                  className={cn("truncate text-[10px] leading-none", th.metaTx)}
+                >
+                  {isTherapistMode ? therapistName : displayServiceName}
+                </p>
+                {isBonus && (
+                  <span className="shrink-0 rounded-full bg-[var(--accent)]/10 px-1.5 py-[2px] text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    Bonus
+                  </span>
+                )}
+              </div>
+
+              {/* Row 4: Nama terapis — cuma di daily mode (therapist mode udah
+                  nampilin nama terapis di Row 3), sekarang selalu tampil */}
+              <div className="flex items-center gap-1 min-w-0">
+                <UserCircle
+                  weight="duotone"
+                  className={cn("shrink-0 size-3", th.metaTx)}
+                />
+                <span
+                  className={cn(
+                    "truncate text-[10px] leading-none opacity-80",
+                    th.metaTx,
+                  )}
+                >
+                  {!isTherapistMode ? therapistName : clientName}
+                  {isTherapistMode ? ` | ${resourceName}` : ""}
+                </span>
+              </div>
             </div>
           </div>
         );
@@ -892,8 +859,6 @@ function TimelineRow({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DAY DETAIL MODAL
-// Rendered via createPortal so it sits outside the scrollable Gantt container.
-// Opens as a bottom sheet on mobile, centered card on sm+.
 // ─────────────────────────────────────────────────────────────────────────────
 interface DayDetailModalProps {
   date: Date;
@@ -940,10 +905,8 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[6px]" />
 
-      {/* Modal card */}
       <div
         className={cn(
           "relative z-10 w-full sm:max-w-[520px] max-h-[90dvh] flex flex-col",
@@ -953,12 +916,10 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           "animate-in fade-in slide-in-from-bottom-6 duration-300 ease-out",
         )}
       >
-        {/* Mobile drag handle */}
         <div className="sm:hidden flex justify-center pt-3 shrink-0">
           <div className="w-9 h-[3px] rounded-full bg-[var(--muted)]/25" />
         </div>
 
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
@@ -989,7 +950,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           </button>
         </div>
 
-        {/* Stats row */}
         <div className="grid grid-cols-4 divide-x divide-border border-b border-border shrink-0">
           {[
             { label: "Confirmed", value: stats.confirmed, status: "Confirmed" },
@@ -1019,7 +979,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           })}
         </div>
 
-        {/* Booking list */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 text-center">
@@ -1041,6 +1000,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
               const cat = toCat(displayServiceName);
               const th = STATUS[event.status] ?? STATUS.Confirmed;
               const therapists = getTherapistNames(event);
+              const clientName = getClientDisplayName(event);
               const isBonus = isBonusChildBooking(event);
 
               return (
@@ -1052,7 +1012,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                     th.block,
                   )}
                 >
-                  {/* Time spine */}
                   <div className="flex flex-col items-center shrink-0 min-w-[48px] pt-0.5">
                     <span
                       className={cn(
@@ -1078,7 +1037,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                     </span>
                   </div>
 
-                  {/* Content */}
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -1088,7 +1046,7 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                             th.clientTx,
                           )}
                         >
-                          {event.customer_name}
+                          {clientName}
                         </p>
                         <p className="text-[10px] text-[var(--muted)]/60 font-mono mt-0.5 tracking-tight">
                           {event.booking_code}
@@ -1159,7 +1117,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3.5 border-t border-border bg-[var(--surface)]/60 rounded-b-[inherit] flex items-center justify-between shrink-0">
           <span className="text-[11px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--foreground)]">
@@ -1186,10 +1143,6 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THERAPIST RECAP MODAL
-// Dibuka dari tab "Per Terapis". Untuk setiap terapis di hari itu, tampilkan
-// jumlah layanan yang dipegang + urutan jam kerjanya. Struktur sengaja dibuat
-// sederhana (grup per nama, list jam di bawahnya) supaya gampang dipindai
-// dan gampang di-copy sebagai teks polos (tombol "Copy Rekap").
 // ─────────────────────────────────────────────────────────────────────────────
 interface TherapistRecapModalProps {
   date: Date;
@@ -1231,7 +1184,7 @@ function TherapistRecapModal({
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard API blocked (permission/https) — fail silently, no crash.
+      // Clipboard API blocked — fail silently, no crash.
     }
   };
 
@@ -1242,10 +1195,8 @@ function TherapistRecapModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[6px]" />
 
-      {/* Modal card */}
       <div
         className={cn(
           "relative z-10 w-full sm:max-w-[560px] max-h-[90dvh] flex flex-col",
@@ -1255,12 +1206,10 @@ function TherapistRecapModal({
           "animate-in fade-in slide-in-from-bottom-6 duration-300 ease-out",
         )}
       >
-        {/* Mobile drag handle */}
         <div className="sm:hidden flex justify-center pt-3 shrink-0">
           <div className="w-9 h-[3px] rounded-full bg-[var(--muted)]/25" />
         </div>
 
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
@@ -1291,7 +1240,6 @@ function TherapistRecapModal({
           </button>
         </div>
 
-        {/* Summary + copy button */}
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border shrink-0">
           <span className="text-[11px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--foreground)]">
@@ -1329,7 +1277,6 @@ function TherapistRecapModal({
           </button>
         </div>
 
-        {/* Per-therapist groups */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
           {groups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 text-center">
@@ -1350,7 +1297,6 @@ function TherapistRecapModal({
                 key={g.therapistName}
                 className="rounded-xl border border-[var(--border)]/60 overflow-hidden"
               >
-                {/* Therapist header */}
                 <div className="flex items-center justify-between gap-2 bg-[var(--surface-secondary)]/50 px-3.5 py-2.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <UserCircle
@@ -1366,7 +1312,6 @@ function TherapistRecapModal({
                   </span>
                 </div>
 
-                {/* Time-ordered service list */}
                 <div className="divide-y divide-[var(--border)]/40">
                   {g.items.map((item) => {
                     const th = STATUS[item.status] ?? STATUS.Confirmed;
@@ -1414,13 +1359,11 @@ export default function GanttChartBookings({
 }: {
   bookings?: SpaBooking[];
 }) {
-  // Which day's detail modal is open (null = closed) — "Per Hari" mode
   const [selectedDay, setSelectedDay] = useState<{
     date: Date;
     events: ScheduledBooking[];
   } | null>(null);
 
-  // Which day's therapist recap modal is open (null = closed) — "Per Terapis" mode
   const [therapistRecapDay, setTherapistRecapDay] = useState<{
     date: Date;
     groups: TherapistRecapGroup[];
@@ -1428,16 +1371,9 @@ export default function GanttChartBookings({
 
   const [viewMode, setViewMode] = useState<"daily" | "therapist">("daily");
 
-  // `today` is fixed once per mount — purely for rendering "this is today's
-  // column" and as the anchor point for the sliding window below. It is NOT
-  // used to interpret the API's schedule_date strings (see parseSchedule).
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
 
-  // ── Sliding 7-day window ──────────────────────────────────────────────
-  // dayOffset = 0 → window starts today. Negative = window shifted into the
-  // past, positive = shifted into the future. Always moves by 1 day at a
-  // time, so the view never "jumps" a full week like a calendar page-flip.
   const [dayOffset, setDayOffset] = useState(0);
   const isAtToday = dayOffset === 0;
 
@@ -1464,16 +1400,11 @@ export default function GanttChartBookings({
   const goNextDay = () => setDayOffset((o) => o + 1);
   const goToday = () => setDayOffset(0);
 
-  // ── Hour axis (fixed, independent of which days are shown) ───────────
   const hours = useMemo(
     () => Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => START_HOUR + i),
     [],
   );
 
-  // ── Group all bookings (+ their bonus child bookings) by calendar date ─
-  // Used as-is for "Per Hari", and also used as the source of truth for
-  // the day-detail modal in "Per Hari" mode (so the modal always shows
-  // real, unsplit bookings with correct totals/amounts).
   const byDate = useMemo(() => {
     const map = new Map<string, ScheduledBooking[]>();
     bookings.forEach((booking) => {
@@ -1485,13 +1416,6 @@ export default function GanttChartBookings({
     return map;
   }, [bookings]);
 
-  // ── "Per Terapis" split, flattened back into ONE list per date ────────
-  // Same row layout as "Per Hari" (one row per day, lanes handle overlap),
-  // but instead of showing the raw booking as a single block, a booking
-  // with multiple service_variants / multiple therapists is broken into
-  // one block per therapist-assigned unit — so within that single day row
-  // you can see exactly which slice of time belongs to which therapist.
-  // This is also the source used to build the "Rekap Terapis" modal.
   const byDateSplit = useMemo(() => {
     const map = new Map<string, ScheduledBooking[]>();
 
@@ -1499,7 +1423,6 @@ export default function GanttChartBookings({
       const { dateStr, timeStr } = parseSchedule(booking.schedule_date);
       const list = map.get(dateStr) ?? [];
 
-      // Ambil list assignments yang valid (punya client_key)
       const therapistsList = (booking.therapists ?? []).filter(
         (t): t is BookingTherapist => typeof t !== "string",
       );
@@ -1507,19 +1430,16 @@ export default function GanttChartBookings({
       const isParallel = booking.is_parallel ?? false;
       const usedTherapistIds = new Set<number>();
 
-      // Check if we have precise timing data in the therapists list
       const hasPreciseTiming =
         therapistsList.length > 0 &&
         therapistsList.every((t) => t.start_time && t.end_time);
 
       if (hasPreciseTiming) {
         therapistsList.forEach((t, idx) => {
-          // Find the corresponding service variant data for the label
           const variant = booking.service_variants?.find(
             (v) => v.id === t.bms_ms_service_variant_id,
           );
 
-          // Calculate duration from start_time and end_time
           const startMin = parseTimeToMinutes(t.start_time!);
           const endMin = parseTimeToMinutes(t.end_time!);
           const duration = endMin - startMin;
@@ -1540,7 +1460,6 @@ export default function GanttChartBookings({
         return;
       }
 
-      // Helper untuk memproses sekelompok unit (dari variant tunggal atau item bundle)
       const processUnits = (
         variantId: number,
         qty: number,
@@ -1631,7 +1550,6 @@ export default function GanttChartBookings({
 
         booking.service_variants.forEach((variant) => {
           if (variant.type === "bundle_promo") {
-            // Jika bundle, proses setiap item di dalamnya
             variant.items.forEach((item) => {
               const res = processUnits(
                 item.id,
@@ -1643,7 +1561,6 @@ export default function GanttChartBookings({
               if (!isParallel) currentStartTime = res.nextStartTime;
             });
           } else {
-            // Standalone variant
             const qty = variant.quantity ?? variant.pivot?.quantity ?? 1;
             const res = processUnits(
               variant.id,
@@ -1656,7 +1573,6 @@ export default function GanttChartBookings({
           }
         });
       } else {
-        // Fallback jika tidak ada service_variants (legacy)
         const therapists = booking.therapists ?? [booking.therapist_name];
         therapists.forEach((t, idx) => {
           list.push({
@@ -1680,7 +1596,6 @@ export default function GanttChartBookings({
     return map;
   }, [bookings]);
 
-  // ── "Now" line position — only meaningful when today is in view ───────
   const nowPx = useMemo(() => {
     const now = new Date();
     const minutesFromStart =
@@ -1694,7 +1609,6 @@ export default function GanttChartBookings({
   return (
     <>
       <div className="relative w-full overflow-hidden rounded-2xl bg-background border border-border shadow-sm text-[var(--foreground)] mb-8">
-        {/* Grain overlay */}
         <div
           className="pointer-events-none absolute inset-0 z-50 opacity-[0.025] mix-blend-overlay"
           style={{
@@ -1702,7 +1616,6 @@ export default function GanttChartBookings({
           }}
         />
 
-        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b-[0.5px] border-border bg-muted/40">
           <div className="flex flex-col gap-2">
             <h2 className="text-2xl font-semibold tracking-wide text-[var(--foreground)]">
@@ -1759,7 +1672,6 @@ export default function GanttChartBookings({
           </div>
         </div>
 
-        {/* Scrollable timeline */}
         <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:var(--scrollbar)_transparent]">
           <div
             style={{
@@ -1771,7 +1683,6 @@ export default function GanttChartBookings({
                     : HOUR_WIDTH_DAILY),
             }}
           >
-            {/* Hour header (sticky top) */}
             <div className="flex border-b-[0.5px] border-border bg-background/40 sticky top-0 z-30">
               <div
                 className="shrink-0 border-r-[0.5px] border-border"
@@ -1800,18 +1711,12 @@ export default function GanttChartBookings({
               </div>
             </div>
 
-            {/* Day rows — one row per day, in both view modes. The only
-                difference between modes is which map (byDate vs
-                byDateSplit) feeds the blocks for that row. */}
             {days.map((dayDate) => {
               const dateStr = toDateStr(dayDate);
               const isToday = dateStr === todayStr;
 
-              // Real, unsplit bookings — always used for the "Per Hari"
-              // modal so totals/amounts/status stay accurate.
               const originalEvents = byDate.get(dateStr) ?? [];
 
-              // Blocks actually drawn in the row
               const rawEvents =
                 viewMode === "daily"
                   ? originalEvents
@@ -1819,16 +1724,14 @@ export default function GanttChartBookings({
 
               const laneEvents = assignLanes(rawEvents);
               const laneCount = laneEvents[0]?.laneCount ?? 1;
-              const rowH = Math.max(laneCount * LANE_H, 104);
+              // Minimum row tinggi juga dinaikin biar row kosong ga terlalu
+              // mepet dibanding row yang isinya card 4-baris.
+              const rowH = Math.max(laneCount * LANE_H, 140);
 
               const activeCount = originalEvents.filter(
                 (e) => e.status !== "Cancelled",
               ).length;
 
-              // Clicking a day (label or block): in "Per Hari" mode open the
-              // regular booking-list modal; in "Per Terapis" mode open the
-              // per-staff recap built from the already-split events for
-              // that day.
               const openDayDetail = () => {
                 if (viewMode === "therapist") {
                   setTherapistRecapDay({
@@ -1845,7 +1748,6 @@ export default function GanttChartBookings({
                   key={dateStr}
                   className="flex border-b-[0.5px] border-border last:border-b-0 group/row"
                 >
-                  {/* Date label — clickable button */}
                   <button
                     type="button"
                     onClick={openDayDetail}
@@ -1891,7 +1793,6 @@ export default function GanttChartBookings({
                     </span>
                   </button>
 
-                  {/* Timeline area */}
                   <TimelineRow
                     laneEvents={laneEvents}
                     rowH={rowH}
@@ -1907,7 +1808,6 @@ export default function GanttChartBookings({
         </div>
       </div>
 
-      {/* Day Detail Modal — "Per Hari" mode, portal-rendered outside scroll container */}
       {selectedDay && (
         <DayDetailModal
           date={selectedDay.date}
@@ -1916,7 +1816,6 @@ export default function GanttChartBookings({
         />
       )}
 
-      {/* Therapist Recap Modal — "Per Terapis" mode */}
       {therapistRecapDay && (
         <TherapistRecapModal
           date={therapistRecapDay.date}

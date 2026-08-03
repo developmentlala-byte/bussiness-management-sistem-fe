@@ -100,7 +100,7 @@ function BookingsPageInner() {
     start: startOfMonth(currentDateObj),
     end: endOfMonth(currentDateObj),
   });
-  const [useScheduleDate, setUseScheduleDate] = useState<boolean>(false);
+  const [useScheduleDate, setUseScheduleDate] = useState<boolean>(true);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const drawerHeight = useVisualViewportHeight();
@@ -679,13 +679,22 @@ function BookingsPageInner() {
       header: "Source",
       cell: (info) => {
         const src = info.row.original.source ?? "direct";
-        const label = src === "ads" ? "Ads" : "Direct";
+        const labelMap: Record<string, string> = {
+          ads: "Ads",
+          online: "Online",
+          direct: "Direct",
+        };
+        const label = labelMap[src] || "Direct";
+
+        const colorMap: Record<string, "accent" | "success" | "warning"> = {
+          ads: "accent",
+          online: "success",
+          direct: "warning",
+        };
+        const color = colorMap[src] || "warning";
+
         return (
-          <Chip
-            size="sm"
-            variant="primary"
-            color={src === "ads" ? "accent" : "warning"}
-          >
+          <Chip size="sm" variant="primary" color={color}>
             {src === "ads" ? (
               <>
                 <ArrowsMergeIcon
@@ -693,6 +702,10 @@ function BookingsPageInner() {
                   weight="regular"
                 />{" "}
                 {label}
+              </>
+            ) : src === "online" ? (
+              <>
+                <PaperPlaneRight className="size-4" weight="regular" /> {label}
               </>
             ) : (
               <>
@@ -1106,16 +1119,6 @@ function BookingsPageInner() {
             </span>
             <div className="flex bg-surface rounded-full p-1">
               <button
-                onClick={() => setUseScheduleDate(false)}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  !useScheduleDate
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Waktu Dibuat
-              </button>
-              <button
                 onClick={() => setUseScheduleDate(true)}
                 className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
                   useScheduleDate
@@ -1124,6 +1127,16 @@ function BookingsPageInner() {
                 }`}
               >
                 Tanggal Booking
+              </button>
+              <button
+                onClick={() => setUseScheduleDate(false)}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  !useScheduleDate
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Waktu Dibuat
               </button>
             </div>
           </div>
