@@ -728,7 +728,8 @@ function TimelineRow({
         const isBonus = isBonusChildBooking(event);
         const clientName = getClientDisplayName(event);
         const therapistName = getTherapistNames(event);
-
+        const firstVariant = event?.service_variants?.[0];
+        const firstVariantQty = firstVariant?.quantity ?? 1;
         const firstTherapist = event?.therapists?.[0] as any;
         const targetClientKey =
           firstTherapist?.client_key || firstVariant?.client_key;
@@ -742,8 +743,6 @@ function TimelineRow({
         const resourceName = (resourceAssignment as any)?.resource_code ?? "";
         console.log("🚀 ~ TimelineRow ~ resourceName:", resourceAssignment);
 
-        const firstVariant = event?.service_variants?.[0];
-        const firstVariantQty = firstVariant?.quantity ?? 1;
         const serviceName =
           event?.service_variants?.length >= 2
             ? `${firstVariant?.name} (${firstVariantQty}x)`
