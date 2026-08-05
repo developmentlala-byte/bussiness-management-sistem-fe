@@ -1,5 +1,10 @@
 import React, { useMemo } from "react";
-import { CaretDown } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  CloudArrowDownIcon,
+  DownloadSimpleIcon,
+  FileCsvIcon,
+} from "@phosphor-icons/react";
 
 type TopDestinationItem = {
   label: string;
@@ -9,6 +14,8 @@ type TopDestinationItem = {
 
 interface TopDestinationsProps {
   items?: TopDestinationItem[];
+  startDate?: string;
+  endDate?: string;
 }
 
 const DEFAULT_DESTINATIONS: TopDestinationItem[] = [
@@ -95,8 +102,49 @@ function LegendItem({ item }: { item: TopDestinationItem }) {
   );
 }
 
-export default function TopDestinations({ items }: TopDestinationsProps) {
+export default function TopDestinations({
+  items,
+  startDate,
+  endDate,
+}: TopDestinationsProps) {
   const destinations = items && items.length > 0 ? items : DEFAULT_DESTINATIONS;
+
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
+      const params = new URLSearchParams();
+      if (startDate) params.append("start_date", startDate);
+      if (endDate) params.append("end_date", endDate);
+
+      const url = `${baseUrl}/payment/reports/top-services/export?${params.toString()}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "ngrok-skip-browser-warning": "true",
+        },
+      });
+
+      if (!response.ok) throw new Error("Export failed");
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute(
+        "download",
+        `service-favorites-${new Date().toISOString().split("T")[0]}.xlsx`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error("Export error:", error);
+      alert("Gagal mengekspor data Excel");
+    }
+  };
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
@@ -111,9 +159,10 @@ export default function TopDestinations({ items }: TopDestinationsProps) {
         </div>
         <button
           type="button"
+          onClick={handleExport}
           className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-foreground)]"
         >
-          Periode Saat Ini <CaretDown size={11} weight="bold" />
+          Export <FileCsvIcon className="size-4" weight="bold" />
         </button>
       </div>
 

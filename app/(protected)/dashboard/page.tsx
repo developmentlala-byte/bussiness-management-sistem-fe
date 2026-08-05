@@ -38,6 +38,10 @@ type BookingSummaryResponse = {
       value: number;
       trend: { value: number; is_new: boolean };
     };
+    total_service_items: {
+      value: number;
+      trend: { value: number; is_new: boolean };
+    };
     total_paid_bookings: {
       value: number;
       trend: { value: number; is_new: boolean };
@@ -853,6 +857,19 @@ export default function DashboardOverviewPage() {
         context: `vs last ${customerDays} Hari`,
       },
       {
+        label: "Layanan dilakukan",
+        value: formatNumber(
+          totalBookingsResponse?.data?.total_service_items?.value ?? 0,
+        ),
+        trend: `${Math.abs(totalBookingsResponse?.data?.total_service_items?.trend.value ?? 0)}%`,
+        trendDirection:
+          (totalBookingsResponse?.data?.total_service_items?.trend.value ??
+            0) >= 0
+            ? ("up" as const)
+            : ("down" as const),
+        context: `vs last ${bookingDays} Hari`,
+      },
+      {
         label: "Pendapatan",
         value: IDR(totalRevenueResponse?.data?.summary?.total_revenue ?? 0),
         trend: `${Math.abs(totalRevenueResponse?.data?.summary?.trend.value ?? 0)}%`,
@@ -1168,7 +1185,11 @@ export default function DashboardOverviewPage() {
         </div>
 
         <div className="col-span-12 lg:col-span-5 min-w-0">
-          <TopDestinations items={topServicesResponse?.data ?? []} />
+          <TopDestinations
+            items={topServicesResponse?.data ?? []}
+            startDate={dateParams?.start_date}
+            endDate={dateParams?.end_date}
+          />
         </div>
 
         <div className="col-span-12 md:col-span-6 lg:col-span-4 min-w-0">
