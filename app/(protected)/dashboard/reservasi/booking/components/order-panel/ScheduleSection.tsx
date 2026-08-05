@@ -66,21 +66,18 @@ export function ScheduleSection({
                 Pilih jika Anda datang bersama pasangan/teman
               </span>
             </div>
-            <Switch
-              size="sm"
-              isSelected={form.isParallel}
-              onValueChange={(val) =>
-                setForm((prev) => ({ ...prev, isParallel: val }))
-              }
-              aria-label="Booking dilakukan bersamaan"
-              classNames={{
-                wrapper: "group-data-[selected=true]:bg-[#B55368]",
-              }}
-            >
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-            </Switch>
+<Switch
+  size="sm"
+  isSelected={form.isParallel}
+  onChange={(val) =>
+    setForm((prev) => ({ ...prev, isParallel: val }))
+  }
+  aria-label="Booking dilakukan bersamaan"
+>
+  <Switch.Control className="data-[selected=true]:bg-[#B55368]">
+    <Switch.Thumb />
+  </Switch.Control>
+</Switch>
           </div>
         </div>
 
