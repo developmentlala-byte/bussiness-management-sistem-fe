@@ -6,7 +6,8 @@ export type PaymentStatus =
   | "Paid"
   | "Refunded"
   | "Expired"
-  | "Pending";
+  | "Pending"
+  | "Free";
 
 export type BookingLineType = "service_variant" | "bundle_promo";
 
@@ -280,6 +281,7 @@ export interface SpaBooking {
   created_at: string;
   updated_at: string;
   is_parallel?: boolean;
+  is_confirmed_fixed?: boolean;
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   totalAmount?: number;

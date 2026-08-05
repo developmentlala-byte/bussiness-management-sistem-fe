@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { useMemo } from "react";
 // Sesuaikan path import api method Anda jika berbeda
-import { apiGet, apiPost, apiPut, apiDelete } from "../services/api";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "../services/api";
 
 // ==========================================
 // 1. GET HOOK (FETCH)
@@ -177,7 +177,42 @@ export const usePut = <
 };
 
 // ==========================================
-// 4. REMOVE/DELETE HOOK
+// 4. PATCH HOOK
+// ==========================================
+export const usePatch = <
+  TData = unknown,
+  TVariables = unknown,
+  TContext = unknown,
+>(
+  url: UrlType<TVariables>,
+  options: CustomMutationOptions<TData, TVariables, TContext> = {},
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation<TData, Error, TVariables, TContext>({
+    mutationFn: (data: TVariables) => {
+      const finalUrl = typeof url === "function" ? url(data) : url;
+      return apiPatch(finalUrl, data);
+    },
+    onMutate: options.onMutate,
+    onSuccess: (data, variables, context) => {
+      if (Array.isArray(options.invalidate)) {
+        options.invalidate.forEach((key) => {
+          queryClient.invalidateQueries({ queryKey: key, exact: false });
+        });
+      }
+
+      if (typeof options.onSuccess === "function") {
+        options.onSuccess(data, variables, context);
+      }
+    },
+    onError: options.onError,
+    onSettled: options.onSettled,
+  });
+};
+
+// ==========================================
+// 5. REMOVE/DELETE HOOK
 // ==========================================
 export const useRemove = <
   TData = unknown,

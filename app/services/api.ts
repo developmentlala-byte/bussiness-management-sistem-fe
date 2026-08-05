@@ -18,6 +18,12 @@ export const apiPut = async (url: string, data?: any | undefined) => {
   return responseData;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const apiPatch = async (url: string, data?: any | undefined) => {
+  const { data: responseData } = await axiosInstance.patch(url, data);
+  return responseData;
+};
+
 export const apiDelete = async (url: string) => {
   const { data: responseData } = await axiosInstance.delete(url);
   return responseData;

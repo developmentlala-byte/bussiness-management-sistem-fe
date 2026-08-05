@@ -189,10 +189,7 @@ export default function TherapistSchedulePage() {
           bookingCode: booking.booking_code,
           customerName: booking.customer_name,
           serviceName: variantName,
-          startTime:
-            startTime ||
-            booking.schedule_date.split(" ")[1]?.substring(0, 5) ||
-            "--:--",
+          startTime: startTime || "--:--",
           endTime: endTime || "--:--",
           duration: duration,
           resourceName: resource?.resource_name || "TBA",

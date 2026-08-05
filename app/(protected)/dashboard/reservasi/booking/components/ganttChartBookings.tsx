@@ -178,11 +178,14 @@ const getTherapistNames = (event: SpaBooking): string => {
     const joined = therapists
       .map((t) => {
         if (typeof t === "string") return t;
-        if (t?.name) return t.name;
-        if (t?.staff) {
-          const s = t.staff;
-          return trim(`${s.first_name} ${s.last_name ?? ""}`);
-        }
+        const name =
+          (t as any).name ||
+          (t as any).first_name ||
+          (t as any).staff?.first_name ||
+          "";
+        const lastName =
+          (t as any).last_name || (t as any).staff?.last_name || "";
+        if (name) return trim(`${name} ${lastName}`);
         return null;
       })
       .filter(Boolean)
@@ -728,6 +731,8 @@ function TimelineRow({
         const isBonus = isBonusChildBooking(event);
         const clientName = getClientDisplayName(event);
         const therapistName = getTherapistNames(event);
+        const firstVariant = event?.service_variants?.[0];
+        const firstVariantQty = firstVariant?.quantity ?? 1;
 
         const firstTherapist = event?.therapists?.[0] as any;
         const targetClientKey =
@@ -740,13 +745,10 @@ function TimelineRow({
         );
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const resourceName = (resourceAssignment as any)?.resource_code ?? "";
-        console.log("🚀 ~ TimelineRow ~ resourceName:", resourceAssignment);
 
-        const firstVariant = event?.service_variants?.[0];
-        const firstVariantQty = firstVariant?.quantity ?? 1;
         const serviceName =
           event?.service_variants?.length >= 2
-            ? `${firstVariant?.name} (${firstVariantQty}x)`
+            ? `${firstVariant?.name} (${1}x)`
             : displayServiceName;
 
         return (

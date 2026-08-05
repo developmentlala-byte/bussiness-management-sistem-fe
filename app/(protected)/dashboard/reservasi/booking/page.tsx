@@ -12,6 +12,7 @@ import {
   RangeCalendar,
   TextField,
   InputGroup,
+  Switch,
 } from "@heroui/react";
 import type { Row } from "@tanstack/react-table";
 import {
@@ -49,8 +50,9 @@ import {
   today,
 } from "@internationalized/date";
 import GanttChartBookings from "./components/ganttChartBookings";
-import BookingModal from "./components/bookingModal";
-import { useApiFetch, usePost, useRemove } from "@/app/libs/use-http";
+import CreateBookingModal from "./components/CreateBookingModal";
+import EditBookingModal from "./components/EditBookingModal";
+import { useApiFetch, usePost, useRemove, usePatch } from "@/app/libs/use-http";
 import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -96,6 +98,16 @@ function BookingsPageInner() {
   const timeZone = getLocalTimeZone();
   const currentDateObj = today(timeZone);
 
+  const BOOKING_STATUS_OPTIONS = useMemo(
+    () => [
+      { id: "Pending", label: "Pending", color: "bg-amber-400" },
+      { id: "Confirmed", label: "Confirmed", color: "bg-indigo-400" },
+      { id: "Completed", label: "Completed", color: "bg-emerald-400" },
+      { id: "Cancelled", label: "Cancelled", color: "bg-red-500" },
+    ],
+    [],
+  );
+
   const [dateRange, setDateRange] = useState({
     start: startOfMonth(currentDateObj),
     end: endOfMonth(currentDateObj),
@@ -119,6 +131,24 @@ function BookingsPageInner() {
   const [isChartVisible, setIsChartVisible] = useState<boolean>(true);
   const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [activeStatusIds, setActiveStatusIds] = useState<string[]>(
+    BOOKING_STATUS_OPTIONS.map((s) => s.id),
+  );
+
+  // Reset page index when filters change
+  useEffect(() => {
+    setPageIndex(0);
+  }, [
+    dateRange.start,
+    dateRange.end,
+    useScheduleDate,
+    debouncedSearch,
+    selectedStaffIds,
+    selectedRating,
+    activeStatusIds,
+  ]);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -138,16 +168,26 @@ function BookingsPageInner() {
     const base = useScheduleDate
       ? { start_date: startDateStr, end_date: endDateStr }
       : { created_start_date: startDateStr, created_end_date: endDateStr };
-    const params = debouncedSearch
+    const params: Record<string, any> = debouncedSearch
       ? { ...base, search: debouncedSearch }
-      : base;
-    const withStaff =
-      selectedStaffIds.length > 0
-        ? { ...params, staff_ids: selectedStaffIds }
-        : params;
-    return selectedRating !== null
-      ? { ...withStaff, rating: selectedRating }
-      : withStaff;
+      : { ...base };
+
+    if (selectedStaffIds.length > 0) {
+      params.staff_ids = selectedStaffIds.join(",");
+    }
+
+    if (selectedRating !== null) {
+      params.rating = selectedRating;
+    }
+
+    if (activeStatusIds.length > 0) {
+      params.status = activeStatusIds.join(",");
+    }
+
+    params.page = pageIndex + 1;
+    params.limit = pageSize;
+
+    return params;
   }, [
     endDateStr,
     startDateStr,
@@ -155,10 +195,19 @@ function BookingsPageInner() {
     debouncedSearch,
     selectedStaffIds,
     selectedRating,
+    activeStatusIds,
+    pageIndex,
+    pageSize,
   ]);
 
   const { data, isLoading: isBookingsLoading } = useApiFetch<{
     data: SpaBooking[];
+    meta?: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+    };
   }>(
     [
       "bookings",
@@ -168,6 +217,9 @@ function BookingsPageInner() {
       debouncedSearch,
       selectedStaffIds.join(","),
       selectedRating ?? "all",
+      activeStatusIds.join(","),
+      pageIndex,
+      pageSize,
     ],
     "/master/bookings",
     bookingQueryParams,
@@ -189,26 +241,50 @@ function BookingsPageInner() {
     { bookingId: number; idempotency_key: string }
   >((payload) => `/master/bookings/${payload.bookingId}/cash-payment`, {});
 
+  const payFree = usePost<
+    { data: { booking_code: string; status: string; booking: SpaBooking } },
+    { bookingId: number }
+  >((payload) => `/master/bookings/${payload.bookingId}/pay-free`, {
+    invalidate: [["bookings"]],
+    onSuccess: (res) => {
+      if (res.data?.booking) {
+        setSelectedBooking(res.data.booking);
+      }
+      toast.success("Pembayaran Free (Influencer/Ads) berhasil");
+    },
+    onError: (err: unknown) => {
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.danger("Gagal memproses pembayaran free", {
+        description: error.response?.data?.message || "Terjadi kesalahan.",
+      });
+    },
+  });
+
+  const toggleConfirmed = usePatch<
+    { data: SpaBooking },
+    { bookingId: number; is_confirmed_fixed: boolean }
+  >((payload) => `/master/bookings/${payload.bookingId}/toggle-confirmed`, {
+    invalidate: [["bookings"]],
+    onSuccess: (res) => {
+      if (res.data) {
+        setSelectedBooking(res.data);
+      }
+      toast.success("Status konfirmasi berhasil diperbarui");
+    },
+    onError: (err: unknown, variables) => {
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.danger("Gagal memperbarui status konfirmasi", {
+        description: error.response?.data?.message || "Terjadi kesalahan.",
+      });
+      // Revert optimistic UI if needed (but we'll rely on invalidate)
+    },
+  });
+
+
+
   const bookings = useMemo(() => data?.data ?? [], [data]);
 
-  const BOOKING_STATUS_OPTIONS = useMemo(
-    () => [
-      { id: "Pending", label: "Pending", color: "bg-amber-400" },
-      { id: "Confirmed", label: "Confirmed", color: "bg-indigo-400" },
-      { id: "Completed", label: "Completed", color: "bg-emerald-400" },
-      { id: "Cancelled", label: "Cancelled", color: "bg-red-500" },
-    ],
-    [],
-  );
-
-  const [activeStatusIds, setActiveStatusIds] = useState<string[]>(
-    BOOKING_STATUS_OPTIONS.map((s) => s.id),
-  );
-
-  const filteredBookings = useMemo(() => {
-    const set = new Set(activeStatusIds);
-    return bookings.filter((b) => set.has(b.status));
-  }, [activeStatusIds, bookings]);
+  const filteredBookings = bookings;
 
   const totalAmount = useMemo(
     () =>
@@ -480,6 +556,41 @@ function BookingsPageInner() {
       window.location.href = `/payment/${encodeURIComponent(bookingCode)}/result`;
     } catch {
       toast.warning("Gagal memproses pembayaran cash");
+    }
+  };
+
+  const handlePayFree = async () => {
+    if (!selectedBooking?.id || payFree.isPending) return;
+    try {
+      const response = await payFree.mutateAsync({
+        bookingId: Number(selectedBooking.id),
+      });
+      const bookingCode =
+        response?.data?.booking_code ?? selectedBooking.booking_code;
+      // window.location.href = `/payment/${encodeURIComponent(bookingCode)}/result`;
+    } catch {
+      // toast.warning handled in mutation
+    }
+  };
+
+  const handleToggleConfirmed = async (isSelected: boolean) => {
+    if (!selectedBooking?.id || toggleConfirmed.isPending) return;
+
+    // Optimistic UI update
+    setSelectedBooking((prev) =>
+      prev ? { ...prev, is_confirmed_fixed: isSelected } : null,
+    );
+
+    try {
+      await toggleConfirmed.mutateAsync({
+        bookingId: Number(selectedBooking.id),
+        is_confirmed_fixed: isSelected,
+      });
+    } catch {
+      // Revert optimistic update (done by React Query invalidate or manual revert)
+      setSelectedBooking((prev) =>
+        prev ? { ...prev, is_confirmed_fixed: !isSelected } : null,
+      );
     }
   };
 
@@ -950,8 +1061,6 @@ function BookingsPageInner() {
     );
   };
 
-  console.log("🚀 ~ BookingsPageInner ~ selectedBooking:", selectedBooking);
-  console.log("🚀 ~ BookingsPageInner ~ selectedBooking:", selectedBooking);
   return (
     <div
       className="relative flex flex-col w-full"
@@ -1012,13 +1121,20 @@ function BookingsPageInner() {
                 style={{ height: drawerHeight }}
               >
                 <Drawer.CloseTrigger className="absolute right-4 top-4 z-10" />
-                <BookingModal
-                  key={`${bookingModalAction}-${editingBooking?.id ?? "new"}`}
-                  isOpen={createBookingDrawer.isOpen}
-                  action={bookingModalAction}
-                  initialBooking={editingBooking}
-                  onSaved={createBookingDrawer.close}
-                />
+                {bookingModalAction === "create" ? (
+                  <CreateBookingModal
+                    isOpen={createBookingDrawer.isOpen}
+                    onSaved={createBookingDrawer.close}
+                  />
+                ) : (
+                  editingBooking && (
+                    <EditBookingModal
+                      isOpen={createBookingDrawer.isOpen}
+                      initialBooking={editingBooking}
+                      onSaved={createBookingDrawer.close}
+                    />
+                  )
+                )}
               </Drawer.Dialog>
             </Drawer.Content>
           </Drawer.Backdrop>
@@ -1286,13 +1402,19 @@ function BookingsPageInner() {
       <DataTable
         columns={columns}
         data={filteredBookings}
-        defaultPageSize={10}
+        defaultPageSize={pageSize}
         isLoading={isBookingsLoading}
         getRowCanExpand={(row) =>
           (row.original.child_bookings ?? []).length > 0
         }
         renderExpandedRow={renderExpandedBookingRow}
         onRowClick={handleOpenRating}
+        manualPagination={true}
+        pageCount={data?.meta?.last_page ?? 0}
+        pageIndex={pageIndex}
+        onPageChange={setPageIndex}
+        onPageSizeChange={setPageSize}
+        totalRows={data?.meta?.total ?? 0}
       />
 
       {/* DETAIL DRAWER */}
@@ -1332,6 +1454,28 @@ function BookingsPageInner() {
                             {selectedBooking.status}
                           </p>
                         </div>
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
+                        <div className="flex flex-col gap-1">
+                          <p className="font-semibold">Konfirmasi Tetap</p>
+                          <p className="text-xs text-muted-foreground">
+                            Jika aktif, booking tidak akan di-cancel otomatis
+                            dan jam ini akan terkunci.
+                          </p>
+                        </div>
+                        <Switch
+                          isSelected={selectedBooking.is_confirmed_fixed}
+                          onChange={handleToggleConfirmed}
+                          isDisabled={toggleConfirmed.isPending}
+                          aria-label="Konfirmasi Tetap"
+                        >
+                          <Switch.Content>
+                            <Switch.Control>
+                              <Switch.Thumb />
+                            </Switch.Control>
+                          </Switch.Content>
+                        </Switch>
                       </div>
 
                       <div className="grid gap-4 sm:grid-cols-2">
@@ -1582,6 +1726,16 @@ function BookingsPageInner() {
                             isDisabled={payCash.isPending}
                           >
                             {payCash.isPending ? "Memproses..." : "Bayar Cash"}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="mt-2 w-full rounded-xl"
+                            onClick={handlePayFree}
+                            isDisabled={payFree.isPending}
+                          >
+                            {payFree.isPending
+                              ? "Memproses..."
+                              : "Bayar Free (Influencer/Ads)"}
                           </Button>
                         </div>
                       )}
