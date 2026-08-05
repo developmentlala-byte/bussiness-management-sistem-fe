@@ -215,7 +215,7 @@ function StatCard({
 }) {
   return (
     <div
-      className="flex flex-col justify-between min-w-0"
+      className="flex flex-col justify-between min-w-0 sas"
       style={{
         backgroundColor: "var(--surface)",
         border: "1px solid var(--border)",

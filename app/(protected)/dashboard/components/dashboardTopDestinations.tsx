@@ -71,7 +71,9 @@ function DonutChart({ items }: { items: TopDestinationItem[] }) {
         <span className="text-lg font-bold leading-none text-[var(--foreground)]">
           {items.length}
         </span>
-        <span className="mt-0.5 text-[8px] text-[var(--muted)]">Services</span>
+        <span className="mt-0.5 text-[8px] text-[var(--muted)] asa">
+          Services
+        </span>
       </div>
     </div>
   );
