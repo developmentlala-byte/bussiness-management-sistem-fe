@@ -733,7 +733,6 @@ function TimelineRow({
         const therapistName = getTherapistNames(event);
         const firstVariant = event?.service_variants?.[0];
         const firstVariantQty = firstVariant?.quantity ?? 1;
-
         const firstTherapist = event?.therapists?.[0] as any;
         const targetClientKey =
           firstTherapist?.client_key || firstVariant?.client_key;
