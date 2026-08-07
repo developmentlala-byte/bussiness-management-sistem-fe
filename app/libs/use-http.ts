@@ -227,7 +227,7 @@ export const useRemove = <
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: (data: TVariables) => {
       const finalUrl = typeof url === "function" ? url(data) : url;
-      return apiDelete(finalUrl);
+      return apiDelete(finalUrl, data);
     },
     onMutate: options.onMutate,
     onSuccess: (data, variables, context) => {

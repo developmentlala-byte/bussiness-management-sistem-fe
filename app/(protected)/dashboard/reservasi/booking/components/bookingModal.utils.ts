@@ -117,6 +117,10 @@ export const getCurrentMonth = (): string => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 };
 
+export const generateUniqueGroupId = (): string => {
+  return `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+};
+
 export function buildVariantUnitKeysFromBooking(
   booking: SpaBooking,
   isParallel: boolean = false,
@@ -134,7 +138,7 @@ export function buildVariantUnitKeysFromBooking(
   }> = [];
 
   (booking.service_variants ?? []).forEach((line, lineIdx) => {
-    const groupId = line.group_id ?? `group_${lineIdx + 1}`;
+    const groupId = line.group_id ?? generateUniqueGroupId();
 
     if (isBundlePromoLine(line)) {
       const bundleQty = Math.max(1, Number(line.quantity ?? 1));
@@ -223,10 +227,13 @@ export function buildInitialCartLines(
   booking: SpaBooking,
   availableVariants: Variant[],
 ): CartLine[] {
-  return (booking.service_variants ?? []).map((line) => {
+  return (booking.service_variants ?? []).map((line, lineIdx) => {
+    const groupId = line.group_id ?? generateUniqueGroupId();
+
     if (isBundlePromoLine(line)) {
       return {
         kind: "bundle" as const,
+        groupId,
         bundle: {
           id: Number(line.bundle_promo_id),
           name: line.name,
@@ -269,6 +276,7 @@ export function buildInitialCartLines(
     const variantFromApi = availableVariants.find((v) => v.id === line.id);
     return {
       kind: "service" as const,
+      groupId,
       isFree: !!line.is_free,
       qty: Math.max(1, Number(line.quantity ?? line.pivot?.quantity ?? 1)),
       variant: {

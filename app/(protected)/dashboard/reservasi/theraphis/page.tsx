@@ -153,35 +153,33 @@ export default function TherapistSchedulePage() {
         // (slot ruangan/kursi per service_variant) — start_time/end_time di
         // level therapist sering null. Prioritaskan jam dari resource dulu,
         // baru fallback ke therapist-level kalau itu suatu saat terisi.
-        const startTime =
-          formatTime(resource?.start_time) || formatTime(t.start_time);
-        const endTime =
-          formatTime(resource?.end_time) || formatTime(t.end_time);
+        const startTimeRaw = resource?.start_time || t.start_time;
+        const endTimeRaw = resource?.end_time || t.end_time;
+
+        const startTime = formatTime(startTimeRaw);
+        let endTime = formatTime(endTimeRaw);
 
         let duration = 0;
-        if (startTime && endTime) {
-          const startParts = startTime.split(":").map(Number);
-          const endParts = endTime.split(":").map(Number);
-          duration =
-            endParts[0] * 60 +
-            endParts[1] -
-            (startParts[0] * 60 + startParts[1]);
-        }
+        booking.service_variants?.forEach((v) => {
+          if (v.id === variantId) {
+            duration = v.duration_minutes || 0;
+          } else if (isBundlePromoLine(v)) {
+            const item = v.items?.find((i) => i.id === variantId);
+            if (item) duration = item.duration_minutes || 0;
+          }
+        });
 
-        // Fallback to variant duration if time-based calculation failed or was 0
-        if (duration <= 0) {
-          booking.service_variants?.forEach((v) => {
-            if (v.id === variantId) {
-              duration = v.duration_minutes || 0;
-            } else if (isBundlePromoLine(v)) {
-              const item = v.items?.find((i) => i.id === variantId);
-              if (item) duration = item.duration_minutes || 0;
-            }
-          });
-        }
-
-        // Final fallback to booking duration if still 0
+        // Fallback to booking duration if still 0
         if (duration <= 0) duration = booking.duration_minutes || 0;
+
+        // Jika startTime ada tapi endTime kosong, kalkulasi dari durasi
+        if (startTime && !endTime && duration > 0) {
+          const [h, m] = startTime.split(":").map(Number);
+          const totalMin = h * 60 + m + duration;
+          const endH = Math.floor(totalMin / 60) % 24;
+          const endM = totalMin % 60;
+          endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+        }
 
         const tasks = schedulesMap.get(staffId) || [];
         tasks.push({

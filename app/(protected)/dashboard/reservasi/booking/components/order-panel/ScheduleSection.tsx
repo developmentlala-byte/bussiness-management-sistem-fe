@@ -66,18 +66,18 @@ export function ScheduleSection({
                 Pilih jika Anda datang bersama pasangan/teman
               </span>
             </div>
-<Switch
-  size="sm"
-  isSelected={form.isParallel}
-  onChange={(val) =>
-    setForm((prev) => ({ ...prev, isParallel: val }))
-  }
-  aria-label="Booking dilakukan bersamaan"
->
-  <Switch.Control className="data-[selected=true]:bg-[#B55368]">
-    <Switch.Thumb />
-  </Switch.Control>
-</Switch>
+            <Switch
+              size="sm"
+              isSelected={form.isParallel}
+              onChange={(val) =>
+                setForm((prev) => ({ ...prev, isParallel: val }))
+              }
+              aria-label="Booking dilakukan bersamaan"
+            >
+              <Switch.Control className="data-[selected=true]:bg-[#B55368]">
+                <Switch.Thumb />
+              </Switch.Control>
+            </Switch>
           </div>
         </div>
 
@@ -104,7 +104,7 @@ export function ScheduleSection({
           <Calendar.Grid>
             <Calendar.GridHeader className="bg-transparent">
               {(day) => (
-                <Calendar.HeaderCell className="text-[11px] font-bold text-[#B5AFA9]">
+                <Calendar.HeaderCell className="text-[11px] font-bold text-[#B5AFA9]!">
                   {day}
                 </Calendar.HeaderCell>
               )}
@@ -113,11 +113,11 @@ export function ScheduleSection({
               {(date) => (
                 <Calendar.Cell
                   className={[
-                    "p-0.5 h-9 w-full rounded-lg text-[13px] font-medium transition-all duration-200",
-                    "data-[unavailable=true]:cursor-not-allowed data-[unavailable=true]:text-[#EDE8E3]",
-                    "data-[selected=true]:bg-[#B55368] data-[selected=true]:text-white! data-[selected=true]:font-bold data-[selected=true]:shadow-[0_4px_12px_rgba(181,83,104,0.2)]",
-                    "data-[today=true]:text-[#B55368] data-[today=true]:font-bold",
-                    "hover:bg-[#FEF1F4] hover:text-[#B55368]",
+                    "p-0.5 h-9 w-full text-black! rounded-lg text-[13px] font-medium transition-all duration-200",
+                    "data-[unavailable=true]:cursor-not-allowed! data-[unavailable=true]:text-[#EDE8E3]!",
+                    "data-[selected=true]:bg-[#B55368]! data-[selected=true]:text-white! data-[selected=true]:font-bold data-[selected=true]:shadow-[0_4px_12px_rgba(181,83,104,0.2)]!",
+                    "data-[today=true]:text-[#B55368]! data-[today=true]:font-bold!",
+                    "hover:bg-[#FEF1F4]! hover:text-[#B55368]!",
                   ].join(" ")}
                   date={date}
                 />

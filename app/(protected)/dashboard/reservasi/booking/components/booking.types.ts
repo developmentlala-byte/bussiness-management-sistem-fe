@@ -34,8 +34,8 @@ export interface BogoEligibleService {
 }
 
 export type CartLine =
-  | { kind: "service"; variant: Variant; qty: number; isFree?: boolean }
-  | { kind: "bundle"; bundle: BundlePromo; pricing: BundlePricing };
+  | { kind: "service"; variant: Variant; qty: number; isFree?: boolean; groupId?: string }
+  | { kind: "bundle"; bundle: BundlePromo; pricing: BundlePricing; groupId?: string };
 
 export interface ExistingTherapist {
   id: number;

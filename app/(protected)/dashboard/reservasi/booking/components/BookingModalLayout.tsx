@@ -98,6 +98,7 @@ interface BookingModalLayoutProps {
   toggleBundle: (b: BundlePromo) => void;
   toggleFreeService: (s: BogoEligibleService) => void;
   removeLine: (i: number) => void;
+  reorderCartLines: (oldIndex: number, newIndex: number) => void;
   updateServiceQty: (i: number, q: number) => void;
   updateVariantQty: (id: number, q: number) => void;
   handleBonusScheduleModeChange: (m: "same_date" | "custom_date") => void;
@@ -130,7 +131,7 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
     viewingMonth, setViewingMonth, mobileView, setMobileView,
     bonusBookingForm, selectedFreeVariant, selectedServiceVariantIds,
     selectedBundle, customerBookingCount, toggleService, toggleBundle,
-    toggleFreeService, removeLine, updateServiceQty, updateVariantQty,
+    toggleFreeService, removeLine, reorderCartLines, updateServiceQty, updateVariantQty,
     handleBonusScheduleModeChange, handleBonusDateChange, handleBonusSlotSelect,
     handleBonusTherapistChange, isBonusSlotConflictingWithPaidBooking,
     isBogoActive, bogoCapAmount, bogoEligibleServices, isBonusBlockedByPaidSelection,
@@ -228,6 +229,7 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
             setForm={updateForm}
             cartLines={cartLines}
             onRemoveLine={removeLine}
+            onReorderLines={reorderCartLines}
             onUpdateServiceQty={updateServiceQty}
             totalDur={totalDur}
             selectedServiceVariantIds={selectedServiceVariantIds}

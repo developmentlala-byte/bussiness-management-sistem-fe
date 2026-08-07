@@ -25,6 +25,7 @@ import {
   toFormDateTime,
   buildExistingTherapists,
   eligibleTherapistIdsForVariant,
+  generateUniqueGroupId,
 } from "./bookingModal.utils";
 import type {
   Variant,
@@ -63,11 +64,15 @@ export function useBookingFormBase({
   );
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [browseMode, setBrowseMode] = useState<"services" | "bundles">("services");
+  const [browseMode, setBrowseMode] = useState<"services" | "bundles">(
+    "services",
+  );
   const [cat, setCat] = useState("spa-wellness-6a3e4be004fc9");
   const [search, setSearch] = useState("");
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
-  const [step, setStep] = useState<BookingStep>(isEdit ? "confirm" : "customer");
+  const [step, setStep] = useState<BookingStep>(
+    isEdit ? "confirm" : "customer",
+  );
   const [form, setForm] = useState<FormState>({
     name: isEdit ? (initialBooking?.customer_name ?? "") : "",
     phone: isEdit ? (initialBooking?.customer_phone ?? "") : "",
@@ -121,13 +126,14 @@ export function useBookingFormBase({
   );
   const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
   const [focusBogo, setFocusBogo] = useState(false);
-  const [bonusBookingForm, setBonusBookingForm] = useState<BonusBookingFormState>({
-    scheduleMode: "same_date",
-    date: "",
-    slotTime: "",
-    staffAssignments: [],
-    resourceAssignments: [],
-  });
+  const [bonusBookingForm, setBonusBookingForm] =
+    useState<BonusBookingFormState>({
+      scheduleMode: "same_date",
+      date: "",
+      slotTime: "",
+      staffAssignments: [],
+      resourceAssignments: [],
+    });
 
   // ── API Fetches ────────────────────────────────────────────────────────────
   const { data: variantsResp, isLoading: variantsLoading } = useApiFetch<{
@@ -159,8 +165,14 @@ export function useBookingFormBase({
     }));
   }, [variantsResp]);
 
-  const activeBundles: BundlePromo[] = useMemo(() => bundlesResp?.data ?? [], [bundlesResp]);
-  const availableResources: Resource[] = useMemo(() => resourcesResp?.data ?? [], [resourcesResp]);
+  const activeBundles: BundlePromo[] = useMemo(
+    () => bundlesResp?.data ?? [],
+    [bundlesResp],
+  );
+  const availableResources: Resource[] = useMemo(
+    () => resourcesResp?.data ?? [],
+    [resourcesResp],
+  );
 
   useEffect(() => {
     if (form.date) {
@@ -178,7 +190,7 @@ export function useBookingFormBase({
     }> = [];
 
     cartLines.forEach((line, lineIdx) => {
-      const groupId = `group_${lineIdx + 1}`;
+      const groupId = line.groupId ?? generateUniqueGroupId();
 
       if (line.kind === "service") {
         if (line.isFree) return;
@@ -276,7 +288,12 @@ export function useBookingFormBase({
     });
 
     return result;
-  }, [form.slotTime, selectedServiceVariantUnits, availableVariants, form.isParallel]);
+  }, [
+    form.slotTime,
+    selectedServiceVariantUnits,
+    availableVariants,
+    form.isParallel,
+  ]);
 
   // Sync staff assignments
   useEffect(() => {
@@ -295,7 +312,9 @@ export function useBookingFormBase({
       }
 
       selectedServiceVariantUnits.forEach((unit) => {
-        const existing = currentAssignments.find((a) => a.client_key === unit.key);
+        const existing = currentAssignments.find(
+          (a) => a.client_key === unit.key,
+        );
         if (existing) {
           newAssignments.push(existing);
           usedInNew.add(unit.key);
@@ -312,7 +331,10 @@ export function useBookingFormBase({
         newAssignments.push({
           client_key: unit.key,
           service_variant_id: unit.variantId,
-          staff_id: !prev.isParallel && sameVariantSibling ? sameVariantSibling.staff_id : 0,
+          staff_id:
+            !prev.isParallel && sameVariantSibling
+              ? sameVariantSibling.staff_id
+              : 0,
         });
       });
 
@@ -322,7 +344,9 @@ export function useBookingFormBase({
         newAssignments.length !== currentAssignments.length ||
         newAssignments.some((a, i) => {
           const ca = currentAssignments[i];
-          return !ca || a.client_key !== ca.client_key || a.staff_id !== ca.staff_id;
+          return (
+            !ca || a.client_key !== ca.client_key || a.staff_id !== ca.staff_id
+          );
         });
 
       if (!isChanged) return prev;
@@ -332,7 +356,11 @@ export function useBookingFormBase({
 
   // Sync resource assignments
   useEffect(() => {
-    if (isEdit && cartLines.length === 0 && form.resourceAssignments.length > 0) {
+    if (
+      isEdit &&
+      cartLines.length === 0 &&
+      form.resourceAssignments.length > 0
+    ) {
       return;
     }
 
@@ -347,7 +375,9 @@ export function useBookingFormBase({
       }
 
       selectedServiceVariantUnits.forEach((unit) => {
-        const existing = currentAssignments.find((a) => a.client_key === unit.key);
+        const existing = currentAssignments.find(
+          (a) => a.client_key === unit.key,
+        );
         if (existing) {
           newAssignments.push(existing);
           usedInNew.add(unit.key);
@@ -364,13 +394,19 @@ export function useBookingFormBase({
         });
       });
 
-      newAssignments.sort((a, b) => (a.client_key ?? "").localeCompare(b.client_key ?? ""));
+      newAssignments.sort((a, b) =>
+        (a.client_key ?? "").localeCompare(b.client_key ?? ""),
+      );
 
       const isChanged =
         newAssignments.length !== currentAssignments.length ||
         newAssignments.some((a, i) => {
           const ca = currentAssignments[i];
-          return !ca || a.client_key !== ca.client_key || a.resource_id !== ca.resource_id;
+          return (
+            !ca ||
+            a.client_key !== ca.client_key ||
+            a.resource_id !== ca.resource_id
+          );
         });
 
       if (!isChanged) return prev;
@@ -383,7 +419,11 @@ export function useBookingFormBase({
     setBonusBookingForm((prev) => {
       if (prev.scheduleMode !== "same_date") return prev;
       if (!form.date) return prev;
-      if (prev.date === form.date && prev.slotTime === "" && prev.staffAssignments.length === 0)
+      if (
+        prev.date === form.date &&
+        prev.slotTime === "" &&
+        prev.staffAssignments.length === 0
+      )
         return prev;
 
       return {
@@ -398,24 +438,35 @@ export function useBookingFormBase({
   useEffect(() => {
     if (!focusBogo) return;
     const timer = window.setTimeout(() => {
-      document.getElementById("booking-modal-bogo-bonus")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document
+        .getElementById("booking-modal-bogo-bonus")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
       setFocusBogo(false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [focusBogo]);
 
   useEffect(() => {
-    const hasPaidItem = cartLines.some((line) => (line.kind === "service" && !line.isFree) || line.kind === "bundle");
+    const hasPaidItem = cartLines.some(
+      (line) =>
+        (line.kind === "service" && !line.isFree) || line.kind === "bundle",
+    );
     if (hasPaidItem) return;
 
-    const hasFreeService = cartLines.some((line) => line.kind === "service" && !!line.isFree);
+    const hasFreeService = cartLines.some(
+      (line) => line.kind === "service" && !!line.isFree,
+    );
     if (!hasFreeService) return;
 
-    setCartLines((prev) => prev.filter((line) => !(line.kind === "service" && !!line.isFree)));
+    setCartLines((prev) =>
+      prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+    );
   }, [cartLines]);
 
   useEffect(() => {
-    const hasFreeVariant = cartLines.some((line) => line.kind === "service" && !!line.isFree);
+    const hasFreeVariant = cartLines.some(
+      (line) => line.kind === "service" && !!line.isFree,
+    );
     if (hasFreeVariant) return;
 
     if (
@@ -437,7 +488,8 @@ export function useBookingFormBase({
 
   // Initial cart lines for edit mode
   useEffect(() => {
-    if (!isOpen || !isEdit || !initialBooking || availableVariants.length === 0) return;
+    if (!isOpen || !isEdit || !initialBooking || availableVariants.length === 0)
+      return;
     const lines = buildInitialCartLines(initialBooking, availableVariants);
     setCartLines(lines);
 
@@ -449,13 +501,18 @@ export function useBookingFormBase({
   }, [isOpen, isEdit, initialBooking, availableVariants]);
 
   const existingTherapists = useMemo(
-    (): ExistingTherapist[] => (isEdit && initialBooking ? buildExistingTherapists(initialBooking) : []),
-    [isEdit, initialBooking]
+    (): ExistingTherapist[] =>
+      isEdit && initialBooking ? buildExistingTherapists(initialBooking) : [],
+    [isEdit, initialBooking],
   );
 
   const selectedFreeVariant = useMemo(
-    () => cartLines.find((line): line is Extract<CartLine, { kind: "service" }> => line.kind === "service" && !!line.isFree)?.variant ?? null,
-    [cartLines]
+    () =>
+      cartLines.find(
+        (line): line is Extract<CartLine, { kind: "service" }> =>
+          line.kind === "service" && !!line.isFree,
+      )?.variant ?? null,
+    [cartLines],
   );
 
   const selectedServiceVariantIds = useMemo(() => {
@@ -467,25 +524,38 @@ export function useBookingFormBase({
       } else if (line.kind === "bundle") {
         line.bundle.bundle_items?.forEach((item) => {
           const qty = Math.max(1, Number(item.quantity ?? 1));
-          for (let i = 0; i < qty; i++) ids.push(Number(item.bms_ms_service_variant_id));
+          for (let i = 0; i < qty; i++)
+            ids.push(Number(item.bms_ms_service_variant_id));
         });
       }
     });
     return ids;
   }, [cartLines]);
 
-  const selectedBundle = useMemo(() => cartLines.find((l) => l.kind === "bundle")?.bundle ?? null, [cartLines]);
+  const selectedBundle = useMemo(
+    () => cartLines.find((l) => l.kind === "bundle")?.bundle ?? null,
+    [cartLines],
+  );
 
   const variantGroups = useMemo(() => {
-    const groups: Array<{ variant_id: number; qty: number; group_id: string }> = [];
+    const groups: Array<{ variant_id: number; qty: number; group_id: string }> =
+      [];
     cartLines.forEach((line, lineIdx) => {
-      const groupId = `group_${lineIdx + 1}`;
+      const groupId = line.groupId ?? generateUniqueGroupId();
       if (line.kind === "service") {
         if (line.isFree) return;
-        groups.push({ variant_id: line.variant.id, qty: line.qty, group_id: groupId });
+        groups.push({
+          variant_id: line.variant.id,
+          qty: line.qty,
+          group_id: groupId,
+        });
       } else if (line.kind === "bundle") {
         line.bundle.bundle_items?.forEach((item) => {
-          groups.push({ variant_id: Number(item.bms_ms_service_variant_id), qty: Number(item.quantity ?? 1), group_id: groupId });
+          groups.push({
+            variant_id: Number(item.bms_ms_service_variant_id),
+            qty: Number(item.quantity ?? 1),
+            group_id: groupId,
+          });
         });
       }
     });
@@ -494,7 +564,9 @@ export function useBookingFormBase({
 
   useEffect(() => {
     setForm((prev) => {
-      const targetParallel = selectedBundle ? !!selectedBundle.is_parallel : false;
+      const targetParallel = selectedBundle
+        ? !!selectedBundle.is_parallel
+        : false;
       if (prev.isParallel === targetParallel) return prev;
       return { ...prev, isParallel: targetParallel };
     });
@@ -510,17 +582,32 @@ export function useBookingFormBase({
       params.append(`variant_groups[${idx}][qty]`, String(g.qty));
       params.append(`variant_groups[${idx}][group_id]`, g.group_id);
     });
-    if (selectedBundle?.id) params.set("bundle_promo_id", String(selectedBundle.id));
-    if (isEdit && initialBooking?.id) params.set("exclude_booking_id", String(initialBooking.id));
+    if (selectedBundle?.id)
+      params.set("bundle_promo_id", String(selectedBundle.id));
+    if (isEdit && initialBooking?.id)
+      params.set("exclude_booking_id", String(initialBooking.id));
     if (form.isParallel) params.set("is_parallel", "1");
     return `/master/bookings/available-dates?${params.toString()}`;
-  }, [viewingMonth, variantGroups, selectedBundle, isEdit, initialBooking, form.isParallel]);
+  }, [
+    viewingMonth,
+    variantGroups,
+    selectedBundle,
+    isEdit,
+    initialBooking,
+    form.isParallel,
+  ]);
 
   const { data: availableDatesResp } = useApiFetch<AvailableDatesResponse>(
-    ["available-dates", viewingMonth, JSON.stringify(variantGroups), String(initialBooking?.id ?? ""), String(form.isParallel ?? false)],
+    [
+      "available-dates",
+      viewingMonth,
+      JSON.stringify(variantGroups),
+      String(initialBooking?.id ?? ""),
+      String(form.isParallel ?? false),
+    ],
     availableDatesUrl ?? "",
     undefined,
-    isOpen && !!availableDatesUrl
+    isOpen && !!availableDatesUrl,
   );
 
   const availableSlotsUrl = useMemo(() => {
@@ -532,17 +619,32 @@ export function useBookingFormBase({
       params.append(`variant_groups[${idx}][qty]`, String(g.qty));
       params.append(`variant_groups[${idx}][group_id]`, g.group_id);
     });
-    if (selectedBundle?.id) params.set("bundle_promo_id", String(selectedBundle.id));
-    if (isEdit && initialBooking?.id) params.set("exclude_booking_id", String(initialBooking.id));
+    if (selectedBundle?.id)
+      params.set("bundle_promo_id", String(selectedBundle.id));
+    if (isEdit && initialBooking?.id)
+      params.set("exclude_booking_id", String(initialBooking.id));
     if (form.isParallel) params.set("is_parallel", "1");
     return `/master/bookings/available-slots?${params.toString()}`;
-  }, [form.date, variantGroups, selectedBundle, isEdit, initialBooking, form.isParallel]);
+  }, [
+    form.date,
+    variantGroups,
+    selectedBundle,
+    isEdit,
+    initialBooking,
+    form.isParallel,
+  ]);
 
   const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
-    ["available-slots", form.date, JSON.stringify(selectedServiceVariantIds), String(initialBooking?.id ?? ""), String(form.isParallel ?? false)],
+    [
+      "available-slots",
+      form.date,
+      JSON.stringify(selectedServiceVariantIds),
+      String(initialBooking?.id ?? ""),
+      String(form.isParallel ?? false),
+    ],
     availableSlotsUrl ?? "",
     undefined,
-    isOpen && !!availableSlotsUrl
+    isOpen && !!availableSlotsUrl,
   );
 
   const bonusAvailableSlotsUrl = useMemo(() => {
@@ -554,30 +656,50 @@ export function useBookingFormBase({
   }, [selectedFreeVariant, bonusBookingForm.date]);
 
   const { data: bonusAvailableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
-    ["bonus-available-slots", bonusBookingForm.date, String(selectedFreeVariant?.id ?? "")],
+    [
+      "bonus-available-slots",
+      bonusBookingForm.date,
+      String(selectedFreeVariant?.id ?? ""),
+    ],
     bonusAvailableSlotsUrl ?? "",
     undefined,
-    isOpen && !!bonusAvailableSlotsUrl
+    isOpen && !!bonusAvailableSlotsUrl,
   );
 
   // Pricing calculations
   const grossAmt = cartLines.reduce((sum, line) => {
-    return sum + (line.kind === "bundle" ? line.pricing.subtotal : line.variant.price * line.qty);
+    return (
+      sum +
+      (line.kind === "bundle"
+        ? line.pricing.subtotal
+        : line.variant.price * line.qty)
+    );
   }, 0);
 
   const netAmtBeforeVoucher = cartLines.reduce((sum, line) => {
-    return sum + (line.kind === "bundle" ? line.pricing.finalPrice : line.isFree ? 0 : line.variant.price * line.qty);
+    return (
+      sum +
+      (line.kind === "bundle"
+        ? line.pricing.finalPrice
+        : line.isFree
+          ? 0
+          : line.variant.price * line.qty)
+    );
   }, 0);
 
   const totalDur = useMemo(() => {
     if (selectedServiceVariantUnits.length === 0) return 0;
     const dummyStart = "10:00";
     let currentGroupStart = dummyStart;
-    const groupIds = Array.from(new Set(selectedServiceVariantUnits.map((u) => u.groupId)));
+    const groupIds = Array.from(
+      new Set(selectedServiceVariantUnits.map((u) => u.groupId)),
+    );
     let maxEndMinutes = parseTimeToMinutes(dummyStart);
 
     groupIds.forEach((groupId) => {
-      const groupUnits = selectedServiceVariantUnits.filter((u) => u.groupId === groupId);
+      const groupUnits = selectedServiceVariantUnits.filter(
+        (u) => u.groupId === groupId,
+      );
       if (groupUnits.length === 0) return;
       const groupIsParallel = form.isParallel && groupUnits.length >= 2;
       let groupMaxEndMinutes = parseTimeToMinutes(currentGroupStart);
@@ -586,15 +708,22 @@ export function useBookingFormBase({
       groupUnits.forEach((unit) => {
         const variant = availableVariants.find((v) => v.id === unit.variantId);
         const duration = Number(variant?.duration ?? 0);
-        const unitStartTime = groupIsParallel ? currentGroupStart : tempSequentialStart;
+        const unitStartTime = groupIsParallel
+          ? currentGroupStart
+          : tempSequentialStart;
         const unitEndTime = addMinutesToTime(unitStartTime, duration);
         const unitEndMinutes = parseTimeToMinutes(unitEndTime);
-        if (unitEndMinutes > groupMaxEndMinutes) groupMaxEndMinutes = unitEndMinutes;
+        if (unitEndMinutes > groupMaxEndMinutes)
+          groupMaxEndMinutes = unitEndMinutes;
         if (!groupIsParallel) tempSequentialStart = unitEndTime;
       });
 
-      if (groupMaxEndMinutes > maxEndMinutes) maxEndMinutes = groupMaxEndMinutes;
-      currentGroupStart = addMinutesToTime(dummyStart, maxEndMinutes - parseTimeToMinutes(dummyStart));
+      if (groupMaxEndMinutes > maxEndMinutes)
+        maxEndMinutes = groupMaxEndMinutes;
+      currentGroupStart = addMinutesToTime(
+        dummyStart,
+        maxEndMinutes - parseTimeToMinutes(dummyStart),
+      );
     });
     return maxEndMinutes - parseTimeToMinutes(dummyStart);
   }, [selectedServiceVariantUnits, availableVariants, form.isParallel]);
@@ -602,44 +731,92 @@ export function useBookingFormBase({
   const isBonusSlotConflictingWithPaidBooking = useCallback(
     (slot: AvailableSlot): boolean => {
       if (!selectedFreeVariant) return false;
-      return isBonusSlotOverlappingPaidBooking(form.date, form.slotTime, totalDur, bonusBookingForm.date, slot.slot_time, selectedFreeVariant.duration);
+      return isBonusSlotOverlappingPaidBooking(
+        form.date,
+        form.slotTime,
+        totalDur,
+        bonusBookingForm.date,
+        slot.slot_time,
+        selectedFreeVariant.duration,
+      );
     },
-    [selectedFreeVariant, form.date, form.slotTime, totalDur, bonusBookingForm.date]
+    [
+      selectedFreeVariant,
+      form.date,
+      form.slotTime,
+      totalDur,
+      bonusBookingForm.date,
+    ],
   );
 
   const lineItemsPayload = useMemo(
     () =>
       cartLines.map((line, idx) => {
-        const groupId = `group_${idx + 1}`;
+        const groupId = line.groupId ?? generateUniqueGroupId();
+        const sequence = idx + 1;
         return line.kind === "bundle"
-          ? { type: "bundle_promo" as const, bundle_promo_id: line.bundle.id, group_id: groupId }
-          : { type: "service_variant" as const, service_variant_id: line.variant.id, is_free: !!line.isFree, quantity: line.qty, group_id: groupId };
+          ? {
+              type: "bundle_promo" as const,
+              bundle_promo_id: line.bundle.id,
+              group_id: groupId,
+              sequence,
+            }
+          : {
+              type: "service_variant" as const,
+              service_variant_id: line.variant.id,
+              is_free: !!line.isFree,
+              quantity: line.qty,
+              group_id: groupId,
+              sequence,
+            };
       }),
-    [cartLines]
+    [cartLines],
   );
 
   const parentLineItemsPayload = useMemo(
     () =>
       lineItemsPayload.filter(
-        (line) => !(line.type === "service_variant" && selectedFreeVariant && line.service_variant_id === selectedFreeVariant.id && line.is_free)
+        (line) =>
+          !(
+            line.type === "service_variant" &&
+            selectedFreeVariant &&
+            line.service_variant_id === selectedFreeVariant.id &&
+            line.is_free
+          ),
       ),
-    [lineItemsPayload, selectedFreeVariant]
+    [lineItemsPayload, selectedFreeVariant],
   );
 
   const pricingSummary = useMemo(() => {
-    const hasAppliedVoucher = !!voucherPreview && voucherPreview.code === form.voucherCode.trim().toUpperCase() && !!form.date && !!lineItemsPayload.length;
+    const hasAppliedVoucher =
+      !!voucherPreview &&
+      voucherPreview.code === form.voucherCode.trim().toUpperCase() &&
+      !!form.date &&
+      !!lineItemsPayload.length;
     return {
-      subtotalAmount: hasAppliedVoucher ? voucherPreview.subtotalAmount : grossAmt,
+      subtotalAmount: hasAppliedVoucher
+        ? voucherPreview.subtotalAmount
+        : grossAmt,
       discountAmount: hasAppliedVoucher ? voucherPreview.discountAmount : 0,
-      totalAmount: hasAppliedVoucher ? voucherPreview.totalAmount : netAmtBeforeVoucher,
+      totalAmount: hasAppliedVoucher
+        ? voucherPreview.totalAmount
+        : netAmtBeforeVoucher,
       appliedVoucher: hasAppliedVoucher ? voucherPreview.appliedVoucher : null,
       isApplied: hasAppliedVoucher,
     };
-  }, [form.date, form.voucherCode, lineItemsPayload.length, grossAmt, netAmtBeforeVoucher, voucherPreview]);
+  }, [
+    form.date,
+    form.voucherCode,
+    lineItemsPayload.length,
+    grossAmt,
+    netAmtBeforeVoucher,
+    voucherPreview,
+  ]);
 
   const cartSummaryLabel = useMemo(() => {
     if (cartLines.length === 0) return "";
-    if (cartLines.length === 1 && cartLines[0].kind === "bundle") return "1 bundle promo";
+    if (cartLines.length === 1 && cartLines[0].kind === "bundle")
+      return "1 bundle promo";
     return `${cartLines.filter((l) => l.kind === "service").length} layanan`;
   }, [cartLines]);
 
@@ -653,36 +830,66 @@ export function useBookingFormBase({
           if (next.date) {
             const picked = parseDate(next.date);
             let correctedDate = next.date;
-            if (picked.compare(bounds.minValue) < 0) correctedDate = bounds.minValue.toString();
-            else if (picked.compare(bounds.maxValue) > 0) correctedDate = bounds.maxValue.toString();
-            if (correctedDate !== next.date) next = { ...next, date: correctedDate };
+            if (picked.compare(bounds.minValue) < 0)
+              correctedDate = bounds.minValue.toString();
+            else if (picked.compare(bounds.maxValue) > 0)
+              correctedDate = bounds.maxValue.toString();
+            if (correctedDate !== next.date)
+              next = { ...next, date: correctedDate };
           }
         }
         return next;
       });
     },
-    [selectedBundle]
+    [selectedBundle],
   );
 
   const toggleService = (v: Variant) => {
     setCartLines((prev) => {
-      const exists = prev.some((l) => l.kind === "service" && !l.isFree && l.variant.id === v.id);
-      if (exists) return prev.filter((l) => !(l.kind === "service" && !l.isFree && l.variant.id === v.id));
-      return [...prev, { kind: "service" as const, variant: v, qty: 1 }];
+      const exists = prev.some(
+        (l) => l.kind === "service" && !l.isFree && l.variant.id === v.id,
+      );
+      if (exists)
+        return prev.filter(
+          (l) => !(l.kind === "service" && !l.isFree && l.variant.id === v.id),
+        );
+
+      const newGroupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      return [
+        ...prev,
+        { kind: "service" as const, variant: v, qty: 1, groupId: newGroupId },
+      ];
     });
   };
 
   const toggleBundle = (bundle: BundlePromo) => {
     const pricing = calcBundlePricing(bundle);
     setCartLines((prev) => {
-      const isAlreadySelected = prev.some((l) => l.kind === "bundle" && l.bundle.id === bundle.id);
+      const isAlreadySelected = prev.some(
+        (l) => l.kind === "bundle" && l.bundle.id === bundle.id,
+      );
       const withoutBundles = prev.filter((l) => l.kind !== "bundle");
       if (isAlreadySelected) return withoutBundles;
-      return [...withoutBundles, { kind: "bundle", bundle, pricing }];
+
+      const newGroupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      return [
+        ...withoutBundles,
+        { kind: "bundle", bundle, pricing, groupId: newGroupId },
+      ];
     });
   };
 
-  const removeLine = (index: number) => setCartLines((prev) => prev.filter((_, i) => i !== index));
+  const removeLine = (index: number) =>
+    setCartLines((prev) => prev.filter((_, i) => i !== index));
+
+  const reorderCartLines = (oldIndex: number, newIndex: number) => {
+    setCartLines((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(oldIndex, 1);
+      next.splice(newIndex, 0, moved);
+      return next;
+    });
+  };
 
   const updateServiceQty = (index: number, newQty: number) => {
     setCartLines((prev) => {
@@ -714,16 +921,21 @@ export function useBookingFormBase({
 
     const bogoCapAmount = Number(voucherPreview?.bogoCapAmount ?? 0);
     if (Number(row.retail_price ?? 0) > bogoCapAmount) {
-      toast.warning("Bonus tidak bisa dipilih karena harganya lebih tinggi dari layanan utama");
+      toast.warning(
+        "Bonus tidak bisa dipilih karena harganya lebih tinggi dari layanan utama",
+      );
       return;
     }
 
     const isAlreadySelected = cartLines.some(
-      (line) => line.kind === "service" && !!line.isFree && line.variant.id === row.id,
+      (line) =>
+        line.kind === "service" && !!line.isFree && line.variant.id === row.id,
     );
 
     setCartLines((prev) => {
-      const withoutFree = prev.filter((line) => !(line.kind === "service" && !!line.isFree));
+      const withoutFree = prev.filter(
+        (line) => !(line.kind === "service" && !!line.isFree),
+      );
       if (isAlreadySelected) return withoutFree;
 
       const baseVariant = availableVariants.find((v) => v.id === row.id);
@@ -739,7 +951,17 @@ export function useBookingFormBase({
             categoryId: 0,
           };
 
-      return [...withoutFree, { kind: "service" as const, variant, qty: 1, isFree: true }];
+      const newGroupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      return [
+        ...withoutFree,
+        {
+          kind: "service" as const,
+          variant,
+          qty: 1,
+          isFree: true,
+          groupId: newGroupId,
+        },
+      ];
     });
 
     if (!isAlreadySelected && form.date && form.slotTime) {
@@ -787,21 +1009,52 @@ export function useBookingFormBase({
 
   const handleBonusSlotSelect = useCallback(
     (slot: AvailableSlot) => {
-      if (!slot.is_available || !selectedFreeVariant || isBonusSlotConflictingWithPaidBooking(slot)) {
+      if (
+        !slot.is_available ||
+        !selectedFreeVariant ||
+        isBonusSlotConflictingWithPaidBooking(slot)
+      ) {
         return;
       }
-      const eligibleIds = eligibleTherapistIdsForVariant(slot, selectedFreeVariant.id);
-      const selectedId = eligibleIds[0] ?? slot.available_therapists?.[0]?.id ?? 0;
+      const eligibleIds = eligibleTherapistIdsForVariant(
+        slot,
+        selectedFreeVariant.id,
+      );
+      const selectedId =
+        eligibleIds[0] ?? slot.available_therapists?.[0]?.id ?? 0;
       const startTime = slot.slot_time;
       const endTime = addMinutesToTime(startTime, selectedFreeVariant.duration);
-      const eligibleResourceIds = slot.available_resources_by_variant?.[selectedFreeVariant.id] ?? [];
+      const eligibleResourceIds =
+        slot.available_resources_by_variant?.[selectedFreeVariant.id] ?? [];
       const resourceId = eligibleResourceIds[0] ?? -1;
 
       setBonusBookingForm((prev) => ({
         ...prev,
         slotTime: slot.slot_time,
-        staffAssignments: selectedId > 0 ? [{ service_variant_id: selectedFreeVariant.id, staff_id: selectedId, client_key: `${selectedFreeVariant.id}:bonus`, start_time: startTime, end_time: endTime }] : [],
-        resourceAssignments: resourceId > 0 ? [{ service_variant_id: selectedFreeVariant.id, resource_id: resourceId, client_key: `${selectedFreeVariant.id}:bonus`, start_time: startTime, end_time: endTime }] : [],
+        staffAssignments:
+          selectedId > 0
+            ? [
+                {
+                  service_variant_id: selectedFreeVariant.id,
+                  staff_id: selectedId,
+                  client_key: `${selectedFreeVariant.id}:bonus`,
+                  start_time: startTime,
+                  end_time: endTime,
+                },
+              ]
+            : [],
+        resourceAssignments:
+          resourceId > 0
+            ? [
+                {
+                  service_variant_id: selectedFreeVariant.id,
+                  resource_id: resourceId,
+                  client_key: `${selectedFreeVariant.id}:bonus`,
+                  start_time: startTime,
+                  end_time: endTime,
+                },
+              ]
+            : [],
       }));
     },
     [selectedFreeVariant, isBonusSlotConflictingWithPaidBooking],
@@ -809,24 +1062,47 @@ export function useBookingFormBase({
 
   const handleBonusTherapistChange = useCallback(
     (therapistId: number) => {
-      if (!selectedFreeVariant || therapistId <= 0 || !bonusBookingForm.slotTime) return;
+      if (
+        !selectedFreeVariant ||
+        therapistId <= 0 ||
+        !bonusBookingForm.slotTime
+      )
+        return;
       const startTime = bonusBookingForm.slotTime;
       const endTime = addMinutesToTime(startTime, selectedFreeVariant.duration);
       setBonusBookingForm((prev) => ({
         ...prev,
-        staffAssignments: [{ service_variant_id: selectedFreeVariant.id, staff_id: therapistId, client_key: `${selectedFreeVariant.id}:bonus`, start_time: startTime, end_time: endTime }],
+        staffAssignments: [
+          {
+            service_variant_id: selectedFreeVariant.id,
+            staff_id: therapistId,
+            client_key: `${selectedFreeVariant.id}:bonus`,
+            start_time: startTime,
+            end_time: endTime,
+          },
+        ],
       }));
     },
     [selectedFreeVariant, bonusBookingForm.slotTime],
   );
 
-  const inPaidCart = (id: number) => cartLines.some((l) => l.kind === "service" && !l.isFree && l.variant.id === id);
-  const getPaidCartQty = (id: number) => cartLines.find((l) => l.kind === "service" && !l.isFree && l.variant.id === id)?.qty ?? 1;
-  const inFreeCart = (id: number) => cartLines.some((l) => l.kind === "service" && !!l.isFree && l.variant.id === id);
+  const inPaidCart = (id: number) =>
+    cartLines.some(
+      (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
+    );
+  const getPaidCartQty = (id: number) =>
+    cartLines.find(
+      (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
+    )?.qty ?? 1;
+  const inFreeCart = (id: number) =>
+    cartLines.some(
+      (l) => l.kind === "service" && !!l.isFree && l.variant.id === id,
+    );
   const isBogoActive = pricingSummary.appliedVoucher?.promo_type === "bogo";
   const bogoCapAmount = Number(voucherPreview?.bogoCapAmount ?? 0);
   const bogoEligibleServices = voucherPreview?.eligibleFreeServices ?? [];
-  const isBogoEligibleId = (id: number) => bogoEligibleServices.some((row) => Number(row.id) === Number(id));
+  const isBogoEligibleId = (id: number) =>
+    bogoEligibleServices.some((row) => Number(row.id) === Number(id));
 
   const isBonusBlockedByPaidSelection = (id: number) => {
     const hasPaidBalinese1 = inPaidCart(1);
@@ -845,7 +1121,9 @@ export function useBookingFormBase({
   const handleApplyVoucher = async () => {
     const normalizedCode = form.voucherCode.trim().toUpperCase();
     if (!normalizedCode) {
-      setCartLines((prev) => prev.filter((line) => !(line.kind === "service" && !!line.isFree)));
+      setCartLines((prev) =>
+        prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+      );
       setVoucherPreview(null);
       return;
     }
@@ -882,9 +1160,15 @@ export function useBookingFormBase({
       }
       toast.success("Voucher berhasil diterapkan");
     } catch (error: any) {
-      setCartLines((prev) => prev.filter((line) => !(line.kind === "service" && !!line.isFree)));
+      setCartLines((prev) =>
+        prev.filter((line) => !(line.kind === "service" && !!line.isFree)),
+      );
       setVoucherPreview(null);
-      toast.warning(error.response?.data?.message || error.message || "Voucher tidak valid untuk booking ini");
+      toast.warning(
+        error.response?.data?.message ||
+          error.message ||
+          "Voucher tidak valid untuk booking ini",
+      );
     } finally {
       setIsApplyingVoucher(false);
     }
@@ -893,7 +1177,9 @@ export function useBookingFormBase({
   const CATS = useMemo(() => {
     const map = new Map<string, { key: string; label: string }>();
     (variantsResp?.data ?? []).forEach((v: any) => {
-      const key = v.category?.slug ?? (v.service?.name ?? "other").toLowerCase().replace(/\s+/g, "_");
+      const key =
+        v.category?.slug ??
+        (v.service?.name ?? "other").toLowerCase().replace(/\s+/g, "_");
       const label = v.category?.name ?? v.service?.name ?? key;
       if (!map.has(key)) map.set(key, { key, label });
     });
@@ -906,45 +1192,120 @@ export function useBookingFormBase({
         if (n.includes("ADD ON") || n.includes("ADDON")) return 1;
         return 0;
       };
-      return getPriority(a.label) - getPriority(b.label) || a.label.localeCompare(b.label);
+      return (
+        getPriority(a.label) - getPriority(b.label) ||
+        a.label.localeCompare(b.label)
+      );
     });
   }, [variantsResp]);
 
   const filteredBundles = useMemo(() => {
     if (!search.trim()) return activeBundles;
     const q = search.toLowerCase();
-    return activeBundles.filter((b) => b.name.toLowerCase().includes(q) || b.description?.toLowerCase().includes(q));
+    return activeBundles.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.description?.toLowerCase().includes(q),
+    );
   }, [activeBundles, search]);
 
   const groupedVariants = useMemo(() => {
-    const filtered = availableVariants.filter((v) => v.catKey === cat && (!search || v.name.toLowerCase().includes(search.toLowerCase()) || v.subCat.toLowerCase().includes(search.toLowerCase())));
+    const filtered = availableVariants.filter(
+      (v) =>
+        v.catKey === cat &&
+        (!search ||
+          v.name.toLowerCase().includes(search.toLowerCase()) ||
+          v.subCat.toLowerCase().includes(search.toLowerCase())),
+    );
     return filtered.reduce<Record<string, Variant[]>>((acc, v) => {
       (acc[v.subCat] = acc[v.subCat] || []).push(v);
       return acc;
     }, {});
   }, [cat, search, availableVariants]);
 
-  const customerLookupUrl = form.phone.trim().length >= 8 ? `/customer/lookup?phone=${encodeURIComponent(form.phone.trim())}` : "";
-  const { data: customerLookupResp } = useApiFetch<any>(["customer-lookup", form.phone], customerLookupUrl, undefined, isOpen && !!customerLookupUrl);
+  const customerLookupUrl =
+    form.phone.trim().length >= 8
+      ? `/customer/lookup?phone=${encodeURIComponent(form.phone.trim())}`
+      : "";
+  const { data: customerLookupResp } = useApiFetch<any>(
+    ["customer-lookup", form.phone],
+    customerLookupUrl,
+    undefined,
+    isOpen && !!customerLookupUrl,
+  );
   const customerBookingCount = customerLookupResp?.data?.total_bookings ?? null;
 
   return {
-    isEdit, browseMode, setBrowseMode, cat, setCat, search, setSearch,
-    cartLines, setCartLines, step, setStep, form, setForm, updateForm,
-    viewingMonth, setViewingMonth, success, setSuccess, createdBooking, setCreatedBooking,
-    mobileView, setMobileView, voucherPreview, setVoucherPreview, isApplyingVoucher,
-    focusBogo, bonusBookingForm, setBonusBookingForm, availableVariants,
-    activeBundles, availableResources, variantsLoading, bundlesLoading,
-    selectedServiceVariantUnits, unitTimes, pricingSummary, totalDur,
-    availableDatesResp, availableSlotsResp, bonusAvailableSlotsResp,
-    existingTherapists, selectedFreeVariant, selectedServiceVariantIds,
-    selectedBundle, handleApplyVoucher, toggleService,
-    toggleBundle, toggleFreeService, removeLine, updateServiceQty,
-    updateVariantQty, handleBonusScheduleModeChange, handleBonusDateChange,
-    handleBonusSlotSelect, handleBonusTherapistChange,
-    isBonusSlotConflictingWithPaidBooking, inPaidCart,
-    getPaidCartQty, inFreeCart, isBogoActive, bogoCapAmount,
-    bogoEligibleServices, isBogoEligibleId, isBonusBlockedByPaidSelection, CATS, groupedVariants,
-    filteredBundles, cartSummaryLabel, customerBookingCount, parentLineItemsPayload,
+    isEdit,
+    browseMode,
+    setBrowseMode,
+    cat,
+    setCat,
+    search,
+    setSearch,
+    cartLines,
+    setCartLines,
+    step,
+    setStep,
+    form,
+    setForm,
+    updateForm,
+    viewingMonth,
+    setViewingMonth,
+    success,
+    setSuccess,
+    createdBooking,
+    setCreatedBooking,
+    mobileView,
+    setMobileView,
+    voucherPreview,
+    setVoucherPreview,
+    isApplyingVoucher,
+    focusBogo,
+    bonusBookingForm,
+    setBonusBookingForm,
+    availableVariants,
+    activeBundles,
+    availableResources,
+    variantsLoading,
+    bundlesLoading,
+    selectedServiceVariantUnits,
+    unitTimes,
+    pricingSummary,
+    totalDur,
+    availableDatesResp,
+    availableSlotsResp,
+    bonusAvailableSlotsResp,
+    existingTherapists,
+    selectedFreeVariant,
+    selectedServiceVariantIds,
+    selectedBundle,
+    handleApplyVoucher,
+    toggleService,
+    toggleBundle,
+    toggleFreeService,
+    removeLine,
+    updateServiceQty,
+    updateVariantQty,
+    handleBonusScheduleModeChange,
+    handleBonusDateChange,
+    handleBonusSlotSelect,
+    handleBonusTherapistChange,
+    isBonusSlotConflictingWithPaidBooking,
+    inPaidCart,
+    getPaidCartQty,
+    inFreeCart,
+    isBogoActive,
+    bogoCapAmount,
+    bogoEligibleServices,
+    isBogoEligibleId,
+    isBonusBlockedByPaidSelection,
+    CATS,
+    groupedVariants,
+    filteredBundles,
+    cartSummaryLabel,
+    customerBookingCount,
+    parentLineItemsPayload,
+    reorderCartLines,
   };
 }

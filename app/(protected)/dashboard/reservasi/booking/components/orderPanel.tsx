@@ -33,6 +33,7 @@ interface OrderPanelProps {
   setForm: (updater: (prev: FormState) => FormState) => void;
   cartLines: CartLine[];
   onRemoveLine: (index: number) => void;
+  onReorderLines?: (oldIndex: number, newIndex: number) => void;
   onUpdateServiceQty: (index: number, newQty: number) => void;
   onClearCart: () => void;
   totalDur: number;
@@ -96,6 +97,7 @@ export function OrderPanel(props: OrderPanelProps) {
     setForm,
     cartLines,
     onRemoveLine,
+    onReorderLines,
     onUpdateServiceQty,
     totalDur,
     selectedServiceVariantIds,
@@ -328,6 +330,7 @@ export function OrderPanel(props: OrderPanelProps) {
             <CartSection
               cartLines={cartLines}
               onRemoveLine={onRemoveLine}
+              onReorderLines={onReorderLines}
               onUpdateServiceQty={onUpdateServiceQty}
             />
           )}

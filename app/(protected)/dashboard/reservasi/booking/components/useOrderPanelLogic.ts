@@ -407,6 +407,7 @@ export function useOrderPanelLogic({
   };
 
   const handleResourceChange = (assignmentKey: string, resourceId: number) => {
+    console.log("[useOrderPanelLogic] handleResourceChange", { assignmentKey, resourceId });
     setForm((prev) => {
       const exists = prev.resourceAssignments.some(
         (a) => a.client_key === assignmentKey,

@@ -63,6 +63,11 @@ export function useEditBookingForm({
       };
     });
 
+    console.log("[EditBooking] Submitting payload:", {
+      bookingId: initialBooking.id,
+      resource_assignments: resourceAssignments,
+    });
+
     const normalizedCode = base.form.voucherCode.trim().toUpperCase();
     if (normalizedCode && !base.pricingSummary.isApplied) {
       toast.warning("Klik terapkan voucher dulu supaya total booking akurat");

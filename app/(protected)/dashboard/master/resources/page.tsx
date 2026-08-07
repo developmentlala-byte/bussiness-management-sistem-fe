@@ -33,7 +33,13 @@ import {
   useFilter,
   Tooltip,
 } from "@heroui/react";
-import { useApiFetch, usePost, useRemove, usePut } from "@/app/libs/use-http";
+import {
+  useApiFetch,
+  usePost,
+  useRemove,
+  usePut,
+  usePatch,
+} from "@/app/libs/use-http";
 
 // ------------------------------------------------------------------
 // Types
@@ -850,7 +856,7 @@ export default function ResourcesPage() {
     },
   );
 
-  const { mutate: updateResource } = usePut(
+  const { mutate: updateResource } = usePatch(
     (data: any) => `/master/resources/${data.id}`,
     {
       invalidate: [["resources"]],
@@ -888,7 +894,7 @@ export default function ResourcesPage() {
     },
   );
 
-  const { mutate: updateMapping } = usePut(
+  const { mutate: updateMapping } = usePatch(
     (data: any) => `/master/service-resources/${data.id}`,
     {
       invalidate: [["service-resources"]],
@@ -922,12 +928,6 @@ export default function ResourcesPage() {
     }));
     updateResource({
       id: resource.id,
-      room_name: resource.room_name,
-      resource_code: resource.resource_code,
-      resource_type: resource.resource_type,
-      capacity_note: resource.capacity_note,
-      is_active: resource.is_active,
-      order_column: resource.order_column,
       ...patch,
     });
   };
@@ -990,10 +990,6 @@ export default function ResourcesPage() {
     }));
     updateMapping({
       id: mapping.id,
-      bms_ms_service_variant_id: mapping.bms_ms_service_variant_id,
-      bms_ms_resource_id: mapping.bms_ms_resource_id,
-      priority: mapping.priority,
-      is_exclusive: mapping.is_exclusive,
       ...patch,
     });
   };

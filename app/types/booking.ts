@@ -84,6 +84,8 @@ export interface BookingStaffAssignment {
 export interface BookingResourceAssignment {
   service_variant_id: number;
   resource_id: number;
+  resource_name?: string | null;
+  resource_code?: string | null;
   client_key?: string | null;
   start_time?: string | null;
   end_time?: string | null;

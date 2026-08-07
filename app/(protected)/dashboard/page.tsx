@@ -898,7 +898,7 @@ export default function DashboardOverviewPage() {
 
   const staffAttendance = useMemo(
     () =>
-      rawStaffs.slice(0, 5).map((staff) => {
+      rawStaffs.map((staff) => {
         const attendance = attendanceMap[staff.id];
         const isPresent = Boolean(
           attendance?.clock_in || attendance?.clock_out,

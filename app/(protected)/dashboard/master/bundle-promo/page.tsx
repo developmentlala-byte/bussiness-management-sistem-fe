@@ -340,101 +340,104 @@ export default function BundlePromoPage() {
               <p className="text-muted text-sm">Pilih atau buat bundle promo</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-xl font-bold">
-                        {textStyle(activeBundle.name, "capitalize")}
-                      </h2>
-                      <span
-                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          STATUS_LABEL[getBundleStatus(activeBundle)].className
-                        }`}
-                      >
-                        {STATUS_LABEL[getBundleStatus(activeBundle)].label}
-                      </span>
-                    </div>
-                    {activeBundle.description && (
-                      <p className="text-sm text-muted mt-2">
-                        {activeBundle.description}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-4 mt-4 text-sm">
-                      <div>
-                        <span className="text-muted text-xs uppercase tracking-wide">
-                          Diskon Bundle
+            <div className="space-y-6 sticky top-0 z-10">
+              <div className=" bg-background pt-1 pb-0">
+                <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-xl font-bold">
+                          {textStyle(activeBundle.name, "capitalize")}
+                        </h2>
+                        <span
+                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            STATUS_LABEL[getBundleStatus(activeBundle)]
+                              .className
+                          }`}
+                        >
+                          {STATUS_LABEL[getBundleStatus(activeBundle)].label}
                         </span>
-                        <p className="font-semibold">
-                          {formatBundleDiscount(activeBundle)}
-                        </p>
                       </div>
-                      <div>
-                        <span className="text-muted text-xs uppercase tracking-wide">
-                          Periode
-                        </span>
-                        <p className="font-semibold">
-                          {formatDateLabel(activeBundle.start_date)} —{" "}
-                          {formatDateLabel(activeBundle.end_date)}
+                      {activeBundle.description && (
+                        <p className="text-sm text-muted mt-2">
+                          {activeBundle.description}
                         </p>
-                      </div>
-                      {activeBundle.max_quantity !== null && (
+                      )}
+                      <div className="flex flex-wrap gap-4 mt-4 text-sm">
                         <div>
-                          <span className="text-muted text-xs uppercase tracking-wider">
-                            Kuota
+                          <span className="text-muted text-xs uppercase tracking-wide">
+                            Diskon Bundle
                           </span>
                           <p className="font-semibold">
-                            {activeBundle.used_count} /{" "}
-                            {activeBundle.max_quantity}
+                            {formatBundleDiscount(activeBundle)}
                           </p>
                         </div>
-                      )}
+                        <div>
+                          <span className="text-muted text-xs uppercase tracking-wide">
+                            Periode
+                          </span>
+                          <p className="font-semibold">
+                            {formatDateLabel(activeBundle.start_date)} —{" "}
+                            {formatDateLabel(activeBundle.end_date)}
+                          </p>
+                        </div>
+                        {activeBundle.max_quantity !== null && (
+                          <div>
+                            <span className="text-muted text-xs uppercase tracking-wider">
+                              Kuota
+                            </span>
+                            <p className="font-semibold">
+                              {activeBundle.used_count} /{" "}
+                              {activeBundle.max_quantity}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => setIsEditOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg hover:bg-surface-secondary"
+                      >
+                        <PencilSimple className="w-4 h-4" /> Edit
+                      </button>
+                      <button
+                        onClick={() => setIsDeleteOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-danger/30 text-danger rounded-lg hover:bg-danger/5"
+                      >
+                        <Trash className="w-4 h-4" /> Hapus
+                      </button>
                     </div>
                   </div>
-
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => setIsEditOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg hover:bg-surface-secondary"
-                    >
-                      <PencilSimple className="w-4 h-4" /> Edit
-                    </button>
-                    <button
-                      onClick={() => setIsDeleteOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-danger/30 text-danger rounded-lg hover:bg-danger/5"
-                    >
-                      <Trash className="w-4 h-4" /> Hapus
-                    </button>
-                  </div>
                 </div>
-              </div>
 
-              <div className="flex gap-2 border-b border-border">
-                <button
-                  onClick={() => setActiveTab("bundle")}
-                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-                    activeTab === "bundle"
-                      ? "border-accent text-accent"
-                      : "border-transparent text-muted"
-                  }`}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Package className="w-4 h-4" /> Item Bundle
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab("discount")}
-                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-                    activeTab === "discount"
-                      ? "border-accent text-accent"
-                      : "border-transparent text-muted"
-                  }`}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Percent className="w-4 h-4" /> Diskon Tambahan
-                  </span>
-                </button>
+                <div className="flex gap-2 border-b border-border bg-background mt-6">
+                  <button
+                    onClick={() => setActiveTab("bundle")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                      activeTab === "bundle"
+                        ? "border-accent text-accent"
+                        : "border-transparent text-muted"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Package className="w-4 h-4" /> Item Bundle
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("discount")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                      activeTab === "discount"
+                        ? "border-accent text-accent"
+                        : "border-transparent text-muted"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Percent className="w-4 h-4" /> Diskon Tambahan
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {activeTab === "bundle" ? (

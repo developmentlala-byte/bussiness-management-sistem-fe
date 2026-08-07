@@ -9,10 +9,13 @@ import {
   PencilSimple,
   Trash,
   WarningCircle,
+  DownloadSimple,
+  UploadSimple,
 } from "@phosphor-icons/react";
-import { Dropdown, Label, Header, Separator, Description } from "@heroui/react";
-import { useApiFetch } from "@/app/libs/use-http";
+import { Dropdown, Label, Header, Separator, Description, toast } from "@heroui/react";
+import { useApiFetch, usePost } from "@/app/libs/use-http";
 import { DynamicIcon } from "@/app/components/dynamic-icon";
+import axiosInstance from "@/app/services/axios-instance";
 
 // Import Modal Components
 import { CreateCategoryModal } from "./modal/create-category-modal";
@@ -91,13 +94,61 @@ export interface FilteredService extends Service {
 export default function MasterProductPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // === Fetch Data Master API ===
   const {
     data: responseData,
     isLoading,
     isError,
+    refetch,
   } = useApiFetch<any>(["categories"], "/master/categories");
+
+  const { mutateAsync: importData, isPending: isImporting } = usePost(
+    "/master/services/import",
+    {
+      onSuccess: () => {
+        toast.success("Berhasil meng-import data");
+        refetch();
+      },
+      onError: (err: any) => {
+        toast.error("Gagal meng-import data", {
+          description: err.response?.data?.message || "Format file tidak sesuai.",
+        });
+      },
+    },
+  );
+
+  const handleExport = async () => {
+    try {
+      const response = await axiosInstance.get("/master/services/export", {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `product-dan-layanan-${new Date().toISOString().split("T")[0]}.xlsx`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      toast.error("Gagal men-download file export");
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    await importData(formData);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const { data: staffData } = useApiFetch<any>(
     ["staffs-all"],
@@ -286,6 +337,87 @@ export default function MasterProductPage() {
               }}
             />
           </div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".xlsx,.xls,.csv"
+            style={{ display: "none" }}
+          />
+          <button
+            onClick={handleExport}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--space-2)",
+              paddingLeft: "var(--space-4)",
+              paddingRight: "var(--space-4)",
+              paddingTop: "var(--space-3)",
+              paddingBottom: "var(--space-3)",
+              backgroundColor: "var(--surface-secondary)",
+              color: "var(--foreground)",
+              borderRadius: "var(--radius-xl)",
+              fontSize: "var(--text-sm)",
+              fontWeight: "600",
+              border: "1px solid var(--border)",
+              transition: "background-color 0.2s ease",
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor = "var(--border)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor =
+                "var(--surface-secondary)")
+            }
+          >
+            <DownloadSimple
+              weight="bold"
+              style={{ width: "var(--icon-md)", height: "var(--icon-md)" }}
+            />
+            <span className="hidden md:inline">Export</span>
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--space-2)",
+              paddingLeft: "var(--space-4)",
+              paddingRight: "var(--space-4)",
+              paddingTop: "var(--space-3)",
+              paddingBottom: "var(--space-3)",
+              backgroundColor: "var(--surface-secondary)",
+              color: "var(--foreground)",
+              borderRadius: "var(--radius-xl)",
+              fontSize: "var(--text-sm)",
+              fontWeight: "600",
+              border: "1px solid var(--border)",
+              transition: "background-color 0.2s ease",
+              opacity: isImporting ? 0.5 : 1,
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (!isImporting)
+                e.currentTarget.style.backgroundColor = "var(--border)";
+            }}
+            onMouseLeave={(e) => {
+              if (!isImporting)
+                e.currentTarget.style.backgroundColor =
+                  "var(--surface-secondary)";
+            }}
+          >
+            <UploadSimple
+              weight="bold"
+              style={{ width: "var(--icon-md)", height: "var(--icon-md)" }}
+            />
+            <span className="hidden md:inline">
+              {isImporting ? "Importing..." : "Import"}
+            </span>
+          </button>
           <button
             onClick={() => setIsAddCategoryOpen(true)}
             style={{

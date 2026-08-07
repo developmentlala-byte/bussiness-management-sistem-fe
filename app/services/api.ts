@@ -24,7 +24,7 @@ export const apiPatch = async (url: string, data?: any | undefined) => {
   return responseData;
 };
 
-export const apiDelete = async (url: string) => {
-  const { data: responseData } = await axiosInstance.delete(url);
+export const apiDelete = async (url: string, data?: any | undefined) => {
+  const { data: responseData } = await axiosInstance.delete(url, { data });
   return responseData;
 };

@@ -11,6 +11,7 @@ import {
   XCircle,
   Warning,
   ArrowLeft,
+  Trash,
 } from "@phosphor-icons/react";
 import { DataTable } from "@/app/components/data-table";
 import { useApiFetch } from "@/app/libs/use-http";

@@ -52,6 +52,7 @@ import {
 import GanttChartBookings from "./components/ganttChartBookings";
 import CreateBookingModal from "./components/CreateBookingModal";
 import EditBookingModal from "./components/EditBookingModal";
+import { DeleteBookingPinModal } from "./components/DeleteBookingPinModal";
 import { useApiFetch, usePost, useRemove, usePatch } from "@/app/libs/use-http";
 import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
@@ -119,6 +120,7 @@ function BookingsPageInner() {
   const createBookingDrawer = useOverlayState();
   const detailDrawer = useOverlayState();
   const ratingDrawer = useOverlayState();
+  const deletePinModal = useOverlayState();
   const [bookingModalAction, setBookingModalAction] = useState<
     "create" | "edit"
   >("create");
@@ -279,8 +281,6 @@ function BookingsPageInner() {
       // Revert optimistic UI if needed (but we'll rely on invalidate)
     },
   });
-
-
 
   const bookings = useMemo(() => data?.data ?? [], [data]);
 
@@ -935,51 +935,18 @@ function BookingsPageInner() {
           >
             <PencilSimple className="size-4" weight="regular" />
           </Button>
-          <AlertDialog>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="danger"
-              aria-label="Delete booking"
-            >
-              <Trash className="size-4" weight="regular" />
-            </Button>
-            <AlertDialog.Backdrop>
-              <AlertDialog.Container>
-                <AlertDialog.Dialog className="sm:max-w-[420px]">
-                  <AlertDialog.CloseTrigger />
-                  <AlertDialog.Header>
-                    <AlertDialog.Icon status="danger" />
-                    <AlertDialog.Heading>
-                      Hapus booking ini?
-                    </AlertDialog.Heading>
-                  </AlertDialog.Header>
-                  <AlertDialog.Body>
-                    <p>
-                      Ini akan menghapus booking{" "}
-                      <strong>{info.row.original.booking_code}</strong> dan
-                      datanya. Aksi ini tidak bisa dibatalkan.
-                    </p>
-                  </AlertDialog.Body>
-                  <AlertDialog.Footer>
-                    <Button slot="close" variant="tertiary">
-                      Cancel
-                    </Button>
-                    <Button
-                      slot="close"
-                      variant="danger"
-                      onClick={() =>
-                        void deleteBooking({ id: Number(info.row.original.id) })
-                      }
-                      isDisabled={isDeletingBooking}
-                    >
-                      {isDeletingBooking ? "Deleting..." : "Delete"}
-                    </Button>
-                  </AlertDialog.Footer>
-                </AlertDialog.Dialog>
-              </AlertDialog.Container>
-            </AlertDialog.Backdrop>
-          </AlertDialog>
+          <Button
+            isIconOnly
+            size="sm"
+            variant="danger"
+            aria-label="Delete booking"
+            onClick={() => {
+              setSelectedBooking(info.row.original);
+              deletePinModal.open();
+            }}
+          >
+            <Trash className="size-4" weight="regular" />
+          </Button>
         </div>
       ),
       footer: () => null,
@@ -1765,6 +1732,16 @@ function BookingsPageInner() {
           </Drawer.Content>
         </Drawer.Backdrop>
       </Drawer>
+
+      {/* DELETE PIN MODAL */}
+      {selectedBooking && (
+        <DeleteBookingPinModal
+          isOpen={deletePinModal.isOpen}
+          onClose={deletePinModal.close}
+          bookingId={selectedBooking.id}
+          bookingCode={selectedBooking.booking_code}
+        />
+      )}
     </div>
   );
 }

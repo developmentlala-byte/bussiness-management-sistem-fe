@@ -23,6 +23,7 @@ import {
   SpaBooking,
   isBundlePromoLine,
   getSpaBookingDuration,
+  BookingTherapist,
 } from "@/app/types/booking";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ const MIN_LABEL_WIDTH = 150;
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
-type ScheduledBooking = SpaBooking & { timeStr: string };
+type ScheduledBooking = SpaBooking & { timeStr: string; isSplitUnit?: boolean };
 type BookingMeta = ScheduledBooking & { lane: number; laneCount: number };
 
 type TherapistRecapItem = {
@@ -53,6 +54,7 @@ type TherapistRecapItem = {
   time: string;
   endTime: string;
   serviceName: string;
+  resourceName?: string;
   durationMinutes: number;
   status: string;
 };
@@ -196,10 +198,40 @@ const getTherapistNames = (event: SpaBooking): string => {
   return event.therapist_name || "Belum Ditugaskan";
 };
 
-const getEventServiceName = (event: SpaBooking): string => {
+/**
+ * Cari 1 line layanan spesifik berdasarkan ID varian — termasuk item di
+ * dalam bundle promo (bukan cuma line bundle-nya). Dipakai saat memecah
+ * booking per-terapis, supaya tiap potongan nampilin layanan yang BENAR
+ * dikerjakan terapis itu, bukan gabungan semua layanan / nama bundle-nya.
+ */
+const findServiceVariantById = (
+  serviceVariants: SpaBooking["service_variants"],
+  variantId?: number | null,
+) => {
+  if (!variantId) return null;
+
+  for (const line of serviceVariants ?? []) {
+    if (isBundlePromoLine(line)) {
+      const item = line.items?.find((i) => i.id === variantId);
+      if (item) return item;
+      continue;
+    }
+    if (line.id === variantId) return line;
+  }
+
+  return null;
+};
+
+const getEventServiceName = (event: SpaBooking, isSplit = false): string => {
   const parts: string[] = [];
 
-  if (event.booking_bundle_promos && event.booking_bundle_promos.length > 0) {
+  // Jika ini event hasil split (per terapis/item), kita tidak ingin menampilkan
+  // nama bundle-nya lagi supaya tidak redundant dan tidak membingungkan.
+  if (
+    !isSplit &&
+    event.booking_bundle_promos &&
+    event.booking_bundle_promos.length > 0
+  ) {
     event.booking_bundle_promos.forEach((b) => {
       parts.push(b.bundle_name || b.name || "Bundle Promo");
     });
@@ -208,12 +240,12 @@ const getEventServiceName = (event: SpaBooking): string => {
   event.service_variants?.forEach((line) => {
     if (isBundlePromoLine(line)) {
       const name = line.bundle_name || line.name;
-      if (name && !parts.includes(name)) {
+      if (name && !parts.includes(name) && !isSplit) {
         parts.push(name);
       }
     } else {
       const qty = line?.quantity ?? 1;
-      parts.push(`${line?.name} (${qty}x)`);
+      parts.push(`${line?.name}${!isSplit ? ` (${qty}x)` : ""}`);
     }
   });
 
@@ -224,6 +256,64 @@ const getEventServiceName = (event: SpaBooking): string => {
   if (event.service_name) return event.service_name;
 
   return "Spa Service";
+};
+
+/**
+ * Mencari nama resource (ruangan/bed) yang sesuai untuk event tertentu.
+ * Digunakan baik di timeline chart maupun di rekap modal.
+ */
+const getResourceName = (event: ScheduledBooking): string => {
+  const firstVariant = event?.service_variants?.[0] as any;
+  const firstTherapist = event?.therapists?.[0] as any;
+  const assignments = event.resource_assignments ?? [];
+
+  // 1. Match presisi pakai client_key therapist (kalau therapist udah ke-assign)
+  const therapistClientKey = firstTherapist?.client_key;
+  if (therapistClientKey) {
+    const matchByKey = assignments.find((r) => r.client_key === therapistClientKey);
+    if (matchByKey) return matchByKey.resource_code || matchByKey.resource_name || "";
+
+    const parts = therapistClientKey.split(":");
+    if (parts.length >= 3) {
+      const vId = parseInt(parts[1], 10);
+      const pIdx = parseInt(parts[2], 10);
+      const matchByVariantAndPax = assignments.find((r) => {
+        if (r.service_variant_id !== vId) return false;
+        const rParts = r.client_key?.split(":") ?? [];
+        return rParts.length >= 3 && parseInt(rParts[2], 10) === pIdx;
+      });
+      if (matchByVariantAndPax) {
+        return matchByVariantAndPax.resource_code || matchByVariantAndPax.resource_name || "";
+      }
+    }
+  }
+
+  // 2. Belum ada therapist (client_key kosong) — pakai group_id dari
+  // service_variant itu sendiri. Nolongin booking yang resource-nya
+  // udah di-assign duluan sebelum staff-nya (therapists masih []).
+  if (firstVariant?.group_id && firstVariant?.id) {
+    const prefix = `${firstVariant.group_id}:${firstVariant.id}:`;
+    const matchByGroupId = assignments.find((r) => r.client_key?.startsWith(prefix));
+    if (matchByGroupId) {
+      return matchByGroupId.resource_code || matchByGroupId.resource_name || "";
+    }
+  }
+
+  // 3. Fallback paling kasar: assignment pertama yang service_variant_id-nya sama.
+  if (firstVariant?.id) {
+    const sameVariantAssignments = assignments.filter(
+      (r) => r.service_variant_id === firstVariant.id,
+    );
+    if (sameVariantAssignments.length > 0) {
+      return (
+        sameVariantAssignments[0].resource_code ||
+        sameVariantAssignments[0].resource_name ||
+        ""
+      );
+    }
+  }
+
+  return "";
 };
 
 // Fallback nama client — kalau data kosong, tetep tampilkan label yang jelas
@@ -253,6 +343,7 @@ const addBookingToMap = (
 // ─────────────────────────────────────────────────────────────────────────────
 function buildTherapistRecap(
   events: ScheduledBooking[],
+  isSplit = false,
 ): TherapistRecapGroup[] {
   const groups = new Map<string, TherapistRecapItem[]>();
 
@@ -264,7 +355,8 @@ function buildTherapistRecap(
       key: String(event.id),
       time: event.timeStr,
       endTime: addMin(event.timeStr, event.duration_minutes),
-      serviceName: getEventServiceName(event),
+      serviceName: getEventServiceName(event, isSplit),
+      resourceName: getResourceName(event),
       durationMinutes: event.duration_minutes,
       status: event.status,
     });
@@ -303,8 +395,9 @@ function buildTherapistRecapText(
     );
     g.items.forEach((item) => {
       const statusTag = item.status !== "Confirmed" ? ` [${item.status}]` : "";
+      const resourceTag = item.resourceName ? ` (${item.resourceName})` : "";
       lines.push(
-        `  ${item.time}–${item.endTime}  ${item.serviceName}${statusTag}`,
+        `  ${item.time}–${item.endTime}  ${item.serviceName}${resourceTag}${statusTag}`,
       );
     });
     lines.push("");
@@ -504,7 +597,8 @@ function BookingHoverCard({ event, rect }: HoverCardData) {
   const top = openUpward ? rect.top - GAP : rect.bottom + GAP;
 
   const endTime = addMin(event.timeStr, event.duration_minutes);
-  const displayServiceName = getEventServiceName(event);
+  const isSplit = Boolean(event.isSplitUnit);
+  const displayServiceName = getEventServiceName(event, isSplit);
   const therapistName = getTherapistNames(event);
   const clientName = getClientDisplayName(event);
   const th = STATUS[event.status] ?? STATUS.Confirmed;
@@ -725,30 +819,15 @@ function TimelineRow({
         const blockH = LANE_H - LANE_PAD * 2;
 
         const endTime = addMin(event.timeStr, event.duration_minutes);
-        const displayServiceName = getEventServiceName(event);
+        const displayServiceName = getEventServiceName(event, isTherapistMode);
         const cat = toCat(displayServiceName);
         const th = STATUS[event.status] ?? STATUS.Confirmed;
         const isBonus = isBonusChildBooking(event);
         const clientName = getClientDisplayName(event);
         const therapistName = getTherapistNames(event);
-        const firstVariant = event?.service_variants?.[0];
-        const firstVariantQty = firstVariant?.quantity ?? 1;
-        const firstTherapist = event?.therapists?.[0] as any;
-        const targetClientKey =
-          firstTherapist?.client_key || firstVariant?.client_key;
+        const resourceName = getResourceName(event);
 
-        const resourceAssignment = event.resource_assignments?.find(
-          (r) =>
-            (targetClientKey && r.client_key === targetClientKey) ||
-            (!targetClientKey && r.service_variant_id === firstVariant?.id),
-        );
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const resourceName = (resourceAssignment as any)?.resource_code ?? "";
-
-        const serviceName =
-          event?.service_variants?.length >= 2
-            ? `${firstVariant?.name} (${1}x)`
-            : displayServiceName;
+        const serviceName = displayServiceName;
 
         return (
           <div
@@ -1326,6 +1405,11 @@ function TherapistRecapModal({
                         </span>
                         <span className="flex-1 min-w-0 truncate text-[11px] text-[var(--muted)]">
                           {item.serviceName}
+                          {item.resourceName && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded bg-[var(--surface-secondary)] text-[var(--muted)] text-[9px] font-medium">
+                              {item.resourceName}
+                            </span>
+                          )}
                         </span>
                         {item.status !== "Confirmed" && (
                           <span
@@ -1360,6 +1444,7 @@ export default function GanttChartBookings({
 }: {
   bookings?: SpaBooking[];
 }) {
+  console.log("🚀 ~ GanttChartBookings ~ bookings:", bookings);
   const [selectedDay, setSelectedDay] = useState<{
     date: Date;
     events: ScheduledBooking[];
@@ -1435,10 +1520,14 @@ export default function GanttChartBookings({
         therapistsList.length > 0 &&
         therapistsList.every((t) => t.start_time && t.end_time);
 
+      // Kasus paling umum: tiap terapis sudah punya jam mulai/selesai sendiri
+      // (hasil staff/resource assignment). Cocokkan tiap terapis ke layanan
+      // spesifik yang dia kerjakan lewat service_variant_id.
       if (hasPreciseTiming) {
         therapistsList.forEach((t, idx) => {
-          const variant = booking.service_variants?.find(
-            (v) => v.id === t.bms_ms_service_variant_id,
+          const variant = findServiceVariantById(
+            booking.service_variants,
+            t.service_variant_id,
           );
 
           const startMin = parseTimeToMinutes(t.start_time!);
@@ -1453,6 +1542,7 @@ export default function GanttChartBookings({
               ? [{ ...variant, quantity: 1 }]
               : booking.service_variants,
             therapists: [t],
+            isSplitUnit: true,
             id: `${booking.id}-split-${t.id}-${idx}`,
           });
         });
@@ -1461,30 +1551,36 @@ export default function GanttChartBookings({
         return;
       }
 
+      // Fallback: therapist belum punya start_time/end_time presisi per unit
+      // (booking lama / belum lewat resource assignment). Rekonstruksi jam
+      // per unit dari urutan quantity per varian/item bundle.
       const processUnits = (
         variantId: number,
         qty: number,
         variantData: any,
         startTime: string,
+        groupId?: string,
       ): { events: ScheduledBooking[]; nextStartTime: string } => {
         const events: ScheduledBooking[] = [];
         let currentSequentialStart = startTime;
 
+        const findTherapistForUnit = (unitIndex: number) => {
+          const targetKey = `${groupId ?? variantId}:${variantId}:${unitIndex}`;
+          return (
+            therapistsList.find((t) => t.client_key === targetKey) ??
+            therapistsList.find(
+              (t) =>
+                t.service_variant_id === variantId &&
+                !usedTherapistIds.has(t.id),
+            ) ??
+            therapistsList.find((t) => t.service_variant_id === variantId) ??
+            ({ name: booking.therapist_name } as BookingTherapist)
+          );
+        };
+
         if (isParallel) {
           for (let unitIdx = 1; unitIdx <= qty; unitIdx++) {
-            const targetKey = `${variantId}:${unitIdx}`;
-            const assignedT =
-              therapistsList.find((t) => t.client_key === targetKey) ??
-              therapistsList.find(
-                (t) =>
-                  t.bms_ms_service_variant_id === variantId &&
-                  !usedTherapistIds.has(t.id),
-              ) ??
-              therapistsList.find(
-                (t) => t.bms_ms_service_variant_id === variantId,
-              ) ??
-              ({ name: booking.therapist_name } as any);
-
+            const assignedT = findTherapistForUnit(unitIdx);
             if (assignedT?.id) usedTherapistIds.add(assignedT.id);
 
             events.push({
@@ -1493,70 +1589,61 @@ export default function GanttChartBookings({
               duration_minutes: variantData.duration_minutes ?? 0,
               service_variants: [{ ...variantData, quantity: 1 }],
               therapists: assignedT ? [assignedT] : [],
+              isSplitUnit: true,
               id: `${booking.id}-v${variantId}-u${unitIdx}-${Math.random().toString(36).slice(2, 5)}`,
             });
           }
           return { events, nextStartTime: startTime };
-        } else {
-          let unitIndex = 0;
-          while (unitIndex < qty) {
-            const targetKey = `${variantId}:${unitIndex + 1}`;
-            const currentT =
-              therapistsList.find((t) => t.client_key === targetKey) ??
-              therapistsList.find(
-                (t) =>
-                  t.bms_ms_service_variant_id === variantId &&
-                  !usedTherapistIds.has(t.id),
-              ) ??
-              therapistsList.find(
-                (t) => t.bms_ms_service_variant_id === variantId,
-              ) ??
-              ({ name: booking.therapist_name } as any);
-
-            const currentStaffId = currentT?.bms_ms_staff_id ?? -1;
-            if (currentT?.id) usedTherapistIds.add(currentT.id);
-
-            let consecutiveUnits = 1;
-            while (unitIndex + consecutiveUnits < qty) {
-              const nextKey = `${variantId}:${unitIndex + consecutiveUnits + 1}`;
-              const nextT = therapistsList.find(
-                (t) => t.client_key === nextKey,
-              );
-              if (!nextT || nextT.bms_ms_staff_id !== currentStaffId) break;
-              consecutiveUnits++;
-            }
-
-            const blockDur =
-              (variantData.duration_minutes ?? 0) * consecutiveUnits;
-            events.push({
-              ...booking,
-              timeStr: currentSequentialStart,
-              duration_minutes: blockDur,
-              service_variants: [
-                { ...variantData, quantity: consecutiveUnits },
-              ],
-              therapists: [currentT],
-              id: `${booking.id}-v${variantId}-t${currentStaffId}-${unitIndex}-${Math.random().toString(36).slice(2, 5)}`,
-            });
-
-            currentSequentialStart = addMin(currentSequentialStart, blockDur);
-            unitIndex += consecutiveUnits;
-          }
-          return { events, nextStartTime: currentSequentialStart };
         }
+
+        let unitIndex = 0;
+        while (unitIndex < qty) {
+          const currentT = findTherapistForUnit(unitIndex + 1);
+          const currentStaffId = currentT?.staff_id ?? -1;
+          if (currentT?.id) usedTherapistIds.add(currentT.id);
+
+          // Gabungkan unit berurutan yang dikerjakan terapis yang sama jadi
+          // satu blok, biar nggak kepecah-pecah kecil kalau berturut-turut.
+          let consecutiveUnits = 1;
+          while (unitIndex + consecutiveUnits < qty) {
+            const nextT = findTherapistForUnit(
+              unitIndex + consecutiveUnits + 1,
+            );
+            if (!nextT || nextT.staff_id !== currentStaffId) break;
+            consecutiveUnits++;
+          }
+
+          const blockDur =
+            (variantData.duration_minutes ?? 0) * consecutiveUnits;
+          events.push({
+            ...booking,
+            timeStr: currentSequentialStart,
+            duration_minutes: blockDur,
+            service_variants: [{ ...variantData, quantity: consecutiveUnits }],
+            therapists: [currentT],
+            isSplitUnit: true,
+            id: `${booking.id}-v${variantId}-t${currentStaffId}-${unitIndex}-${Math.random().toString(36).slice(2, 5)}`,
+          });
+
+          currentSequentialStart = addMin(currentSequentialStart, blockDur);
+          unitIndex += consecutiveUnits;
+        }
+
+        return { events, nextStartTime: currentSequentialStart };
       };
 
       if (booking.service_variants && booking.service_variants.length > 0) {
         let currentStartTime = timeStr;
 
         booking.service_variants.forEach((variant) => {
-          if (variant.type === "bundle_promo") {
+          if (isBundlePromoLine(variant)) {
             variant.items.forEach((item) => {
               const res = processUnits(
                 item.id,
                 item.quantity ?? 1,
                 item,
                 currentStartTime,
+                variant.group_id,
               );
               list.push(...res.events);
               if (!isParallel) currentStartTime = res.nextStartTime;
@@ -1568,6 +1655,7 @@ export default function GanttChartBookings({
               qty,
               variant,
               currentStartTime,
+              variant.group_id,
             );
             list.push(...res.events);
             if (!isParallel) currentStartTime = res.nextStartTime;
@@ -1579,8 +1667,9 @@ export default function GanttChartBookings({
           list.push({
             ...booking,
             timeStr,
-            duration_minutes: getBookingDuration(booking),
+            duration_minutes: getSpaBookingDuration(booking),
             therapists: [t],
+            isSplitUnit: true,
             id: `${booking.id}-fallback-${idx}`,
           });
         });
@@ -1737,7 +1826,7 @@ export default function GanttChartBookings({
                 if (viewMode === "therapist") {
                   setTherapistRecapDay({
                     date: dayDate,
-                    groups: buildTherapistRecap(rawEvents),
+                    groups: buildTherapistRecap(rawEvents, true),
                   });
                 } else {
                   setSelectedDay({ date: dayDate, events: originalEvents });
