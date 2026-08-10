@@ -22,12 +22,20 @@ interface StaffFilterDropdownProps {
   selectedStaffIds: number[];
   onSelectStaff: (staffIds: number[]) => void;
   className?: string;
+  /**
+   * "pill"  — floating rounded trigger with shadow, for standalone use in a toolbar.
+   * "flat"  — plain bordered field with no shadow/full radius, for use inside
+   *           an already-open panel (e.g. the consolidated Filters popover),
+   *           so it doesn't look like a second floating control nested in the first.
+   */
+  variant?: "pill" | "flat";
 }
 
 export default function StaffFilterDropdown({
   selectedStaffIds,
   onSelectStaff,
   className,
+  variant = "pill",
 }: StaffFilterDropdownProps) {
   const { contains } = useFilter({ sensitivity: "base" });
 
@@ -39,7 +47,12 @@ export default function StaffFilterDropdown({
       });
       return response as {
         data: Staff[];
-        meta: { current_page: number; last_page: number; per_page: number; total: number };
+        meta: {
+          current_page: number;
+          last_page: number;
+          per_page: number;
+          total: number;
+        };
       };
     },
     staleTime: 300000, // 5 minutes
@@ -55,7 +68,8 @@ export default function StaffFilterDropdown({
   };
 
   const initials = (staff: Staff) =>
-    `${staff.first_name?.[0] ?? ""}${staff.last_name?.[0] ?? ""}`.toUpperCase() || "?";
+    `${staff.first_name?.[0] ?? ""}${staff.last_name?.[0] ?? ""}`.toUpperCase() ||
+    "?";
 
   const fullName = (staff: Staff) =>
     [staff.first_name, staff.last_name].filter(Boolean).join(" ");
@@ -64,26 +78,38 @@ export default function StaffFilterDropdown({
     onSelectStaff(selectedStaffIds.filter((id) => !keys.has(id)));
   };
 
+  const triggerClass =
+    variant === "flat"
+      ? "rounded-xl border border-border bg-surface px-3 py-2 transition-colors hover:border-foreground/20 data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/40"
+      : "rounded-full border border-border bg-surface px-3 py-2 shadow-sm transition-colors hover:border-foreground/20 data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/40";
+
   return (
     <div className={className}>
       <Autocomplete
-        className="w-[220px]"
+        className={variant === "flat" ? "w-full" : "w-[220px]"}
         selectionMode="multiple"
         placeholder="Semua Terapis"
         value={selectedKeys}
         onChange={handleChange}
         isDisabled={isLoading}
       >
-        <Autocomplete.Trigger className="rounded-full border border-border bg-surface px-3 py-2 shadow-sm transition-colors hover:border-foreground/20 data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-primary/40">
+        <Autocomplete.Trigger className={triggerClass}>
           <Autocomplete.Value>
             {({ defaultChildren, isPlaceholder, state }) => {
               if (isPlaceholder || state.selectedItems.length === 0) {
-                return <span className="text-sm font-medium">{defaultChildren}</span>;
+                return (
+                  <span className="text-sm font-medium">{defaultChildren}</span>
+                );
               }
 
               if (state.selectedItems.length === 1) {
-                const staff = staffs.find((s) => s.id === Number(state.selectedItems[0]?.key));
-                if (!staff) return <span className="text-sm font-medium">Semua Terapis</span>;
+                const staff = staffs.find(
+                  (s) => s.id === Number(state.selectedItems[0]?.key),
+                );
+                if (!staff)
+                  return (
+                    <span className="text-sm font-medium">Semua Terapis</span>
+                  );
                 return (
                   <div className="flex items-center gap-2">
                     <Avatar className="size-6">
@@ -91,12 +117,16 @@ export default function StaffFilterDropdown({
                         {initials(staff)}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-sm font-medium truncate">{fullName(staff)}</span>
+                    <span className="text-sm font-medium truncate">
+                      {fullName(staff)}
+                    </span>
                   </div>
                 );
               }
 
-              const selectedKeysArr = state.selectedItems.map((item) => item.key);
+              const selectedKeysArr = state.selectedItems.map(
+                (item) => item.key,
+              );
 
               return (
                 <TagGroup size="sm" onRemove={onRemoveTags}>
@@ -126,7 +156,12 @@ export default function StaffFilterDropdown({
 
         <Autocomplete.Popover className="w-[260px] rounded-xl border border-border bg-surface p-2 shadow-lg">
           <Autocomplete.Filter filter={contains}>
-            <SearchField autoFocus name="search" variant="secondary" className="mb-2">
+            <SearchField
+              autoFocus
+              name="search"
+              variant="secondary"
+              className="mb-2"
+            >
               <SearchField.Group className="rounded-full border border-border bg-surface-secondary px-2">
                 <SearchField.SearchIcon className="size-4 text-muted" />
                 <SearchField.Input
@@ -158,7 +193,9 @@ export default function StaffFilterDropdown({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col leading-tight">
-                    <Label className="text-sm font-medium">{fullName(staff)}</Label>
+                    <Label className="text-sm font-medium">
+                      {fullName(staff)}
+                    </Label>
                     <Description className="text-xs text-muted">
                       {staff.employee_code} · {staff.job_title}
                     </Description>

@@ -1514,21 +1514,6 @@ export default function GanttChartBookings() {
     [],
   );
 
-  // ───────────────────────────────────────────────────────────────────────
-  // SELF-FETCH — Gantt sekarang ambil datanya sendiri, scoped ke window
-  // 7 hari yang lagi dia tampilin (viewStart–viewEnd), TIDAK lagi bergantung
-  // pada `filteredBookings` milik parent (yang paginated, limit default 10).
-  //
-  // Kenapa ini penting: sebelumnya Gantt cuma nampilin booking di halaman
-  // tabel aktif, jadi begitu booking sebulan > pageSize, timeline salah/kepotong
-  // tanpa ada error yang keliatan. Dengan fetch sendiri per-window 7 hari,
-  // Gantt selalu dapat data yang benar-benar lengkap untuk rentang yang
-  // ditampilkan, independen dari filter/pagination tabel.
-  //
-  // React Query (di balik useApiFetch) otomatis cache per query key, jadi
-  // mundur ke minggu yang udah pernah dibuka sebelumnya nggak fetch ulang —
-  // ini yang bikin navigasi tanggal berasa ringan.
-  // ───────────────────────────────────────────────────────────────────────
   const startDateStr = useMemo(() => toDateStr(viewStart), [viewStart]);
   const endDateStr = useMemo(() => toDateStr(viewEnd), [viewEnd]);
 
@@ -1536,10 +1521,6 @@ export default function GanttChartBookings() {
     () => ({
       start_date: startDateStr,
       end_date: endDateStr,
-      // Limit gede supaya satu window 7 hari kebawa penuh dalam satu request
-      // (bukan solusi "proper" jangka panjang — endpoint ini masih eager-load
-      // relasi berat yang Gantt sendiri nggak butuh semuanya. Kalau nanti
-      // kerasa berat, bikin endpoint ringan khusus timeline).
       limit: GANTT_FETCH_LIMIT,
     }),
     [startDateStr, endDateStr],
@@ -1554,8 +1535,6 @@ export default function GanttChartBookings() {
     true,
   );
 
-  // Nyimpen data terakhir yang berhasil di-fetch, biar pas ganti tanggal
-  // timeline nggak kedip kosong sambil nunggu response baru datang.
   const [displayBookings, setDisplayBookings] = useState<SpaBooking[]>([]);
   useEffect(() => {
     if (ganttResponse?.data) {

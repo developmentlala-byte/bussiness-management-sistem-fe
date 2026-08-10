@@ -60,12 +60,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
 import { AlertDialog } from "@heroui/react";
-import StatusFilterDropdown from "./components/status-filter-dropdown";
+import StatusFilterDropdown from "./components/status-filter-inline";
 import StaffFilterDropdown from "./components/staff-filter-dropdown";
-import RatingFilterDropdown from "./components/rating-filter-dropdown";
+import RatingFilterDropdown from "./components/rating-filter-inline";
 import RatingDrawer from "./components/ratingDrawer";
 import { CopyableText } from "@/app/components/copyable-text";
 import { Star } from "@phosphor-icons/react";
+import BookingsFilterToolbar from "./components/BookingsPageInner";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -1109,246 +1110,34 @@ function BookingsPageInner() {
       </div>
 
       {/* TOOLBAR — 2 baris berdasarkan fungsi, biar tidak sesak */}
-      <div
-        className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-3"
-        style={{ borderRadius: "var(--radius-xl)" }}
-      >
-        {/* BARIS 1: FILTER DATA — date range, status, sumber tanggal */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-11 items-center justify-between overflow-visible rounded-full border border-border shadow-sm transition-colors w-full sm:w-fit">
-            <button
-              onClick={() => {
-                const rangeDuration =
-                  dateRange.end.compare(dateRange.start) + 1;
-                setDateRange({
-                  start: dateRange.start.subtract({ days: rangeDuration }),
-                  end: dateRange.end.subtract({ days: rangeDuration }),
-                });
-              }}
-              className="flex h-full w-12 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
-              aria-label="Previous period"
-            >
-              <CaretLeft weight="bold" className="h-4 w-4" />
-            </button>
-
-            <Dropdown>
-              <Dropdown.Trigger className="w-full md:w-fit">
-                <div className="flex flex-1 cursor-pointer items-center justify-center gap-2 px-4 text-[13px] sm:text-sm font-bold text-foreground outline-none transition-colors hover:bg-surface-secondary/50">
-                  <CalendarBlank
-                    weight="bold"
-                    className="h-4 w-4 shrink-0 text-muted"
-                  />
-                  <span className="truncate">
-                    {formatDate(dateRange.start.toDate(timeZone), {
-                      dateStyle: "medium",
-                    })}{" "}
-                    -{" "}
-                    {formatDate(dateRange.end.toDate(timeZone), {
-                      dateStyle: "medium",
-                    })}
-                  </span>
-                </div>
-              </Dropdown.Trigger>
-              <Dropdown.Popover
-                placement="bottom"
-                className="z-[100] w-[calc(100vw-2rem)] sm:w-auto min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl"
-              >
-                <RangeCalendar
-                  aria-label="Pilih rentang tanggal"
-                  value={dateRange}
-                  onChange={(val) => setDateRange(val)}
-                  className="w-full"
-                >
-                  <RangeCalendar.Header>
-                    <RangeCalendar.Heading />
-                    <RangeCalendar.NavButton slot="previous" />
-                    <RangeCalendar.NavButton slot="next" />
-                  </RangeCalendar.Header>
-                  <RangeCalendar.Grid>
-                    <RangeCalendar.GridHeader>
-                      {(day) => (
-                        <RangeCalendar.HeaderCell>
-                          {day}
-                        </RangeCalendar.HeaderCell>
-                      )}
-                    </RangeCalendar.GridHeader>
-                    <RangeCalendar.GridBody>
-                      {(date) => <RangeCalendar.Cell date={date} />}
-                    </RangeCalendar.GridBody>
-                  </RangeCalendar.Grid>
-                </RangeCalendar>
-              </Dropdown.Popover>
-            </Dropdown>
-
-            <button
-              onClick={() => {
-                const rangeDuration =
-                  dateRange.end.compare(dateRange.start) + 1;
-                setDateRange({
-                  start: dateRange.start.add({ days: rangeDuration }),
-                  end: dateRange.end.add({ days: rangeDuration }),
-                });
-              }}
-              className="flex h-full w-12 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
-              aria-label="Next period"
-            >
-              <CaretRight weight="bold" className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-4 py-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              Berdasarkan
-            </span>
-            <div className="flex bg-surface rounded-full p-1">
-              <button
-                onClick={() => setUseScheduleDate(true)}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  useScheduleDate
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Tanggal Booking
-              </button>
-              <button
-                onClick={() => setUseScheduleDate(false)}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  !useScheduleDate
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Waktu Dibuat
-              </button>
-            </div>
-          </div>
-
-          <StatusFilterDropdown
-            statuses={BOOKING_STATUS_OPTIONS}
-            defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
-            onChange={(ids) => setActiveStatusIds(ids)}
-            className="hidden! sm:inline-flex!"
-          />
-
-          <StaffFilterDropdown
-            selectedStaffIds={selectedStaffIds}
-            onSelectStaff={setSelectedStaffIds}
-            className="hidden! sm:inline-flex!"
-          />
-
-          <RatingFilterDropdown
-            selectedRating={selectedRating}
-            onChange={setSelectedRating}
-            className="hidden! sm:inline-flex!"
-          />
-        </div>
-
-        {/* BARIS 2: PENCARIAN + AKSI — search dapat ruang lebar, aksi di kanan */}
-        <div className="flex flex-wrap items-center gap-3">
-          <TextField
-            aria-label="Cari nama atau nomor HP customer"
-            className="w-full sm:flex-1 sm:min-w-[240px] "
-          >
-            <InputGroup className="h-11 rounded-full" fullWidth>
-              <InputGroup.Prefix>
-                <MagnifyingGlass weight="bold" className="h-4 w-4 text-muted" />
-              </InputGroup.Prefix>
-              <InputGroup.Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Cari nama / no. HP customer..."
-                className="text-sm font-medium"
-              />
-              {searchInput && (
-                <InputGroup.Suffix className="pr-1">
-                  <button
-                    type="button"
-                    aria-label="Hapus pencarian"
-                    onClick={() => setSearchInput("")}
-                    className="flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-surface-secondary hover:text-foreground transition-colors"
-                  >
-                    <X weight="bold" className="h-3.5 w-3.5" />
-                  </button>
-                </InputGroup.Suffix>
-              )}
-            </InputGroup>
-          </TextField>
-
-          {/* Status filter juga muncul di sini khusus layar kecil, karena disembunyikan di baris 1 */}
-          <StatusFilterDropdown
-            statuses={BOOKING_STATUS_OPTIONS}
-            defaultChecked={BOOKING_STATUS_OPTIONS.map((s) => s.id)}
-            onChange={(ids) => setActiveStatusIds(ids)}
-            className="sm:hidden! w-full!"
-          />
-
-          <StaffFilterDropdown
-            selectedStaffIds={selectedStaffIds}
-            onSelectStaff={setSelectedStaffIds}
-            className="sm:hidden! w-full!"
-          />
-
-          <RatingFilterDropdown
-            selectedRating={selectedRating}
-            onChange={setSelectedRating}
-            className="sm:hidden! w-full!"
-          />
-
-          <div className="flex items-center gap-3 ml-auto">
-            <Button
-              variant="secondary"
-              style={{
-                borderRadius: "var(--radius-xl)",
-                border: "1px solid var(--border)",
-                padding: "var(--space-2) var(--space-4)",
-                fontSize: "var(--text-sm)",
-              }}
-              onClick={() => setIsChartVisible(!isChartVisible)}
-            >
-              <CalendarBlank
-                style={{ width: "var(--icon-sm)", height: "var(--icon-sm)" }}
-              />
-              <span className="hidden sm:inline">
-                {isChartVisible ? "Hide Timeline" : "Show Timeline"}
-              </span>
-              <span className="sm:hidden">Timeline</span>
-              {isChartVisible ? (
-                <CaretUp
-                  style={{
-                    width: "var(--icon-xs)",
-                    height: "var(--icon-xs)",
-                    marginLeft: "var(--space-1)",
-                    color: "var(--muted)",
-                  }}
-                />
-              ) : (
-                <CaretDown
-                  style={{
-                    width: "var(--icon-xs)",
-                    height: "var(--icon-xs)",
-                    marginLeft: "var(--space-1)",
-                    color: "var(--muted)",
-                  }}
-                />
-              )}
-            </Button>
-
-            <Button
-              variant="secondary"
-              style={{
-                borderRadius: "var(--radius-xl)",
-                border: "1px solid var(--border)",
-                padding: "var(--space-2) var(--space-4)",
-                fontSize: "var(--text-sm)",
-              }}
-              onClick={() => void handleSendBookingCreatedReportToWhatsApp()}
-            >
-              <PaperPlaneRight className="size-5" /> Kirim WA
-            </Button>
-          </div>
-        </div>
-      </div>
+      <BookingsFilterToolbar
+        timeZone={timeZone}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        onShiftPeriod={(dir) => {
+          const rangeDuration = dateRange.end.compare(dateRange.start) + 1;
+          setDateRange({
+            start: dateRange.start.add({ days: rangeDuration * dir }),
+            end: dateRange.end.add({ days: rangeDuration * dir }),
+          });
+        }}
+        useScheduleDate={useScheduleDate}
+        onUseScheduleDateChange={setUseScheduleDate}
+        bookingStatusOptions={BOOKING_STATUS_OPTIONS}
+        activeStatusIds={activeStatusIds}
+        onActiveStatusIdsChange={setActiveStatusIds}
+        selectedStaffIds={selectedStaffIds}
+        onSelectedStaffIdsChange={setSelectedStaffIds}
+        selectedRating={selectedRating}
+        onSelectedRatingChange={setSelectedRating}
+        searchInput={searchInput}
+        onSearchInputChange={setSearchInput}
+        isChartVisible={isChartVisible}
+        onToggleChart={() => setIsChartVisible((v) => !v)}
+        onSendWhatsAppReport={() =>
+          void handleSendBookingCreatedReportToWhatsApp()
+        }
+      />
 
       {/* GANTT CHART */}
       <div
