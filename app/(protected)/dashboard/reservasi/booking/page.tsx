@@ -1361,7 +1361,7 @@ function BookingsPageInner() {
       >
         <div className="overflow-hidden">
           <div className="pt-1 pb-4">
-            <GanttChartBookings bookings={filteredBookings} />
+            <GanttChartBookings />
           </div>
         </div>
       </div>

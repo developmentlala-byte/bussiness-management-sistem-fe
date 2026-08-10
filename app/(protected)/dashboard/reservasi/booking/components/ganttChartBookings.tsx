@@ -25,6 +25,7 @@ import {
   getSpaBookingDuration,
   BookingTherapist,
 } from "@/app/types/booking";
+import { useApiFetch } from "@/app/libs/use-http";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -42,6 +43,13 @@ const LANE_PAD = 8;
 const DAYS_IN_VIEW = 7;
 // MIN_LABEL_WIDTH dinaikin biar teks nggak kepaksa truncate parah di block pendek.
 const MIN_LABEL_WIDTH = 150;
+
+// Gantt fetch sendiri (nggak lagi ikut pagination tabel), jadi kita kasih
+// limit yang cukup gede biar semua booking dalam window 7 hari kebawa dalam
+// satu request. Ini bukan solusi ideal jangka panjang (endpoint /master/bookings
+// masih eager-load relasi berat yang Gantt sendiri nggak butuh semua) — tapi
+// aman dipakai sekarang tanpa nyentuh backend sama sekali.
+const GANTT_FETCH_LIMIT = 500;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -270,8 +278,11 @@ const getResourceName = (event: ScheduledBooking): string => {
   // 1. Match presisi pakai client_key therapist (kalau therapist udah ke-assign)
   const therapistClientKey = firstTherapist?.client_key;
   if (therapistClientKey) {
-    const matchByKey = assignments.find((r) => r.client_key === therapistClientKey);
-    if (matchByKey) return matchByKey.resource_code || matchByKey.resource_name || "";
+    const matchByKey = assignments.find(
+      (r) => r.client_key === therapistClientKey,
+    );
+    if (matchByKey)
+      return matchByKey.resource_code || matchByKey.resource_name || "";
 
     const parts = therapistClientKey.split(":");
     if (parts.length >= 3) {
@@ -283,7 +294,11 @@ const getResourceName = (event: ScheduledBooking): string => {
         return rParts.length >= 3 && parseInt(rParts[2], 10) === pIdx;
       });
       if (matchByVariantAndPax) {
-        return matchByVariantAndPax.resource_code || matchByVariantAndPax.resource_name || "";
+        return (
+          matchByVariantAndPax.resource_code ||
+          matchByVariantAndPax.resource_name ||
+          ""
+        );
       }
     }
   }
@@ -293,7 +308,9 @@ const getResourceName = (event: ScheduledBooking): string => {
   // udah di-assign duluan sebelum staff-nya (therapists masih []).
   if (firstVariant?.group_id && firstVariant?.id) {
     const prefix = `${firstVariant.group_id}:${firstVariant.id}:`;
-    const matchByGroupId = assignments.find((r) => r.client_key?.startsWith(prefix));
+    const matchByGroupId = assignments.find((r) =>
+      r.client_key?.startsWith(prefix),
+    );
     if (matchByGroupId) {
       return matchByGroupId.resource_code || matchByGroupId.resource_name || "";
     }
@@ -513,12 +530,14 @@ function DayNavControl({
   onPrev,
   onNext,
   onToday,
+  isLoading,
 }: {
   isAtToday: boolean;
   rangeLabel: string;
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
+  isLoading?: boolean;
 }) {
   return (
     <div className="flex items-center gap-0.5 shrink-0">
@@ -573,6 +592,15 @@ function DayNavControl({
       >
         <CaretRight weight="bold" className="size-3.5" />
       </button>
+
+      {/* Indikator halus pas lagi fetch window tanggal baru — biar user tau
+          timeline lagi update, bukan macet/freeze. */}
+      {isLoading && (
+        <span
+          className="ml-1 size-1.5 rounded-full bg-[var(--accent)] animate-pulse"
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
@@ -1439,12 +1467,7 @@ function TherapistRecapModal({
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
-export default function GanttChartBookings({
-  bookings = [],
-}: {
-  bookings?: SpaBooking[];
-}) {
-  console.log("🚀 ~ GanttChartBookings ~ bookings:", bookings);
+export default function GanttChartBookings() {
   const [selectedDay, setSelectedDay] = useState<{
     date: Date;
     events: ScheduledBooking[];
@@ -1491,16 +1514,65 @@ export default function GanttChartBookings({
     [],
   );
 
+  // ───────────────────────────────────────────────────────────────────────
+  // SELF-FETCH — Gantt sekarang ambil datanya sendiri, scoped ke window
+  // 7 hari yang lagi dia tampilin (viewStart–viewEnd), TIDAK lagi bergantung
+  // pada `filteredBookings` milik parent (yang paginated, limit default 10).
+  //
+  // Kenapa ini penting: sebelumnya Gantt cuma nampilin booking di halaman
+  // tabel aktif, jadi begitu booking sebulan > pageSize, timeline salah/kepotong
+  // tanpa ada error yang keliatan. Dengan fetch sendiri per-window 7 hari,
+  // Gantt selalu dapat data yang benar-benar lengkap untuk rentang yang
+  // ditampilkan, independen dari filter/pagination tabel.
+  //
+  // React Query (di balik useApiFetch) otomatis cache per query key, jadi
+  // mundur ke minggu yang udah pernah dibuka sebelumnya nggak fetch ulang —
+  // ini yang bikin navigasi tanggal berasa ringan.
+  // ───────────────────────────────────────────────────────────────────────
+  const startDateStr = useMemo(() => toDateStr(viewStart), [viewStart]);
+  const endDateStr = useMemo(() => toDateStr(viewEnd), [viewEnd]);
+
+  const ganttQueryParams = useMemo(
+    () => ({
+      start_date: startDateStr,
+      end_date: endDateStr,
+      // Limit gede supaya satu window 7 hari kebawa penuh dalam satu request
+      // (bukan solusi "proper" jangka panjang — endpoint ini masih eager-load
+      // relasi berat yang Gantt sendiri nggak butuh semuanya. Kalau nanti
+      // kerasa berat, bikin endpoint ringan khusus timeline).
+      limit: GANTT_FETCH_LIMIT,
+    }),
+    [startDateStr, endDateStr],
+  );
+
+  const { data: ganttResponse, isFetching: isGanttFetching } = useApiFetch<{
+    data: SpaBooking[];
+  }>(
+    ["gantt-bookings", startDateStr, endDateStr],
+    "/master/bookings",
+    ganttQueryParams,
+    true,
+  );
+
+  // Nyimpen data terakhir yang berhasil di-fetch, biar pas ganti tanggal
+  // timeline nggak kedip kosong sambil nunggu response baru datang.
+  const [displayBookings, setDisplayBookings] = useState<SpaBooking[]>([]);
+  useEffect(() => {
+    if (ganttResponse?.data) {
+      setDisplayBookings(ganttResponse.data);
+    }
+  }, [ganttResponse]);
+
   const byDate = useMemo(() => {
     const map = new Map<string, ScheduledBooking[]>();
-    bookings.forEach((booking) => {
+    displayBookings.forEach((booking) => {
       addBookingToMap(map, booking);
       (booking.child_bookings ?? []).forEach((child) =>
         addBookingToMap(map, child),
       );
     });
     return map;
-  }, [bookings]);
+  }, [displayBookings]);
 
   const byDateSplit = useMemo(() => {
     const map = new Map<string, ScheduledBooking[]>();
@@ -1678,13 +1750,13 @@ export default function GanttChartBookings({
       map.set(dateStr, list);
     };
 
-    bookings.forEach((booking) => {
+    displayBookings.forEach((booking) => {
       addSplitEvent(booking);
       (booking.child_bookings ?? []).forEach((child) => addSplitEvent(child));
     });
 
     return map;
-  }, [bookings]);
+  }, [displayBookings]);
 
   const nowPx = useMemo(() => {
     const now = new Date();
@@ -1752,6 +1824,7 @@ export default function GanttChartBookings({
             onPrev={goPrevDay}
             onNext={goNextDay}
             onToday={goToday}
+            isLoading={isGanttFetching}
           />
 
           <div className="flex flex-wrap items-center gap-4">
