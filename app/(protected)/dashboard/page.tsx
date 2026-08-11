@@ -826,7 +826,6 @@ export default function DashboardOverviewPage() {
     data: PaginatedApiResponse<{ dow: number; count: number }[]>;
   }>(["weekly-booking"], "/booking/weekly-booking");
 
-  const queryClient = useQueryClient();
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
 
   const targetParams = useMemo(() => {
@@ -858,11 +857,13 @@ export default function DashboardOverviewPage() {
   // FIX: card Pendapatan sekarang kasih tau kalau periode-nya masih berjalan (belum full sebulan).
   const stats = useMemo(() => {
     const bookingDays = Math.round(
-      totalBookingsResponse?.meta?.compared_days ?? 30,
+      totalBookingsResponse?.data?.meta?.compared_days ?? 30,
     );
-    const customerDays = Math.round(
-      totalCustomersResponse?.meta?.compared_days ?? 30,
-    );
+
+    // const customerDays = Math.round(
+    //   totalCustomersResponse?.data?.meta?.compared_days ?? 30,
+    // );
+
     const revenueDays = Math.round(
       totalRevenueResponse?.data?.meta?.compared_days ?? 30,
     );
@@ -890,7 +891,7 @@ export default function DashboardOverviewPage() {
           (totalCustomersResponse?.data?.trend.value ?? 0) >= 0
             ? ("up" as const)
             : ("down" as const),
-        context: `vs last ${customerDays} Hari`,
+        context: `vs last ${bookingDays} Hari`,
       },
       {
         label: "Layanan dilakukan",
@@ -917,6 +918,7 @@ export default function DashboardOverviewPage() {
       },
     ];
   }, [totalBookingsResponse, totalCustomersResponse, totalRevenueResponse]);
+  console.log("🚀 ~ DashboardOverviewPage ~ stats:", stats);
 
   const rawStaffs = useMemo(() => staffsResponse?.data ?? [], [staffsResponse]);
   const rawAttendances = useMemo(
