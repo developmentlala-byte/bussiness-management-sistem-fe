@@ -58,7 +58,7 @@ const staffSchema = z.object({
   job_title: z.string().min(1, "Posisi / Jabatan wajib dipilih").max(255),
   join_date: z.string().min(1, "Tanggal bergabung wajib diisi"),
   status: z
-    .enum(["active", "inactive", "on_leave", "terminated"])
+    .enum(["active", "inactive", "on_leave", "terminated", "sick"])
     .default("active"),
 });
 
@@ -561,6 +561,15 @@ export const EditStaffModal: React.FC<EditStaffModalProps> = ({
                         >
                           <span className="text-orange-600 font-semibold">
                             Cuti
+                          </span>
+                        </ListBox.Item>
+                        <ListBox.Item
+                          id="sick"
+                          textValue="Sakit"
+                          className="hover:bg-surface-secondary py-2 rounded-lg"
+                        >
+                          <span className="text-red-500 font-semibold">
+                            Sakit
                           </span>
                         </ListBox.Item>
                         <ListBox.Item

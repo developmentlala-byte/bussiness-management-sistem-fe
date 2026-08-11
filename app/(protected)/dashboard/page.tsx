@@ -23,12 +23,15 @@ import { CalendarBlank as CalendarIcon } from "@phosphor-icons/react";
 import Image from "next/image";
 import { useReactToPrint } from "react-to-print";
 import { PaginatedApiResponse, SingleApiResponse } from "@/app/types/api";
-import { useApiFetch } from "@/app/libs/use-http";
 import { IDR } from "@/app/libs/idr";
 import { formatNumber } from "@/app/libs/formatNumber";
 import { formatWallClockDate } from "@/app/libs/date-format";
 import { resolvePhotoUrl } from "@/app/libs/resolve-url";
 import WeeklyBookingCard from "./components/dashboardWeeklyBooking";
+import TargetOmzetCard from "./components/targetOmzetCard";
+import SetTargetModal from "./components/setTargetModal";
+import { useApiFetch, usePut } from "@/app/libs/use-http";
+import { useQueryClient } from "@tanstack/react-query";
 
 type DateRange = { start: DateValue; end: DateValue } | null;
 
@@ -88,7 +91,8 @@ type RevenueReportResponse = {
 
 type TopServicesResponse = Array<{
   label: string;
-  bookings: number;
+  quantity: number;
+  revenue: number;
   percentage: number;
 }>;
 
@@ -129,6 +133,11 @@ type StaffRecord = {
   first_name: string;
   last_name?: string | null;
   avatar_path?: string | null;
+};
+
+type CompanyTargetResponse = {
+  target_amount: number | null;
+  note: string | null;
 };
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
@@ -817,6 +826,33 @@ export default function DashboardOverviewPage() {
     data: PaginatedApiResponse<{ dow: number; count: number }[]>;
   }>(["weekly-booking"], "/booking/weekly-booking");
 
+  const queryClient = useQueryClient();
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+
+  const targetParams = useMemo(() => {
+    const d = dateRange?.start ?? today(tz);
+    return { year: d.year, month: d.month };
+  }, [dateRange, tz]);
+
+  const { data: companyTargetResponse, isLoading: isTargetLoading } =
+    useApiFetch<SingleApiResponse<CompanyTargetResponse>>(
+      ["company_target", targetParams.year, targetParams.month],
+      "/st/company/target",
+      targetParams,
+    );
+
+  const mutation = usePut("/st/company/target", {
+    invalidate: [["company_target"]],
+  });
+
+  const handleSaveTarget = async (amount: number, note: string) => {
+    await mutation.mutateAsync({
+      ...targetParams,
+      target_amount: amount,
+      note,
+    });
+  };
+
   // FIX: setiap card sekarang pakai compared_days dari ENDPOINT-nya sendiri,
   // bukan 1 variabel yang dishare — biar label periode selalu match sama trend value-nya.
   // FIX: card Pendapatan sekarang kasih tau kalau periode-nya masih berjalan (belum full sebulan).
@@ -1178,6 +1214,16 @@ export default function DashboardOverviewPage() {
               <StatCard {...stat} />
             </div>
           ))}
+          <div className="flex max-lg:w-full!">
+            <TargetOmzetCard
+              currentRevenue={
+                totalRevenueResponse?.data?.summary?.total_revenue ?? 0
+              }
+              targetAmount={companyTargetResponse?.data?.target_amount ?? null}
+              isLoading={isTargetLoading}
+              onSetTarget={() => setIsTargetModalOpen(true)}
+            />
+          </div>
         </div>
 
         <div className="col-span-12 lg:col-span-7 min-w-0">
@@ -1217,6 +1263,16 @@ export default function DashboardOverviewPage() {
           <RecentBookingsTable bookings={recentBookingsResponse?.data ?? []} />
         </div>
       </div>
+
+      <SetTargetModal
+        isOpen={isTargetModalOpen}
+        onClose={() => setIsTargetModalOpen(false)}
+        initialAmount={companyTargetResponse?.data?.target_amount ?? 0}
+        initialNote={companyTargetResponse?.data?.note ?? ""}
+        year={targetParams.year}
+        month={targetParams.month}
+        onSave={handleSaveTarget}
+      />
     </div>
   );
 }

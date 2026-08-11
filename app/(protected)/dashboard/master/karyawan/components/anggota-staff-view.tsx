@@ -1,3 +1,4 @@
+"use client";
 import {
   Avatar,
   Dropdown,
@@ -8,6 +9,7 @@ import {
 } from "@heroui/react";
 import {
   DotsThree,
+  Eye,
   MagnifyingGlass,
   PencilSimple,
   Trash,
@@ -23,9 +25,11 @@ import { Staff } from "@/app/types/staff";
 import { EditStaffModal } from "../modal/edit-staff-modal";
 import { DeleteStaffModal } from "../modal/delete-staff-modal";
 import { StaffAvatar } from "@/app/components/staff-avatar";
+import { useRouter } from "next/navigation";
 
 export default function AnggotaStaffView() {
   const [search, setSearch] = useState("");
+  const { push } = useRouter();
 
   // STATE MANAJEMEN MODAL
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -215,13 +219,12 @@ export default function AnggotaStaffView() {
                   </td>
                   <td className="px-4 py-5 whitespace-nowrap">
                     <span className="text-sm text-muted font-semibold">
-                      {staff.join_date && !isNaN(new Date(staff.join_date).getTime()) ? (
-                        new Intl.DateTimeFormat("id-ID", {
-                          dateStyle: "medium",
-                        }).format(new Date(staff.join_date))
-                      ) : (
-                        "-"
-                      )}
+                      {staff.join_date &&
+                      !isNaN(new Date(staff.join_date).getTime())
+                        ? new Intl.DateTimeFormat("id-ID", {
+                            dateStyle: "medium",
+                          }).format(new Date(staff.join_date))
+                        : "-"}
                     </span>
                   </td>
                   <td className="px-4 py-5 whitespace-nowrap">
@@ -242,6 +245,25 @@ export default function AnggotaStaffView() {
                       >
                         <Dropdown.Menu aria-label="Aksi Staf">
                           <Dropdown.Section>
+                            <Dropdown.Item
+                              id="detail"
+                              textValue="Detail"
+                              onPress={() =>
+                                push(
+                                  `/dashboard/master/karyawan/${staff.first_name}`,
+                                )
+                              }
+                            >
+                              <div className="flex items-center gap-2">
+                                <Eye
+                                  weight="bold"
+                                  className="w-4 h-4 text-muted"
+                                />
+                                <Label className="font-semibold text-sm cursor-pointer">
+                                  Detail
+                                </Label>
+                              </div>
+                            </Dropdown.Item>
                             <Dropdown.Item
                               id="edit"
                               textValue="Edit Profil"

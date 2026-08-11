@@ -48,6 +48,7 @@ interface StaffSchedule {
   start_time?: string | null;
   end_time?: string | null;
   is_day_off?: boolean;
+  is_sick?: boolean;
   shift?: Shift;
 }
 
@@ -65,6 +66,7 @@ interface SchedulePayload {
   date: string;
   bms_ms_shift_id?: number | string | null;
   is_day_off?: boolean;
+  is_sick?: boolean;
 }
 
 interface RemovePayload {
@@ -72,6 +74,7 @@ interface RemovePayload {
   date: string;
   bms_ms_shift_id?: null;
   is_day_off: boolean;
+  is_sick: boolean;
 }
 
 interface ScheduleCellProps {
@@ -108,6 +111,8 @@ const ScheduleCell = ({
   const [isCellLoading, setIsCellLoading] = useState(false);
   const actionLockRef = useRef(false);
   const isDayOff = Boolean(schedule?.is_day_off);
+  const isSick = Boolean(schedule?.is_sick);
+
   const resolvedShift = useMemo(
     () =>
       schedule?.shift ??
@@ -124,12 +129,19 @@ const ScheduleCell = ({
 
   const handleAssign = (shiftId: string) => {
     if (actionLockRef.current) return;
-    if (!isDayOff && String(schedule?.bms_ms_shift_id) === shiftId) return;
+    if (!isDayOff && !isSick && String(schedule?.bms_ms_shift_id) === shiftId)
+      return;
 
     actionLockRef.current = true;
     setIsCellLoading(true);
     assignSchedule(
-      { bms_ms_staff_id: staff.id, date: date, bms_ms_shift_id: shiftId },
+      {
+        bms_ms_staff_id: staff.id,
+        date: date,
+        bms_ms_shift_id: shiftId,
+        is_day_off: false,
+        is_sick: false,
+      },
       { onSettled: unlockCell },
     );
   };
@@ -145,6 +157,7 @@ const ScheduleCell = ({
         date,
         bms_ms_shift_id: null,
         is_day_off: true,
+        is_sick: false,
       },
       { onSettled: unlockCell },
     );
@@ -162,6 +175,25 @@ const ScheduleCell = ({
         date,
         bms_ms_shift_id: null,
         is_day_off: true,
+        is_sick: false,
+      },
+      { onSettled: unlockCell },
+    );
+  };
+
+  const handleMarkSick = () => {
+    if (actionLockRef.current) return;
+    if (isSick && !schedule?.bms_ms_shift_id) return;
+
+    actionLockRef.current = true;
+    setIsCellLoading(true);
+    assignSchedule(
+      {
+        bms_ms_staff_id: staff.id,
+        date,
+        bms_ms_shift_id: null,
+        is_day_off: false,
+        is_sick: true,
       },
       { onSettled: unlockCell },
     );
@@ -200,28 +232,34 @@ const ScheduleCell = ({
           {schedule ? (
             <div
               className={`w-full h-full border py-2 px-1 flex flex-col items-center justify-center cursor-pointer transition-colors group/event ${
-                isDayOff
+                isDayOff || isSick
                   ? "bg-danger/10 border-danger/20 hover:bg-danger/15"
                   : "bg-accent/15 border-accent/20 hover:bg-accent/25"
               }`}
             >
               <span
                 className={`text-[12px] font-bold tracking-tight ${
-                  isDayOff ? "text-danger" : "text-accent"
+                  isDayOff || isSick ? "text-danger" : "text-accent"
                 }`}
               >
-                {isDayOff
-                  ? "Libur"
-                  : resolvedShift
-                    ? `${resolvedShift.start_time.substring(0, 5)} - ${resolvedShift.end_time.substring(0, 5)}`
-                    : "Custom"}
+                {isSick
+                  ? "Sakit"
+                  : isDayOff
+                    ? "Libur"
+                    : resolvedShift
+                      ? `${resolvedShift.start_time.substring(0, 5)} - ${resolvedShift.end_time.substring(0, 5)}`
+                      : "Custom"}
               </span>
               <span
                 className={`text-[10px] font-bold mt-0.5 truncate w-full px-1 text-center ${
-                  isDayOff ? "text-danger/70" : "text-accent/60"
+                  isDayOff || isSick ? "text-danger/70" : "text-accent/60"
                 }`}
               >
-                {isDayOff ? "Hari Off" : resolvedShift?.name || "Shift"}
+                {isSick
+                  ? "Izin Sakit"
+                  : isDayOff
+                    ? "Hari Off"
+                    : resolvedShift?.name || "Shift"}
               </span>
 
               <div className="absolute top-1 right-1 opacity-0 group-hover/event:opacity-100 transition-opacity bg-surface rounded-full p-1 shadow-sm border border-border">
@@ -269,7 +307,9 @@ const ScheduleCell = ({
             shifts.map((shift) => {
               const shiftIdStr = String(shift.id);
               const isActive =
-                !isDayOff && String(schedule?.bms_ms_shift_id) === shiftIdStr;
+                !isDayOff &&
+                !isSick &&
+                String(schedule?.bms_ms_shift_id) === shiftIdStr;
 
               return (
                 <Dropdown.Item
@@ -354,7 +394,26 @@ const ScheduleCell = ({
             </div>
           </Dropdown.Item>
 
-          {schedule && !isDayOff ? (
+          <Dropdown.Item
+            key="sick"
+            onPress={handleMarkSick}
+            textValue="Tandai Sakit"
+            className="mt-1.5 rounded-xl text-danger data-[hover=true]:bg-danger/10 data-[hover=true]:text-danger"
+          >
+            <div className="flex items-center gap-2.5 px-1">
+              <div className="flex items-center justify-center w-6 h-6 rounded-md bg-danger/10 text-danger">
+                <CalendarBlankIcon weight="fill" className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col items-start leading-none">
+                <span className="text-sm font-semibold">Tandai Sakit</span>
+                <span className="text-[11px] opacity-70">
+                  Izin sakit (tidak bisa dibooking)
+                </span>
+              </div>
+            </div>
+          </Dropdown.Item>
+
+          {schedule && !isDayOff && !isSick ? (
             <Dropdown.Item
               key="delete"
               onPress={handleRemove}

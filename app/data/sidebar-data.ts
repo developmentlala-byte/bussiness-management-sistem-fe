@@ -36,6 +36,7 @@ const SIDEBAR_DATA = {
         { title: "Bundle Promo", url: "/master/bundle-promo", icon: Tag },
         { title: "Voucher", url: "/master/voucher", icon: Ticket },
         { title: "Paket Membership", url: "/master/membership", icon: Crown },
+        { title: "Profil Bisnis", url: "/master/company", icon: Storefront },
       ],
     },
 
