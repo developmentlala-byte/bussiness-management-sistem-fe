@@ -62,7 +62,7 @@ function DonutChart({
   }, [items, total]);
 
   return (
-    <div className="relative h-[110px] w-[110px] shrink-0">
+    <div className="relative h-[110px] w-[110px] xl:w-1/2 shrink-0">
       <svg
         viewBox="0 0 36 36"
         className="h-full w-full -rotate-90 drop-shadow-sm"
@@ -124,7 +124,7 @@ function LegendItem({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[10px] font-bold text-[var(--foreground)] group-hover:text-[var(--accent)] transition-colors">
+          <span className="truncate text-[10px] font-bold text-[var(--foreground)] group-hover:text-[var(--accent)] transition-colors lg:max-w-[100px] xl:max-w-full">
             {item.label}
           </span>
           <span className="shrink-0 text-[10px] font-black text-[var(--foreground)]">
@@ -326,9 +326,9 @@ export default function TopDestinations({
         </div>
       </div>
 
-      <div className="flex items-center gap-8">
+      <div className="flex items-center flex-col md:flex-row gap-8 justify-between">
         <DonutChart items={destinations} total={100} />
-        <div className="flex flex-1 flex-col gap-3.5">
+        <div className="flex flex-1 flex-col gap-3.5 md:w-auto w-full xl:w-1/2">
           {visibleDestinations.map((item, index) => (
             <LegendItem key={index} item={item} metric={metricKey} />
           ))}
