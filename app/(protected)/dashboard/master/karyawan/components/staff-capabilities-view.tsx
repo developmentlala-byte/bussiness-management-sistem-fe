@@ -1,4 +1,4 @@
-"use client";
+  "use client";
 
 import {
   Avatar,
@@ -79,9 +79,20 @@ function EditCapabilitiesModal({
   }, [onClose]);
 
   const allVariants = useMemo(() => {
-    return categories.flatMap((c) =>
-      (c.services || []).flatMap((s) => s.variants || s.items || []),
+    const flat = categories.flatMap((c) =>
+      (c.services || [])
+        .filter((s) => s.is_active !== false)
+        .flatMap((s) =>
+          (s.variants || s.items || []).filter((v) => v.is_active !== false),
+        ),
     );
+    const seen = new Set();
+    return flat.filter((v) => {
+      const id = String(v.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   }, [categories]);
 
   const filteredCategories = useMemo(() => {
@@ -466,9 +477,20 @@ export default function StaffCapabilitiesView() {
   };
 
   const allVariants = useMemo(() => {
-    return categories.flatMap((c) =>
-      (c.services || []).flatMap((s) => s.variants || s.items || []),
+    const flat = categories.flatMap((c) =>
+      (c.services || [])
+        .filter((s) => s.is_active !== false)
+        .flatMap((s) =>
+          (s.variants || s.items || []).filter((v) => v.is_active !== false),
+        ),
     );
+    const seen = new Set();
+    return flat.filter((v) => {
+      const id = String(v.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   }, [categories]);
 
   const editingStaffId = editingStaff?.id ?? null;
@@ -539,9 +561,21 @@ export default function StaffCapabilitiesView() {
     (staff: Staff): CapabilityEntry[] => {
       const items =
         capabilitiesCache[staff.id] || getStaffCapabilityVariants(staff);
-      return items.map((item) => ({
-        variant_id: Number(item.id),
-        status: item.pivot?.status ?? "bisa",
+
+      // Gunakan Map untuk memastikan variant_id unik
+      const capabilityMap = new Map<number, CapabilityStatus>();
+      items.forEach((item) => {
+        const id = Number(item.id);
+        const status = item.pivot?.status ?? "bisa";
+        // Hanya simpan jika status bukan "tidak_bisa", karena di UI tidak_bisa dianggap tidak ada di list
+        if (status !== "tidak_bisa") {
+          capabilityMap.set(id, status);
+        }
+      });
+
+      return Array.from(capabilityMap.entries()).map(([id, status]) => ({
+        variant_id: id,
+        status: status,
       }));
     },
     [capabilitiesCache],
@@ -690,14 +724,36 @@ export default function StaffCapabilitiesView() {
                   getStaffCapabilityVariants(staff) ||
                   [];
 
-                const canDoCount = staffVariants.filter(
-                  (v) => (v.pivot?.status ?? "bisa") === "bisa",
-                ).length;
-                const trainingCount = staffVariants.filter(
-                  (v) => v.pivot?.status === "training",
-                ).length;
-                const cannotDoCount =
-                  allVariants.length - canDoCount - trainingCount;
+                // Gunakan Map untuk memastikan variant_id unik bagi staf ini
+                const staffCapabilityMap = new Map<number, CapabilityStatus>();
+                staffVariants.forEach((v) => {
+                  if (v.id) {
+                    const status = v.pivot?.status ?? "bisa";
+                    staffCapabilityMap.set(Number(v.id), status);
+                  }
+                });
+
+                const canDoVariants = allVariants.filter(
+                  (v) => staffCapabilityMap.get(Number(v.id)) === "bisa",
+                );
+
+                // Ambil data ringkasan dari backend jika tersedia
+                const summary = staff.capabilities_summary || {
+                  bisa: canDoVariants.length,
+                  training: Array.from(staffCapabilityMap.values()).filter(
+                    (s) => s === "training",
+                  ).length,
+                  tidak_bisa:
+                    allVariants.length -
+                    canDoVariants.length -
+                    Array.from(staffCapabilityMap.values()).filter(
+                      (s) => s === "training",
+                    ).length,
+                };
+
+                const canDoCount = summary.bisa;
+                const trainingCount = summary.training;
+                const cannotDoCount = summary.tidak_bisa;
 
                 return (
                   <tr
@@ -751,19 +807,14 @@ export default function StaffCapabilitiesView() {
                         </div>
                         <div className="h-8 w-px bg-border/60 mx-2" />
                         <div className="flex flex-wrap gap-1.5 max-w-[200px]">
-                          {staffVariants
-                            .filter(
-                              (v) => (v.pivot?.status ?? "bisa") === "bisa",
-                            )
-                            .slice(0, 3)
-                            .map((v) => (
-                              <span
-                                key={v.id}
-                                className="text-[9px] font-black text-muted uppercase bg-surface-secondary px-2 py-0.5 rounded border border-border/40 truncate max-w-[80px]"
-                              >
-                                {v.name}
-                              </span>
-                            ))}
+                          {canDoVariants.slice(0, 3).map((v) => (
+                            <span
+                              key={v.id}
+                              className="text-[9px] font-black text-muted uppercase bg-surface-secondary px-2 py-0.5 rounded border border-border/40 truncate max-w-[80px]"
+                            >
+                              {v.name}
+                            </span>
+                          ))}
                           {canDoCount > 3 && (
                             <span className="text-[9px] font-black text-accent uppercase px-1">
                               +{canDoCount - 3}

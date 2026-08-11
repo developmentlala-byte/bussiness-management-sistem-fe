@@ -21,6 +21,12 @@ export interface Staff {
   service_capabilities?: Service[];
   variantCapabilities?: ServiceItem[];
   variant_capabilities?: ServiceItem[];
+  capabilities_summary?: {
+    bisa: number;
+    training: number;
+    tidak_bisa: number;
+    total_variants: number;
+  };
   user?: {
     id: number;
     name: string;
