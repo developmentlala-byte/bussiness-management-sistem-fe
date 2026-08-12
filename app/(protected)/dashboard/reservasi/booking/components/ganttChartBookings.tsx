@@ -1885,6 +1885,18 @@ export default function GanttChartBookings() {
                 }
               };
 
+              // Handler baru khusus klik card (block) — cuma bawa 1 booking
+              const openBlockDetail = (event: BookingMeta) => {
+                if (viewMode === "therapist") {
+                  setTherapistRecapDay({ 
+                    date: dayDate,
+                    groups: buildTherapistRecap([event], true),
+                  });
+                } else {
+                  setSelectedDay({ date: dayDate, events: [event] });
+                }
+              };
+
               return (
                 <div
                   key={dateStr}
@@ -1941,7 +1953,7 @@ export default function GanttChartBookings() {
                     isToday={isToday}
                     nowPx={nowPx}
                     mode={viewMode}
-                    onBlockClick={openDayDetail}
+                    onBlockClick={openBlockDetail}
                   />
                 </div>
               );

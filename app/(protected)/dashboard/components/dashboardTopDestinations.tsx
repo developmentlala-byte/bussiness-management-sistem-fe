@@ -247,49 +247,41 @@ export default function TopDestinations({
 
         <div className="flex shrink-0 items-center gap-2">
           {/* Dropdown Metric */}
-          <Dropdown>
-            <Dropdown.Trigger>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-2 rounded-xl px-3 text-[10px] font-bold"
-              >
-                {metricLabel}
-                <CaretDown size={12} weight="bold" />
-              </Button>
-            </Dropdown.Trigger>
-            <Dropdown.Popover className="min-w-[140px] rounded-xl border-border bg-surface p-1 shadow-xl">
-              <Dropdown.Menu
-                selectedKeys={selectedMetric}
-                selectionMode="single"
-                onSelectionChange={handleMetricChange}
-                className="gap-1"
-              >
-                <Dropdown.Section>
-                  <Header className="px-2 py-1 text-[9px] font-black uppercase tracking-widest text-muted">
-                    Metrik
-                  </Header>
-                  {METRIC_OPTIONS.map((option) => (
-                    <Dropdown.Item
-                      key={option.id}
-                      id={option.id}
-                      textValue={option.label}
-                      className="rounded-lg py-2 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <span className="text-[10px] font-bold">
-                          {option.label}
-                        </span>
-                        <Dropdown.ItemIndicator>
-                          <Check size={14} weight="bold" />
-                        </Dropdown.ItemIndicator>
-                      </div>
-                    </Dropdown.Item>
-                  ))}
-                </Dropdown.Section>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
+     <Dropdown>
+  <Dropdown.Trigger>
+    <Button
+      variant="secondary"
+      size="sm"
+      className="h-8 gap-2 rounded-xl px-3 text-[10px] font-bold"
+    >
+      {metricLabel}
+      <CaretDown size={12} weight="bold" />
+    </Button>
+  </Dropdown.Trigger>
+
+  <Dropdown.Popover placement="bottom end" className="min-w-[160px] rounded-xl">
+    <Dropdown.Menu
+      selectedKeys={selectedMetric}
+      selectionMode="single"
+      onSelectionChange={handleMetricChange}
+    >
+      <Dropdown.Section>
+        <Header>Metrik</Header>
+
+        {METRIC_OPTIONS.map((option) => (
+          <Dropdown.Item
+            key={option.id}
+            id={option.id}
+            textValue={option.label}
+          >
+            <Label>{option.label}</Label>
+            <Dropdown.ItemIndicator />
+          </Dropdown.Item>
+        ))}
+      </Dropdown.Section>
+    </Dropdown.Menu>
+  </Dropdown.Popover>
+</Dropdown>
 
           {/* Show All Toggle */}
           {hasMore && (
