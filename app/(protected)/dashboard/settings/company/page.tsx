@@ -67,6 +67,7 @@ export default function MasterCompanyPage() {
   );
 
   const companyData = response?.data;
+  console.log("🚀 ~ MasterCompanyPage ~ companyData:", companyData);
 
   // --- FORM SETUP ---
   const {
@@ -75,6 +76,7 @@ export default function MasterCompanyPage() {
     control,
     reset,
     formState: { errors, isDirty },
+    watch,
   } = useForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
     defaultValues: {
@@ -103,6 +105,7 @@ export default function MasterCompanyPage() {
     }
   }, [companyData, reset]);
 
+  console.log("🚀 ~ MasterCompanyPage ~ watch:", watch());
   // --- UPDATE MUTATION ---
   const { mutate: updateCompany, isPending: isUpdating } = usePut<
     { data: CompanyData },
@@ -166,6 +169,7 @@ export default function MasterCompanyPage() {
                 <Label className="text-sm font-semibold">Nama Bisnis *</Label>
                 <Input
                   {...register("name")}
+                  value={watch("name")}
                   placeholder="Contoh: Mahalu Spa"
                   className={`bg-background border ${errors.name ? "border-danger" : "border-border"} rounded-xl px-4 py-2.5 text-sm w-full outline-none focus:ring-1 focus:ring-accent transition-all`}
                 />
@@ -180,6 +184,7 @@ export default function MasterCompanyPage() {
                 <Label className="text-sm font-semibold">Nama Legal / PT</Label>
                 <Input
                   {...register("legal_name")}
+                  value={watch("legal_name")}
                   placeholder="Contoh: PT. Mahalu Sejahtera"
                   className="bg-background border border-border rounded-xl px-4 py-2.5 text-sm w-full outline-none focus:ring-1 focus:ring-accent transition-all"
                 />
@@ -192,6 +197,7 @@ export default function MasterCompanyPage() {
                 <Label className="text-sm font-semibold">Email Bisnis</Label>
                 <Input
                   {...register("email")}
+                  value={watch("email")}
                   placeholder="business@example.com"
                   className={`bg-background border ${errors.email ? "border-danger" : "border-border"} rounded-xl px-4 py-2.5 text-sm w-full outline-none focus:ring-1 focus:ring-accent transition-all`}
                 />
@@ -206,6 +212,7 @@ export default function MasterCompanyPage() {
                 <Label className="text-sm font-semibold">Nomor Telepon</Label>
                 <Input
                   {...register("phone")}
+                  value={watch("phone")}
                   placeholder="08123456789"
                   className="bg-background border border-border rounded-xl px-4 py-2.5 text-sm w-full outline-none focus:ring-1 focus:ring-accent transition-all"
                 />
@@ -217,6 +224,7 @@ export default function MasterCompanyPage() {
               <Label className="text-sm font-semibold">Alamat Lengkap</Label>
               <TextArea
                 {...register("address")}
+                value={watch("address")}
                 placeholder="Jl. Raya Spa No. 123..."
                 rows={3}
                 className="bg-background border border-border rounded-xl px-4 py-3 text-sm w-full outline-none focus:ring-1 focus:ring-accent transition-all resize-none"

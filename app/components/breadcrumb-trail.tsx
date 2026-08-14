@@ -43,7 +43,14 @@ const BreadcrumbTrail = ({ items }: { items: BreadcrumbItemProps[] }) => {
 export const generateBreadcrumbs = (
   activeId: string,
   activeTeamName: string,
+  pathname?: string,
 ): BreadcrumbItemProps[] => {
+  const fixUrl = (url?: string) => {
+    if (!url || url === "#") return "#";
+    if (url.startsWith("http")) return url;
+    return "/dashboard" + (url.startsWith("/") ? url : "/" + url);
+  };
+
   if (activeId === "header-team")
     return [{ title: "Ruang Kerja", url: "#" }, { title: activeTeamName }];
   if (activeId === "footer-user")
@@ -54,42 +61,63 @@ export const generateBreadcrumbs = (
   if (activeId === "proj-more")
     return [{ title: "Projek", url: "#" }, { title: "Semua Projek" }];
 
+  let crumbs: BreadcrumbItemProps[] = [];
+
   if (activeId.startsWith("main-")) {
     const parts = activeId.split("-");
     const mainIdx = parseInt(parts[1]);
     const mainItem = SIDEBAR_DATA.navMain[mainIdx];
     if (!mainItem) return [];
 
-    const crumbs: BreadcrumbItemProps[] = [
+    crumbs = [
       { title: "Dashboard", url: "/dashboard" },
-      { title: mainItem.title, url: mainItem.url },
+      { title: mainItem.title, url: fixUrl(mainItem.url) },
     ];
 
     if (parts.length === 4 && parts[2] === "sub") {
       const subIdx = parseInt(parts[3]);
       const subItem = mainItem.items?.[subIdx];
-      if (subItem) crumbs.push({ title: subItem.title, url: subItem.url });
+      if (subItem)
+        crumbs.push({ title: subItem.title, url: fixUrl(subItem.url) });
     }
-    return crumbs;
-  }
-
-  if (activeId.startsWith("proj-")) {
+  } else if (activeId.startsWith("proj-")) {
     const parts = activeId.split("-");
     const projIdx = parseInt(parts[1]);
     const projItem = SIDEBAR_DATA.projects[projIdx];
     if (!projItem) return [];
 
-    return [
+    crumbs = [
       { title: "Projek", url: "#" },
-      { title: projItem.name, url: projItem.url },
+      { title: projItem.name, url: fixUrl(projItem.url) },
+    ];
+  } else {
+    // Fallback default
+    crumbs = [
+      { title: "Membina Aplikasi Anda", url: "#" },
+      { title: "Halaman Utama" },
     ];
   }
 
-  // Fallback default
-  return [
-    { title: "Membina Aplikasi Anda", url: "#" },
-    { title: "Halaman Utama" },
-  ];
+  // Handle dynamic segments from pathname
+  if (pathname && crumbs.length > 0) {
+    const lastCrumb = crumbs[crumbs.length - 1];
+    if (lastCrumb.url && lastCrumb.url !== "#") {
+      const baseUrl = lastCrumb.url.split("?")[0];
+      if (pathname.startsWith(baseUrl) && pathname !== baseUrl) {
+        const remaining = pathname
+          .replace(baseUrl, "")
+          .split("/")
+          .filter(Boolean);
+        remaining.forEach((segment) => {
+          crumbs.push({
+            title: decodeURIComponent(segment).replace(/-/g, " "),
+          });
+        });
+      }
+    }
+  }
+
+  return crumbs;
 };
 
 export default BreadcrumbTrail;

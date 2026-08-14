@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useApiFetch } from "@/app/libs/use-http";
+import {
+  today,
+  getLocalTimeZone,
+  startOfMonth,
+  endOfMonth,
+  CalendarDate,
+} from "@internationalized/date";
+import type { DateValue } from "@internationalized/date";
+import {} from "@heroui/react";
+import {
+  CalendarBlank as CalendarIcon,
+  CaretLeft,
+} from "@phosphor-icons/react";
 import { EditStaffModal } from "../modal/edit-staff-modal";
 import { EditSalaryModal } from "../modal/edit-salary-modal";
 import { CreateWarningModal } from "../modal/create-warning-modal";
@@ -13,12 +26,14 @@ import {
   Button,
   Card,
   Chip,
-  Select,
   Separator,
   Table,
   Label,
-  ListBox,
   Accordion,
+  RangeCalendar,
+  Select,
+  ListBox,
+  Dropdown,
 } from "@heroui/react";
 import {
   ArrowDown,
@@ -282,15 +297,43 @@ function Timeline({
 // Main page
 // ---------------------------------------------------------------------------
 
+type DateRange = { start: DateValue; end: DateValue } | null;
+
 export default function StaffDetailPage() {
   const params = useParams();
   const name = params.name as string;
 
+  const tz = getLocalTimeZone();
+  const currentYear = today(tz).year;
+  const [dateRange, setDateRange] = useState<DateRange>({
+    start: new CalendarDate(currentYear, 1, 1),
+    end: new CalendarDate(currentYear, 12, 31),
+  });
+
+  const onShiftPeriod = (dir: number) => {
+    if (!dateRange) return;
+    setDateRange({
+      start: dateRange.start.add({ years: dir }),
+      end: dateRange.end.add({ years: dir }),
+    });
+  };
+
+  const dateParams = useMemo(() => {
+    if (!dateRange) return undefined;
+    const pad2 = (value: number) => String(value).padStart(2, "0");
+    const formatApiDate = (date: DateValue) =>
+      `${date.year}-${pad2(date.month)}-${pad2(date.day)}`;
+    return {
+      start_date: formatApiDate(dateRange.start),
+      end_date: formatApiDate(dateRange.end),
+    };
+  }, [dateRange]);
+
   // Mengambil data staf berdasarkan first_name
   const { data: staffList, isLoading: isStaffLoading } = useApiFetch<any>(
-    ["staff-detail", name],
+    ["staff-detail", name, dateParams?.start_date, dateParams?.end_date],
     "/master/staffs",
-    { "filter[first_name]": name },
+    { "filter[first_name]": name, ...dateParams },
   );
 
   const staffData = staffList?.data?.[0];
@@ -428,7 +471,98 @@ export default function StaffDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+
+          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+            {/* Date Range Navigator */}
+            <div className="flex h-10 items-center overflow-visible rounded-full border border-border shadow-sm">
+              <button
+                onClick={() => onShiftPeriod(-1)}
+                className="flex h-full w-10 items-center justify-center rounded-l-full border-r border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
+                aria-label="Periode sebelumnya"
+              >
+                <CaretLeft weight="bold" className="h-4 w-4" />
+              </button>
+
+              <Dropdown>
+                <Dropdown.Trigger>
+                  <div className="flex h-full cursor-pointer items-center gap-2 px-3 text-[13px] font-bold text-foreground outline-none transition-colors hover:bg-surface-secondary/50 sm:text-sm">
+                    <CalendarIcon
+                      weight="bold"
+                      className="h-4 w-4 shrink-0 text-muted"
+                    />
+                    <span className="whitespace-nowrap">
+                      {dateRange ? (
+                        <>
+                          {new Intl.DateTimeFormat("id-ID", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          }).format(
+                            new Date(
+                              dateRange.start.year,
+                              dateRange.start.month - 1,
+                              dateRange.start.day,
+                            ),
+                          )}
+                          {" – "}
+                          {new Intl.DateTimeFormat("id-ID", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          }).format(
+                            new Date(
+                              dateRange.end.year,
+                              dateRange.end.month - 1,
+                              dateRange.end.day,
+                            ),
+                          )}
+                        </>
+                      ) : (
+                        "Pilih Tanggal"
+                      )}
+                    </span>
+                  </div>
+                </Dropdown.Trigger>
+                <Dropdown.Popover
+                  placement="bottom start"
+                  className="z-[100] w-[calc(100vw-2rem)] min-w-[300px] rounded-3xl border border-border bg-surface p-4 shadow-xl sm:w-auto"
+                >
+                  <RangeCalendar
+                    aria-label="Pilih rentang tanggal"
+                    value={dateRange}
+                    onChange={(val) => setDateRange(val as DateRange)}
+                    className="w-full"
+                  >
+                    <RangeCalendar.Header>
+                      <RangeCalendar.NavButton slot="previous" />
+                      <RangeCalendar.Heading />
+                      <RangeCalendar.NavButton slot="next" />
+                    </RangeCalendar.Header>
+                    <RangeCalendar.Grid>
+                      <RangeCalendar.GridHeader>
+                        {(day) => (
+                          <RangeCalendar.HeaderCell>
+                            {day}
+                          </RangeCalendar.HeaderCell>
+                        )}
+                      </RangeCalendar.GridHeader>
+                      <RangeCalendar.GridBody>
+                        {(date) => <RangeCalendar.Cell date={date} />}
+                      </RangeCalendar.GridBody>
+                    </RangeCalendar.Grid>
+                  </RangeCalendar>
+                </Dropdown.Popover>
+              </Dropdown>
+
+              <button
+                onClick={() => onShiftPeriod(1)}
+                className="flex h-full w-10 items-center justify-center rounded-r-full border-l border-border text-muted outline-none transition-colors hover:bg-surface-secondary/50 hover:text-accent"
+                aria-label="Periode berikutnya"
+              >
+                <CaretRight weight="bold" className="h-4 w-4" />
+              </button>
+            </div>
+
             <Button
               variant="outline"
               className="flex-1 border-warning/30 text-warning hover:bg-warning/10 sm:flex-none"
@@ -449,12 +583,18 @@ export default function StaffDetailPage() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <StatCard
+          icon={<FileText size={16} weight="fill" />}
+          label="Total Booking"
+          value={staffData?.booking_stats?.total_bookings ?? 0}
+          sublabel="Nota transaksi unik"
+        />
         <StatCard
           icon={<Trophy size={16} weight="fill" />}
-          label="Total Booking Selesai"
-          value={staffData?.booking_stats?.total_bookings ?? 0}
-          sublabel="Sepanjang waktu"
+          label="Total Item Layanan"
+          value={staffData?.booking_stats?.total_services ?? 0}
+          sublabel="Assignment layanan (mslh multi-therapist)"
           tone="accent"
         />
         <StatCard

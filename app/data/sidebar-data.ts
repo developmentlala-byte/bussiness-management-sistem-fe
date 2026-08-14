@@ -7,6 +7,11 @@ import {
   Crown,
   SquaresFour,
   Ticket,
+  Gear,
+  CreditCard,
+  Bell,
+  ShieldCheck,
+  Globe,
 } from "@phosphor-icons/react";
 
 const SIDEBAR_DATA = {
@@ -36,10 +41,9 @@ const SIDEBAR_DATA = {
         { title: "Bundle Promo", url: "/master/bundle-promo", icon: Tag },
         { title: "Voucher", url: "/master/voucher", icon: Ticket },
         { title: "Paket Membership", url: "/master/membership", icon: Crown },
-        { title: "Profil Bisnis", url: "/master/company", icon: Storefront },
+        // dipindah ke "Pengaturan" — lihat catatan di bawah
       ],
     },
-
     {
       title: "Transaksi",
       url: "#",
@@ -47,7 +51,6 @@ const SIDEBAR_DATA = {
       isActive: true,
       items: [{ title: "Pembayaran", url: "/payment" }],
     },
-
     {
       title: "Reservasi",
       url: "#",
@@ -59,13 +62,38 @@ const SIDEBAR_DATA = {
         { title: "Daftar Membership", url: "/keanggotaan" },
       ],
     },
-
     {
       title: "Pelanggan",
       url: "#",
       icon: Users,
       isActive: true,
       items: [{ title: "Semua Pelanggan", url: "/pelanggan" }],
+    },
+    {
+      title: "Booking Online",
+      url: "https://spa.mahalu.group",
+      icon: Globe,
+      isActive: true,
+    },
+    {
+      title: "Pengaturan",
+      url: "#",
+      icon: Gear,
+      isActive: false,
+      items: [
+        { title: "Profil Bisnis", url: "/settings/company", icon: Storefront },
+        {
+          title: "Integrasi Pembayaran",
+          url: "/settings/payment-integration",
+          icon: CreditCard,
+        },
+        { title: "Notifikasi", url: "/settings/notifications", icon: Bell },
+        {
+          title: "Manajemen User",
+          url: "/settings/users",
+          icon: Users,
+        },
+      ],
     },
   ],
 };

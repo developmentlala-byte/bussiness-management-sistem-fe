@@ -8,7 +8,7 @@ export interface User {
   email: string;
   phone?: string | null;
   address?: string | null;
-  // Anda bisa tambahkan field lain seperti avatar_url, role, dll jika ada
+  roles?: { id: number; name: string }[];
 }
 
 // 2. Definisikan Tipe State & Actions untuk Zustand
@@ -19,6 +19,7 @@ interface AuthState {
 
   // Actions
   setAuth: (user: User, token: string) => void;
+  updateUser: (user: Partial<User>) => void;
   logout: () => void;
 }
 
@@ -38,6 +39,13 @@ export const useAuthStore = create<AuthState>()(
         localStorage.setItem("token", token);
 
         set({ user, token, isAuthenticated: true });
+      },
+
+      // Action: Saat update profil
+      updateUser: (partialUser) => {
+        set((state) => ({
+          user: state.user ? { ...state.user, ...partialUser } : null,
+        }));
       },
 
       // Action: Saat user logout

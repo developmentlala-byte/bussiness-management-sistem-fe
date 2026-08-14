@@ -26,10 +26,44 @@ import {
 } from "@phosphor-icons/react";
 import SIDEBAR_DATA from "../data/sidebar-data";
 import BreadcrumbTrail, { generateBreadcrumbs } from "./breadcrumb-trail";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "../libs/use-user";
 import { useAppTour } from "../libs/use-app-tour";
 import { ThemeSwitch } from "./theme-switch";
+
+// ==========================================
+// HELPER: Tentukan menu aktif berdasarkan URL asli
+// (bukan cuma dari klik terakhir — ini yang bikin
+// highlight tetap benar walau di-refresh / direct link)
+// ==========================================
+function findActiveMenuId(pathname: string): string {
+  let bestMatchId = "main-0";
+  let maxMatchLength = 0;
+
+  for (let i = 0; i < SIDEBAR_DATA.navMain.length; i++) {
+    const item = SIDEBAR_DATA.navMain[i];
+    if (item.items) {
+      for (let j = 0; j < item.items.length; j++) {
+        const itemUrl = "/dashboard" + item.items[j].url.split("?")[0];
+        if (
+          pathname.startsWith(itemUrl) &&
+          itemUrl !== "/dashboard" &&
+          itemUrl.length > maxMatchLength
+        ) {
+          bestMatchId = `main-${i}-sub-${j}`;
+          maxMatchLength = itemUrl.length;
+        }
+      }
+    } else if (item.url && item.url !== "#") {
+      const itemUrl = "/dashboard" + item.url.split("?")[0];
+      if (pathname.startsWith(itemUrl) && itemUrl.length > maxMatchLength) {
+        bestMatchId = `main-${i}`;
+        maxMatchLength = itemUrl.length;
+      }
+    }
+  }
+  return bestMatchId;
+}
 
 // ==========================================
 // 1. KONTEKS GLOBAL & HOOK LAYOUT
@@ -66,10 +100,18 @@ const SidebarItem = ({
 }) => {
   const { isExpanded, hoveredMenu, setHoveredMenu, activeMenu, setActiveMenu } =
     useSidebar();
-  const router = useRouter(); // Tambahan: Inisialisasi router di sini
+  const router = useRouter();
 
   const [isOpen, setIsOpen] = useState(item.isActive || false);
   const isMainProminent = hoveredMenu === parentId || activeMenu === parentId;
+
+  // Auto-buka folder ini kalau ada sub-item di dalamnya yang lagi aktif
+  // (mis. user refresh langsung di /dashboard/settings/notifications)
+  useEffect(() => {
+    if (activeMenu.startsWith(`${parentId}-sub-`)) {
+      setIsOpen(true);
+    }
+  }, [activeMenu, parentId]);
 
   return (
     <div className="flex flex-col">
@@ -81,20 +123,24 @@ const SidebarItem = ({
           setActiveMenu(parentId);
           // Jika item utama punya URL dan tidak punya sub-menu, navigasi di sini
           if (item.url && !item.items) {
-            router.push("/dashboard" + item.url);
+            router.replace(item.url);
           }
         }}
       >
         <div
           data-nav-id={parentId}
           className={`relative z-10 flex items-center w-full py-2.5 rounded-lg transition-colors duration-300
+            ${!isExpanded ? "justify-center" : ""}
             ${
               isMainProminent
                 ? "text-foreground font-medium"
                 : "text-muted-foreground group-hover:text-foreground"
             }`}
         >
-          <div className="w-[48px] flex items-center justify-center shrink-0">
+          <div
+            className="w-[48px] flex items-center justify-center shrink-0"
+            title={!isExpanded ? item.title : undefined}
+          >
             {item.icon && (
               <item.icon
                 className="w-5 h-5"
@@ -163,7 +209,6 @@ const SidebarItem = ({
                     onMouseEnter={() => setHoveredMenu(subId)}
                     onClick={() => {
                       setActiveMenu(subId);
-                      // PERBAIKAN: Menambahkan navigasi asli
                       router.push("/dashboard" + subItem.url);
                     }}
                   >
@@ -195,6 +240,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
   const asideRef = useRef<HTMLElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
   const [isPinned, setIsPinned] = useState(false);
   const [isHoveredSidebar, setIsHoveredSidebar] = useState(false);
@@ -202,8 +248,12 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
 
   const isExpanded = isPinned || isHoveredSidebar || isMobileOpen;
 
-  const [activeMenu, setActiveMenu] = useState("main-0");
-  const [hoveredMenu, setHoveredMenu] = useState("main-0");
+  const [activeMenu, setActiveMenu] = useState(() =>
+    findActiveMenuId(pathname),
+  );
+  const [hoveredMenu, setHoveredMenu] = useState(() =>
+    findActiveMenuId(pathname),
+  );
   const [isPillReady, setIsPillReady] = useState(false);
 
   const { user, logout } = useAuthStore();
@@ -216,6 +266,13 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
   const { startTour } = useAppTour(() => {
     setIsPinned(true);
   });
+
+  // Sinkronkan menu aktif tiap kali URL berubah
+  useEffect(() => {
+    const id = findActiveMenuId(pathname);
+    setActiveMenu(id);
+    setHoveredMenu(id);
+  }, [pathname]);
 
   const updatePillPosition = useCallback(() => {
     if (!asideRef.current || !pillRef.current) return;
@@ -293,7 +350,22 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const currentBreadcrumbs = generateBreadcrumbs(activeMenu, "Mahalu Spa");
+  // Grup menu bawah (disematkan terpisah, di atas kartu user) vs
+  // grup menu utama (yang scroll). Index asli dari SIDEBAR_DATA.navMain
+  // tetap dipakai sebagai parentId supaya findActiveMenuId gak perlu diubah.
+  const bottomTitles = ["Booking Online", "Pengaturan"];
+  const mainNavItems = SIDEBAR_DATA.navMain
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => !bottomTitles.includes(item.title));
+  const bottomNavItems = SIDEBAR_DATA.navMain
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => bottomTitles.includes(item.title));
+
+  const currentBreadcrumbs = generateBreadcrumbs(
+    activeMenu,
+    "Mahalu Spa",
+    pathname,
+  );
 
   return (
     <>
@@ -380,7 +452,11 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
 
             <div className="p-4 flex items-center h-16 shrink-0 border-b border-border relative z-20">
               <div className="flex-1 min-w-0">
-                <div className="w-full flex items-center">
+                <div
+                  className={`w-full flex items-center ${
+                    !isExpanded ? "justify-center" : ""
+                  }`}
+                >
                   <div className="w-[48px] flex items-center justify-center shrink-0">
                     <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary text-primary-foreground shadow-sm">
                       <SquaresFour className="w-4 h-4" weight="bold" />
@@ -456,7 +532,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                   </h4>
                 </div>
                 <div className="flex flex-col gap-1">
-                  {SIDEBAR_DATA.navMain.map((item, idx) => (
+                  {mainNavItems.map(({ item, idx }) => (
                     <div
                       key={idx}
                       className="animate-stagger-item"
@@ -471,149 +547,22 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                   ))}
                 </div>
               </div>
-
-              {/* <div>
-                <div
-                  className={`grid css-grid-transition ${
-                    isExpanded
-                      ? "grid-rows-[1fr] opacity-100 mb-2"
-                      : "grid-rows-[0fr] opacity-0 mb-0"
-                  }`}
-                >
-                  <h4 className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap overflow-hidden">
-                    Projek
-                  </h4>
-                </div>
-                <div className="flex flex-col gap-1">
-                  {SIDEBAR_DATA.projects.map((project, idx) => {
-                    const projId = `proj-${idx}`;
-                    const isProjProminent =
-                      hoveredMenu === projId || activeMenu === projId;
-                    const staggerDelayIdx = SIDEBAR_DATA.navMain.length + idx;
-
-                    return (
-                      <div
-                        key={idx}
-                        className="animate-stagger-item relative cursor-pointer py-0.5 group outline-none"
-                        style={{ animationDelay: `${staggerDelayIdx * 0.04}s` }}
-                        onMouseEnter={() => setHoveredMenu(projId)}
-                        onClick={() => {
-                          setActiveMenu(projId);
-                          // PERBAIKAN: Menambahkan navigasi asli untuk Projek
-                          router.push("/dashboard" + project.url);
-                        }}
-                      >
-                        <div
-                          data-nav-id={projId}
-                          className={`relative z-10 flex items-center w-full py-2.5 rounded-lg transition-colors duration-200
-                          ${
-                            isProjProminent
-                              ? "text-foreground font-medium"
-                              : "text-muted-foreground group-hover:text-foreground"
-                          }`}
-                        >
-                          <div className="w-[48px] flex items-center justify-center shrink-0">
-                            <project.icon
-                              className="w-5 h-5"
-                              weight={isProjProminent ? "fill" : "regular"}
-                            />
-                          </div>
-
-                          <div
-                            className={`grid css-grid-transition flex-1 ${
-                              isExpanded ? "grid-cols-[1fr]" : "grid-cols-[0fr]"
-                            }`}
-                          >
-                            <div className="overflow-hidden whitespace-nowrap w-full">
-                              <div
-                                className="w-full"
-                                style={{
-                                  transform: isExpanded
-                                    ? "translate3d(0, 0, 0)"
-                                    : "translate3d(0, 15px, 0)",
-                                  opacity: isExpanded ? 1 : 0,
-                                  transition: `transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) ${
-                                    isExpanded ? staggerDelayIdx * 0.03 : 0
-                                  }s, opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) ${
-                                    isExpanded ? staggerDelayIdx * 0.03 : 0
-                                  }s`,
-                                  willChange: "transform, opacity",
-                                }}
-                              >
-                                <span className="text-sm">{project.name}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <div
-                    className="animate-stagger-item relative cursor-pointer py-0.5 group outline-none"
-                    style={{
-                      animationDelay: `${
-                        (SIDEBAR_DATA.navMain.length +
-                          SIDEBAR_DATA.projects.length) *
-                        0.04
-                      }s`,
-                    }}
-                    onMouseEnter={() => setHoveredMenu("proj-more")}
-                    onClick={() => setActiveMenu("proj-more")}
-                  >
-                    <div
-                      data-nav-id="proj-more"
-                      className={`relative z-10 flex items-center w-full py-2.5 rounded-lg transition-colors duration-200
-                      ${
-                        hoveredMenu === "proj-more" ||
-                        activeMenu === "proj-more"
-                          ? "text-foreground font-medium"
-                          : "text-muted-foreground group-hover:text-foreground"
-                      }`}
-                    >
-                      <div className="w-[48px] flex items-center justify-center shrink-0">
-                        <span className="flex items-center justify-center w-5 h-5 rounded bg-muted/50 text-muted-foreground group-hover:bg-muted group-hover:text-foreground transition-colors">
-                          <DotsThree className="w-4 h-4" weight="bold" />
-                        </span>
-                      </div>
-                      <div
-                        className={`grid css-grid-transition flex-1 ${
-                          isExpanded ? "grid-cols-[1fr]" : "grid-cols-[0fr]"
-                        }`}
-                      >
-                        <div className="overflow-hidden whitespace-nowrap w-full">
-                          <div
-                            className="w-full"
-                            style={{
-                              transform: isExpanded
-                                ? "translate3d(0, 0, 0)"
-                                : "translate3d(0, 15px, 0)",
-                              opacity: isExpanded ? 1 : 0,
-                              transition: `transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) ${
-                                isExpanded
-                                  ? (SIDEBAR_DATA.navMain.length +
-                                      SIDEBAR_DATA.projects.length) *
-                                    0.03
-                                  : 0
-                              }s, opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) ${
-                                isExpanded
-                                  ? (SIDEBAR_DATA.navMain.length +
-                                      SIDEBAR_DATA.projects.length) *
-                                    0.03
-                                  : 0
-                              }s`,
-                              willChange: "transform, opacity",
-                            }}
-                          >
-                            <span className="text-sm">Lagi</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div> */}
             </nav>
+
+            {/* Grup bawah — Booking Online & Pengaturan, disematkan
+               terpisah dari nav yang scroll, tepat di atas kartu user */}
+            <div className="px-4 pt-2 pb-1 border-t border-border relative z-10 shrink-0">
+              <div className="flex flex-col gap-1 pt-2">
+                {bottomNavItems.map(({ item, idx }) => (
+                  <SidebarItem
+                    key={idx}
+                    item={item}
+                    parentId={`main-${idx}`}
+                    staggerIdx={idx}
+                  />
+                ))}
+              </div>
+            </div>
 
             {/* TARGET TOUR #3: DROPDOWN PENGGUNA */}
             <div className="p-4 border-t border-border relative z-20 w-full">
@@ -628,6 +577,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                     <div
                       data-nav-id="footer-user"
                       className={`relative z-10 flex items-center w-full py-1.5 rounded-lg transition-colors duration-200
+                      ${!isExpanded ? "justify-center" : ""}
                       ${
                         hoveredMenu === "footer-user" ||
                         activeMenu === "footer-user"
@@ -724,6 +674,9 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                         id="profile"
                         textValue="Profil Saya"
                         className="py-2 hover:bg-accent rounded-md transition-colors"
+                        onClick={() =>
+                          router.push("/dashboard/settings/profile")
+                        }
                       >
                         <div className="flex items-center gap-2">
                           <UserCircle className="w-4 h-4 text-muted-foreground" />
@@ -732,19 +685,8 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                           </Label>
                         </div>
                       </Dropdown.Item>
-                      <Dropdown.Item
-                        id="billing"
-                        textValue="Pengebilan"
-                        className="py-2 hover:bg-accent rounded-md transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <CreditCard className="w-4 h-4 text-muted-foreground" />
-                          <Label className="cursor-pointer text-sm font-medium">
-                            Pengebilan
-                          </Label>
-                        </div>
-                      </Dropdown.Item>
-                      <Dropdown.Item
+
+                      {/* <Dropdown.Item
                         id="settings"
                         textValue="Tetapan"
                         className="py-2 hover:bg-accent rounded-md transition-colors"
@@ -755,7 +697,7 @@ export default function Sidebar({ children }: { children?: ReactNode }) {
                             Tetapan Akaun
                           </Label>
                         </div>
-                      </Dropdown.Item>
+                      </Dropdown.Item> */}
                     </Dropdown.Section>
                     <Separator className="my-1 border-border/50" />
                     <Dropdown.Section>
