@@ -742,8 +742,8 @@ function RecentBookingsTable({ bookings }: { bookings: BookingItem[] }) {
 export default function DashboardManager() {
   const tz = getLocalTimeZone();
   const [dateRange, setDateRange] = useState<DateRange>({
-    start: today(tz).subtract({ days: 29 }),
-    end: today(tz),
+    start: startOfMonth(today(tz)), // 1 Agustus 2026
+    end: endOfMonth(today(tz)),
   });
 
   const dateParams = useMemo(() => {
@@ -952,7 +952,7 @@ export default function DashboardManager() {
   const hadir = staffAttendance.filter((k) => k.status === "H").length;
   const absen = staffAttendance.filter((k) => k.status === "A").length;
 
-  const [preset, setPreset] = useState<string>("30d");
+  const [preset, setPreset] = useState<string>("mtd");
   const [calOpen, setCalOpen] = useState(false);
 
   const contentRef = useRef<HTMLDivElement>(null);

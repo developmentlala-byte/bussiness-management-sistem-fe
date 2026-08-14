@@ -972,7 +972,7 @@ export default function DashboardAdmin() {
   const hadir = staffAttendance.filter((k) => k.status === "H").length;
   const absen = staffAttendance.filter((k) => k.status === "A").length;
 
-  const [preset, setPreset] = useState<string>("30d");
+  const [preset, setPreset] = useState<string>("mtd");
   const [calOpen, setCalOpen] = useState(false);
 
   const contentRef = useRef<HTMLDivElement>(null);

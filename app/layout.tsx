@@ -11,8 +11,15 @@ const interSans = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Mahalu Studio Management",
-  description: "Studio management system by Mahalu Group",
+  title: "Mahalu Spa Management",
+  description: "Business management mahalu spa",
+  icons: {
+    icon: [
+      { url: "/logo/favicon-48.webp", sizes: "48x48", type: "image/webp" },
+      { url: "/logo/favicon-96.webp", sizes: "96x96", type: "image/webp" },
+    ],
+    apple: "/logo/apple-touch-icon.webp",
+  },
 };
 
 export default function RootLayout({
