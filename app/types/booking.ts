@@ -258,6 +258,16 @@ export interface BookingRating {
   updated_at?: string;
 }
 
+export interface BookingTip {
+  id: number;
+  booking_id: number;
+  staff_id: number;
+  amount: number;
+  staff_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface SpaBooking {
   id: number | string;
   booking_code: string;
@@ -293,4 +303,5 @@ export interface SpaBooking {
     id: number;
   }[];
   rating?: BookingRating | null;
+  tips?: BookingTip[];
 }

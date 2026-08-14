@@ -1507,11 +1507,8 @@ function BookingsPageInner() {
       {/* RATING DRAWER */}
       <Drawer state={ratingDrawer}>
         <Drawer.Backdrop isDismissable={false} className="bg-black/40">
-          <Drawer.Content placement="bottom">
-            <Drawer.Dialog
-              className="flex w-full max-w-lg mx-auto flex-col overflow-hidden p-0 rounded-t-2xl bg-white"
-              style={{ maxHeight: "88vh" }}
-            >
+          <Drawer.Content placement="bottom" className="w-full">
+            <Drawer.Dialog className="flex w-full max-w-3xl mx-auto h-[90vh] flex-col overflow-hidden p-0 rounded-t-2xl bg-white">
               <RatingDrawer
                 booking={selectedBookingForRating}
                 isOpen={ratingDrawer.isOpen}

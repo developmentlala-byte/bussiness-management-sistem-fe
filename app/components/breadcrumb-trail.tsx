@@ -77,8 +77,7 @@ export const generateBreadcrumbs = (
     if (parts.length === 4 && parts[2] === "sub") {
       const subIdx = parseInt(parts[3]);
       const subItem = mainItem.items?.[subIdx];
-      if (subItem)
-        crumbs.push({ title: subItem.title, url: fixUrl(subItem.url) });
+      if (subItem) crumbs.push({ title: subItem.title, url: fixUrl(subItem.url) });
     }
   } else if (activeId.startsWith("proj-")) {
     const parts = activeId.split("-");
@@ -109,9 +108,7 @@ export const generateBreadcrumbs = (
           .split("/")
           .filter(Boolean);
         remaining.forEach((segment) => {
-          crumbs.push({
-            title: decodeURIComponent(segment).replace(/-/g, " "),
-          });
+          crumbs.push({ title: decodeURIComponent(segment).replace(/-/g, " ") });
         });
       }
     }
