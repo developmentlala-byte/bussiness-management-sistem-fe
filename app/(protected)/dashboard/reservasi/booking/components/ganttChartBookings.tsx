@@ -905,8 +905,8 @@ function TimelineRow({
               {/* Row 2: Title — nama client (daily) / nama service (therapist mode) */}
               <p
                 className={cn(
-                  "truncate text-[12px] font-bold leading-none",
-                  th.clientTx,
+                  "truncate text-[12px] font-bold capitalize leading-none",
+                  th.clientTx.toLowerCase(),
                 )}
               >
                 {isTherapistMode ? serviceName : clientName}
@@ -1150,8 +1150,8 @@ function DayDetailModal({ date, events, onClose }: DayDetailModalProps) {
                       <div className="min-w-0">
                         <p
                           className={cn(
-                            "text-[13px] font-bold leading-tight truncate",
-                            th.clientTx,
+                            "text-[13px] font-bold capitalize leading-tight truncate",
+                            th.clientTx.toLowerCase(),
                           )}
                         >
                           {clientName}
@@ -1888,7 +1888,7 @@ export default function GanttChartBookings() {
               // Handler baru khusus klik card (block) — cuma bawa 1 booking
               const openBlockDetail = (event: BookingMeta) => {
                 if (viewMode === "therapist") {
-                  setTherapistRecapDay({ 
+                  setTherapistRecapDay({
                     date: dayDate,
                     groups: buildTherapistRecap([event], true),
                   });
