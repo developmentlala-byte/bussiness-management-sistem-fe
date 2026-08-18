@@ -155,25 +155,6 @@ const PRESETS = [
   { id: "ytd", label: "Year to date" },
 ];
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Confirmed: "bg-(--success)/10 text-success",
-    Pending: "bg-[var(--warning)]/15 text-[var(--warning)]",
-    Canceled: "bg-(--danger)/10 text-danger",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[9px] font-bold tracking-wide uppercase",
-        map[status] ?? "bg-surface-secondary text-muted",
-      )}
-    >
-      <span className="h-1.5 w-1.5 rounded-md bg-current" />
-      {status}
-    </span>
-  );
-}
-
 function TrendBadge({
   direction,
   value,
@@ -361,18 +342,6 @@ export default function DashboardManager() {
   const { data: weeklyBookingResponse } = useApiFetch<{
     data: PaginatedApiResponse<{ dow: number; count: number }[]>;
   }>(["weekly-booking"], "/booking/weekly-booking");
-
-  const targetParams = useMemo(() => {
-    const d = dateRange?.start ?? today(tz);
-    return { year: d.year, month: d.month };
-  }, [dateRange, tz]);
-
-  const { data: companyTargetResponse, isLoading: isTargetLoading } =
-    useApiFetch<SingleApiResponse<CompanyTargetResponse>>(
-      ["company_target", targetParams.year, targetParams.month],
-      "/st/company/target",
-      targetParams,
-    );
 
   const stats = useMemo(() => {
     const bookingDays = Math.round(
