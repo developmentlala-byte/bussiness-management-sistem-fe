@@ -12,7 +12,14 @@ import {
   DownloadSimple,
   UploadSimple,
 } from "@phosphor-icons/react";
-import { Dropdown, Label, Header, Separator, Description, toast } from "@heroui/react";
+import {
+  Dropdown,
+  Label,
+  Header,
+  Separator,
+  Description,
+  toast,
+} from "@heroui/react";
 import { useApiFetch, usePost } from "@/app/libs/use-http";
 import { DynamicIcon } from "@/app/components/dynamic-icon";
 import axiosInstance from "@/app/services/axios-instance";
@@ -60,7 +67,10 @@ export interface ServiceVariant {
   is_active: boolean;
   final_price?: number;
   discounts?: Discount[];
-  capable_staff?: Staff[];
+  capable_staff?: Array<{
+    id: number;
+    pivot?: { status: "bisa" | "training" | "tidak_bisa" };
+  }>;
 }
 
 export interface Service {
@@ -112,14 +122,20 @@ export default function MasterProductPage() {
         refetch();
       },
       onError: (err: any) => {
-        toast.error("Gagal meng-import data", {
-          description: err.response?.data?.message || "Format file tidak sesuai.",
+        toast.danger("Gagal meng-import data", {
+          description:
+            err.response?.data?.message || "Format file tidak sesuai.",
         });
       },
     },
   );
 
   const handleExport = async () => {
+    const loadingId = toast("Menyiapkan file export...", {
+      isLoading: true,
+      timeout: 0,
+    });
+
     try {
       const response = await axiosInstance.get("/master/services/export", {
         responseType: "blob",
@@ -127,15 +143,19 @@ export default function MasterProductPage() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute(
-        "download",
-        `product-dan-layanan-${new Date().toISOString().split("T")[0]}.xlsx`,
-      );
+      link.download = `product-dan-layanan-${new Date().toISOString().split("T")[0]}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+
+      toast.close(loadingId);
+      toast.success("File berhasil di-export", {
+        description: "File sudah tersimpan di folder download Anda",
+      });
     } catch (error) {
-      toast.error("Gagal men-download file export");
+      toast.close(loadingId);
+      toast.danger("Gagal men-download file export");
     }
   };
 
@@ -146,13 +166,16 @@ export default function MasterProductPage() {
     const formData = new FormData();
     formData.append("file", file);
 
-    await importData(formData);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      await importData(formData);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const { data: staffData } = useApiFetch<any>(
     ["staffs-all"],
-    "/master/staffs",
+    "/master/staffs?compact=1",
   );
 
   const categories: Category[] = useMemo(

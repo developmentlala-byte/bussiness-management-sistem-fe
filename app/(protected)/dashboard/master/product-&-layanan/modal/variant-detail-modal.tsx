@@ -10,6 +10,7 @@ import {
   toast,
   Label,
   Surface,
+  Separator,
 } from "@heroui/react";
 import {
   Plus,
@@ -58,7 +59,7 @@ export function VariantDetailModal({
 
   // Fetch Existing Data
   const { data: detailData, isLoading: isFetching } = useApiFetch<any>(
-    [`variant-detail`, variant.id],
+    [`variant-detail`, String(variant.id)],
     `/master/variants/${variant.id}`,
   );
 
@@ -84,7 +85,7 @@ export function VariantDetailModal({
         });
         queryClient.invalidateQueries({ queryKey: ["categories"] });
         queryClient.invalidateQueries({
-          queryKey: ["variant-detail", variant.id],
+          queryKey: ["variant-detail", String(variant.id)],
         });
         setIsDetailOpen(false);
       },
@@ -189,7 +190,7 @@ export function VariantDetailModal({
         <Modal.Container size="lg" scroll="inside">
           <Modal.Dialog
             aria-label={`Detail Varian: ${variant.name}`}
-            className="rounded-3xl shadow-xl overflow-hidden"
+            className="rounded-3xl shadow-xl overflow-hidden p-4"
           >
             <Modal.CloseTrigger
               onPress={() => setIsDetailOpen(false)}
@@ -213,7 +214,7 @@ export function VariantDetailModal({
               </Modal.Heading>
             </Modal.Header>
 
-            <Modal.Body className="px-6 py-6 flex flex-col gap-5 bg-surface-secondary/40">
+            <Modal.Body className="px-4 py-6 flex flex-col gap-5 bg-surface-secondary/40">
               {/* Section: Images */}
               <Surface
                 variant="secondary"
@@ -328,7 +329,7 @@ export function VariantDetailModal({
                 variant="secondary"
                 className="rounded-3xl border border-border/60 p-5 sm:p-6"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <div className="flex flex-col gap-5">
                     <TextField className="flex flex-col gap-2">
                       <div className="flex items-center gap-3">
@@ -353,7 +354,7 @@ export function VariantDetailModal({
                       />
                     </TextField>
 
-                    <TextField className="flex flex-col gap-2">
+                    {/* <TextField className="flex flex-col gap-2">
                       <div className="flex items-center gap-3">
                         <span className="flex items-center justify-center w-8 h-8 rounded-full bg-accent/10 text-accent shrink-0">
                           <BookOpen weight="bold" className="w-4 h-4" />
@@ -370,14 +371,14 @@ export function VariantDetailModal({
                       <TextArea
                         placeholder="Instruksi atau cara penggunaan..."
                         value={howToUse}
-                        onChange={(e) => setHowToUse(e.target.value)}
+                        onChange={(e) => setHowToUse(e.target.value ?? "")}
                         rows={4}
                         fullWidth
                       />
-                    </TextField>
+                    </TextField> */}
                   </div>
-
-                  <div className="flex flex-col gap-2 md:border-l md:border-border/60 md:pl-6">
+                  <Separator className="my-1" />
+                  <div className="flex flex-col gap-2 ">
                     <div className="flex items-center gap-3">
                       <span className="flex items-center justify-center w-8 h-8 rounded-full bg-accent/10 text-accent shrink-0">
                         <PlusCircle weight="bold" className="w-4 h-4" />
@@ -485,7 +486,7 @@ export function VariantDetailModal({
                       placeholder="Deskripsi singkat untuk hasil pencarian Google"
                       value={metaDescription}
                       onChange={(e) => setMetaDescription(e.target.value)}
-                      rows={2}
+                      rows={6}
                       fullWidth
                     />
                   </TextField>
@@ -493,7 +494,7 @@ export function VariantDetailModal({
               </Surface>
             </Modal.Body>
 
-            <Modal.Footer className="border-t border-border/60 bg-surface px-6 py-4 flex justify-end gap-2">
+            <Modal.Footer className="border-t border-border/60 bg-surface px-6 py-4 pb-2 flex justify-end gap-2">
               <Button
                 variant="outline"
                 onPress={() => setIsDetailOpen(false)}

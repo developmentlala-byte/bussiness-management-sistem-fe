@@ -555,7 +555,7 @@ export default function KehadiranStaffView() {
   );
   const { data: staffResponse, isLoading: isStaffLoading } = useApiFetch<{
     data: Staff[];
-  }>(["staffs"], "/master/staffs");
+  }>(["staffs", "compact"], "/master/staffs", { compact: true });
 
   const attendances = useMemo(
     () => responseData?.data ?? [],

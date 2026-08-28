@@ -432,15 +432,10 @@ function VariantCard({
                   if (v.id !== variant.id) return v;
 
                   const newCapableStaff = variables.staff_capabilities.map(
-                    (cap: any) => {
-                      const staff = allStaff.find(
-                        (as) => as.id === cap.staff_id,
-                      );
-                      return {
-                        ...staff,
-                        pivot: { status: sanitizeStatus(cap.status) },
-                      };
-                    },
+                    (cap: { staff_id: number; status: string }) => ({
+                      id: cap.staff_id,
+                      pivot: { status: sanitizeStatus(cap.status) },
+                    }),
                   );
 
                   return { ...v, capable_staff: newCapableStaff };
@@ -629,9 +624,14 @@ function VariantCard({
                   </span>
                 </div>
                 <div className="flex -space-x-2 mr-1">
-                  {(variant.capable_staff || []).slice(0, 3).map((s, i) => (
-                    <StaffAvatar key={i} staff={s} size="xxs" />
-                  ))}
+                  {(variant.capable_staff || []).slice(0, 3).map((cap) => {
+                    const staff = allStaff.find((s) => s.id === cap.id);
+                    if (!staff) return null;
+
+                    return (
+                      <StaffAvatar key={cap.id} staff={staff} size="xxs" />
+                    );
+                  })}
                   {(variant.capable_staff || []).length > 3 && (
                     <div className="w-5 h-5 rounded-full bg-surface-secondary border-2 border-surface flex items-center justify-center text-[8px] font-bold text-muted">
                       +{(variant.capable_staff || []).length - 3}
