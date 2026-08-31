@@ -341,6 +341,7 @@ export function OrderPanel(props: OrderPanelProps) {
               setForm={setForm}
               availableDates={availableDates}
               availableSlots={availableSlots}
+              isEdit={isEdit}
               bundleCalendarBounds={bundleCalendarBounds}
               onSlotSelect={logic.handleSlotSelect}
               isSlotDisabled={logic.isSlotDisabled}

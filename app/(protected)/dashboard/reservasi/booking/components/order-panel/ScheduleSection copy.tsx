@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { Calendar, Switch } from "@heroui/react";
+import { Calendar, Switch, SwitchGroup, Label } from "@heroui/react";
 import { ClockIcon, WarningIcon } from "@phosphor-icons/react";
-import { parseDate, type DateValue } from "@internationalized/date";
+import { parseDate } from "@internationalized/date";
 import { formatWallClockDate } from "@/app/libs/date-format";
 import type { AvailableSlot } from "@/app/types/booking";
 import type { FormState } from "../booking.types";
@@ -13,10 +13,7 @@ interface ScheduleSectionProps {
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   availableDates: string[];
   availableSlots: AvailableSlot[] | null;
-  bundleCalendarBounds: {
-    minValue: DateValue | null;
-    maxValue: DateValue | null;
-  } | null;
+  bundleCalendarBounds: { minValue: any; maxValue: any } | null;
   onSlotSelect: (slot: AvailableSlot) => void;
   isSlotDisabled: (slot: AvailableSlot) => boolean;
   onDateSelect?: (date: { toString: () => string }) => void;
@@ -35,21 +32,8 @@ export function ScheduleSection({
   onDateFocusChange,
 }: ScheduleSectionProps) {
   const isDateAvailable = (dateStr: string): boolean => {
-    if (form.date === dateStr) return true;
-    if (availableDates.length === 0) return false;
+    if (!availableDates.length) return true;
     return availableDates.includes(dateStr);
-  };
-
-  const isPastDate = (date: DateValue): boolean => {
-    const today = new Date();
-    const target = new Date(date.year, date.month - 1, date.day);
-    const todayStart = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-    );
-
-    return target < todayStart;
   };
 
   const handleDateSelect = (date: { toString: () => string }) => {
@@ -102,14 +86,9 @@ export function ScheduleSection({
           value={form.date ? parseDate(form.date) : null}
           onChange={handleDateSelect}
           onFocusChange={onDateFocusChange}
-          isDateUnavailable={(date) => {
-            const dateStr = date.toString();
-            if (form.date === dateStr) return false;
-            if (isPastDate(date)) return false;
-            return !isDateAvailable(dateStr);
-          }}
-          minValue={bundleCalendarBounds?.minValue ?? undefined}
-          maxValue={bundleCalendarBounds?.maxValue ?? undefined}
+          isDateUnavailable={(date) => !isDateAvailable(date.toString())}
+          minValue={bundleCalendarBounds?.minValue}
+          maxValue={bundleCalendarBounds?.maxValue}
           className="w-full border-none bg-transparent shadow-none"
         >
           <Calendar.Header className="bg-transparent pb-4">
