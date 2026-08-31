@@ -85,6 +85,7 @@ export function ScheduleSection({
           aria-label="Booking date"
           value={form.date ? parseDate(form.date) : null}
           onChange={handleDateSelect}
+          onFocusChange={onDateFocusChange}
           isDateUnavailable={(date) => !isDateAvailable(date.toString())}
           minValue={bundleCalendarBounds?.minValue}
           maxValue={bundleCalendarBounds?.maxValue}
