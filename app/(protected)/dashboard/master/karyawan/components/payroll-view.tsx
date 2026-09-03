@@ -17,6 +17,7 @@ import {
   Modal,
   InputOTP,
   REGEXP_ONLY_DIGITS,
+  toast,
 } from "@heroui/react";
 import { useApiFetch, usePost, usePut } from "@/app/libs/use-http";
 import { DataTable } from "@/app/components/data-table";
@@ -115,6 +116,12 @@ const deductionFields = [
 
 const columnHelper = createColumnHelper<PayrollRecord>();
 
+// Helper: ambil toastId dari context onMutate dengan aman (tanpa bergantung
+// pada generic TContext dari hook usePost/usePut).
+function getToastId(context: unknown): string | undefined {
+  return (context as { toastId?: string } | undefined)?.toastId;
+}
+
 export default function PayrollView() {
   const currentMonth = useMemo(() => {
     const d = new Date();
@@ -129,6 +136,12 @@ export default function PayrollView() {
   );
   const [approvingPayroll, setApprovingPayroll] =
     useState<PayrollRecord | null>(null);
+  const [processingMarkPaidId, setProcessingMarkPaidId] = useState<
+    number | null
+  >(null);
+  const [downloadingPayrollId, setDownloadingPayrollId] = useState<
+    number | null
+  >(null);
 
   const { data, isLoading, refetch } = useApiFetch<{ data: PayrollRecord[] }>(
     ["payrolls", selectedMonth],
@@ -138,16 +151,32 @@ export default function PayrollView() {
   );
 
   const payrolls = data?.data ?? [];
-  console.log("🚀 ~ PayrollView ~ payrolls:", payrolls);
 
   const updateMutation = usePut<
     { data?: PayrollRecord },
     { payrollId: number; details: Omit<PayrollDetail, "id" | "payroll_id"> }
   >((variables) => `/master/payroll/${variables.payrollId}`, {
     invalidate: [["payrolls", selectedMonth]],
-    onSuccess: () => {
+    onMutate: () => {
+      const toastId = toast("Menyimpan payroll...", {
+        isLoading: true,
+        timeout: 0,
+      });
+      return { toastId };
+    },
+    onSuccess: (_data, _variables, context) => {
+      const toastId = getToastId(context);
+      if (toastId) toast.close(toastId);
+      toast.success("Perubahan payroll berhasil disimpan");
       setEditingPayroll(null);
       refetch();
+    },
+    onError: (_error, _variables, context) => {
+      const toastId = getToastId(context);
+      if (toastId) toast.close(toastId);
+      toast.danger("Gagal menyimpan payroll", {
+        description: "Silakan coba lagi.",
+      });
     },
   });
 
@@ -159,7 +188,26 @@ export default function PayrollView() {
       `/master/payroll/${variables.payrollId}/approve`,
     {
       invalidate: [["payrolls", selectedMonth]],
-      onSuccess: () => refetch(),
+      onMutate: () => {
+        const toastId = toast("Memproses approval payroll...", {
+          isLoading: true,
+          timeout: 0,
+        });
+        return { toastId };
+      },
+      onSuccess: (_data, _variables, context) => {
+        const toastId = getToastId(context);
+        if (toastId) toast.close(toastId);
+        toast.success("Payroll berhasil di-approve");
+        refetch();
+      },
+      onError: (_error, _variables, context) => {
+        const toastId = getToastId(context);
+        if (toastId) toast.close(toastId);
+        toast.danger("Gagal approve payroll", {
+          description: "Cek kembali PIN Finance kamu.",
+        });
+      },
     },
   );
 
@@ -171,7 +219,27 @@ export default function PayrollView() {
       `/master/payroll/${variables.payrollId}/mark-paid`,
     {
       invalidate: [["payrolls", selectedMonth]],
-      onSuccess: () => refetch(),
+      onMutate: () => {
+        const toastId = toast("Menandai payroll sebagai dibayar...", {
+          isLoading: true,
+          timeout: 0,
+        });
+        return { toastId };
+      },
+      onSuccess: (_data, _variables, context) => {
+        const toastId = getToastId(context);
+        if (toastId) toast.close(toastId);
+        toast.success("Payroll ditandai sudah dibayar");
+        refetch();
+      },
+      onError: (_error, _variables, context) => {
+        const toastId = getToastId(context);
+        if (toastId) toast.close(toastId);
+        toast.danger("Gagal menandai payroll sebagai dibayar");
+      },
+      onSettled: () => {
+        setProcessingMarkPaidId(null);
+      },
     },
   );
 
@@ -185,13 +253,15 @@ export default function PayrollView() {
     async (payroll: PayrollRecord) => {
       if (!payroll.staff) return;
 
-      try {
+      setDownloadingPayrollId(payroll.id);
+
+      const download = async () => {
         const token = localStorage.getItem("token");
         const baseUrl =
           process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
         const month = payroll.period?.period_month ?? selectedMonth;
         const response = await fetch(
-          `${baseUrl}/master/staffs/${payroll.staff.id}/slip-gaji/download?month=${encodeURIComponent(month)}`,
+          `${baseUrl}/master/staffs/${payroll.staff!.id}/slip-gaji/download?month=${encodeURIComponent(month)}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -208,14 +278,21 @@ export default function PayrollView() {
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = downloadUrl;
-        link.download = `slip-gaji-${payroll.staff.employee_code || payroll.staff.id}-${month}.pdf`;
+        link.download = `slip-gaji-${payroll.staff!.employee_code || payroll.staff!.id}-${month}.pdf`;
         document.body.appendChild(link);
         link.click();
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
-      } catch (error) {
-        console.error("Download slip gaji error:", error);
-        alert("Gagal mendownload slip gaji.");
+      };
+
+      try {
+        await toast.promise(download(), {
+          loading: "Mengunduh slip gaji...",
+          success: "Slip gaji berhasil diunduh",
+          error: "Gagal mendownload slip gaji.",
+        });
+      } finally {
+        setDownloadingPayrollId(null);
       }
     },
     [selectedMonth],
@@ -223,6 +300,7 @@ export default function PayrollView() {
 
   const handleMarkPaid = useCallback(
     (payroll: PayrollRecord) => {
+      setProcessingMarkPaidId(payroll.id);
       markPaidMutation.mutate({ payrollId: payroll.id });
     },
     [markPaidMutation],
@@ -306,6 +384,8 @@ export default function PayrollView() {
         enableSorting: false,
         cell: (info) => {
           const payroll = info.row.original;
+          const isDownloadingThis = downloadingPayrollId === payroll.id;
+          const isMarkingThisPaid = processingMarkPaidId === payroll.id;
 
           return (
             <div
@@ -319,6 +399,7 @@ export default function PayrollView() {
                     size="sm"
                     variant="secondary"
                     aria-label="Edit payroll"
+                    isDisabled={updateMutation.isPending}
                     onPress={() => setEditingPayroll(payroll)}
                   >
                     <PencilSimple className="size-4" />
@@ -342,6 +423,8 @@ export default function PayrollView() {
                   size="sm"
                   variant="secondary"
                   aria-label="Download slip gaji"
+                  isDisabled={isDownloadingThis}
+                  isPending={isDownloadingThis}
                   onPress={() => handleDownloadSlip(payroll)}
                 >
                   <DownloadSimple className="size-4" />
@@ -349,18 +432,17 @@ export default function PayrollView() {
               )}
 
               {payroll.status === "approved" && (
-                <>
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="primary"
-                    aria-label="Tandai dibayar"
-                    isDisabled={markPaidMutation.isPending}
-                    onPress={() => handleMarkPaid(payroll)}
-                  >
-                    <CurrencyDollar className="size-4" />
-                  </Button>
-                </>
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="primary"
+                  aria-label="Tandai dibayar"
+                  isDisabled={isMarkingThisPaid || markPaidMutation.isPending}
+                  isPending={isMarkingThisPaid}
+                  onPress={() => handleMarkPaid(payroll)}
+                >
+                  <CurrencyDollar className="size-4" />
+                </Button>
               )}
             </div>
           );
@@ -369,8 +451,11 @@ export default function PayrollView() {
       }),
     ],
     [
+      updateMutation.isPending,
       approveMutation.isPending,
       markPaidMutation.isPending,
+      downloadingPayrollId,
+      processingMarkPaidId,
       handleDownloadSlip,
       handleMarkPaid,
     ],
@@ -437,6 +522,7 @@ export default function PayrollView() {
       {editingPayroll && (
         <EditPayrollModal
           payroll={editingPayroll}
+          isSaving={updateMutation.isPending}
           onClose={() => setEditingPayroll(null)}
           onSave={(payrollId, details) => {
             updateMutation.mutate({ payrollId, details });
@@ -471,10 +557,10 @@ function ApprovePayrollModal({
 }) {
   const [pin, setPin] = useState("");
 
-  const handleSubmit = () => {
-    if (pin.length !== 4) return;
-    onSubmit(pin);
-  };
+  // const handleSubmit = () => {
+  //   if (pin.length !== 4) return;
+  //   onSubmit(pin);
+  // };
 
   return (
     <Modal.Backdrop
@@ -510,6 +596,7 @@ function ApprovePayrollModal({
                 pattern={REGEXP_ONLY_DIGITS}
                 variant="secondary"
                 autoFocus
+                isDisabled={isSubmitting}
                 value={pin}
                 onChange={setPin}
                 onComplete={(value) => {
@@ -541,7 +628,12 @@ function ApprovePayrollModal({
           </Modal.Body>
 
           {/* <Modal.Footer className="gap-2">
-            <Button className="flex-1" variant="secondary" onPress={onClose}>
+            <Button
+              className="flex-1"
+              variant="secondary"
+              onPress={onClose}
+              isDisabled={isSubmitting}
+            >
               Batal
             </Button>
             <Button
@@ -549,6 +641,7 @@ function ApprovePayrollModal({
               variant="primary"
               onPress={handleSubmit}
               isDisabled={pin.length !== 4 || isSubmitting}
+              isPending={isSubmitting}
             >
               {isSubmitting ? "Memproses..." : "Approve"}
             </Button>
@@ -562,10 +655,12 @@ function ApprovePayrollModal({
 /* ==================== EDIT MODAL — Simplified Form ==================== */
 function EditPayrollModal({
   payroll,
+  isSaving,
   onClose,
   onSave,
 }: {
   payroll: PayrollRecord;
+  isSaving: boolean;
   onClose: () => void;
   onSave: (
     payrollId: number,
@@ -585,7 +680,6 @@ function EditPayrollModal({
       potongan_lainnya: 0,
     },
   );
-  const [isSaving, setIsSaving] = useState(false);
 
   const totals = useMemo(() => {
     const income = incomeFields.reduce(
@@ -605,14 +699,8 @@ function EditPayrollModal({
     setDetails((prev) => ({ ...prev, [field]: amount }));
   };
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      onSave(payroll.id, details);
-    } catch (error) {
-      console.error("Error saving payroll:", error);
-      setIsSaving(false);
-    }
+  const handleSave = () => {
+    onSave(payroll.id, details);
   };
 
   return (
@@ -638,7 +726,8 @@ function EditPayrollModal({
           </div>
           <button
             onClick={onClose}
-            className="text-muted hover:text-foreground p-1.5 rounded-md hover:bg-surface-secondary transition-colors"
+            disabled={isSaving}
+            className="text-muted hover:text-foreground p-1.5 rounded-md hover:bg-surface-secondary transition-colors disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -705,6 +794,7 @@ function EditPayrollModal({
                     onValueChange={(value) => handleAmountChange(field, value)}
                     currencyCode="IDR"
                     className="rounded-md  text-sm font-semibold text-foreground"
+                    disabled={isSaving}
                   />
                 </div>
               ))}
@@ -727,6 +817,7 @@ function EditPayrollModal({
                     onValueChange={(value) => handleAmountChange(field, value)}
                     currencyCode="IDR"
                     className="rounded-md text-sm font-semibold text-foreground"
+                    disabled={isSaving}
                   />
                 </div>
               ))}
@@ -760,7 +851,8 @@ function EditPayrollModal({
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm border border-border rounded-md hover:bg-surface-secondary transition-colors"
+            disabled={isSaving}
+            className="px-4 py-2 text-sm border border-border rounded-md hover:bg-surface-secondary transition-colors disabled:opacity-50"
           >
             Batal
           </button>
