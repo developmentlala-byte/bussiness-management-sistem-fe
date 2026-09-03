@@ -26,3 +26,25 @@ export const unformatRupiah = (value: string): number => {
   if (!value) return 0;
   return Number(value.replace(/[^0-9]/g, ""));
 };
+
+export const formatCurrency = (
+  value?: number | string | null,
+  options?: {
+    minus?: boolean;
+  },
+) => {
+  const normalized = Number(value ?? 0);
+  const safeValue = Number.isFinite(normalized) ? Math.abs(normalized) : 0;
+
+  const formatted = new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(safeValue);
+
+  if (options?.minus === true) {
+    return formatted.replace(/^Rp\s?/, "Rp - ");
+  }
+
+  return formatted;
+};

@@ -20,12 +20,14 @@ import AnggotaStaffView from "./components/anggota-staff-view";
 import KehadiranStaffView from "./components/kehadiran-staff-view-redesign";
 import StaffCapabilitiesView from "./components/staff-capabilities-view";
 import MasterShiftView from "./components/master-shift-view";
+import PayrollView from "./components/payroll-view";
 
 const TABS = [
   { id: "kehadiran", label: "Kehadiran", icon: ClockClockwise },
   { id: "staf", label: "Anggota Staf", icon: Users },
   { id: "jam_kerja", label: "Penugasan Shift", icon: Clock },
   { id: "master_shift", label: "Master Shift", icon: ClockClockwise },
+  { id: "payroll", label: "Payroll", icon: Money },
   { id: "capabilities", label: "Kemampuan", icon: Sparkle },
   // { id: "komisi", label: "Aturan Komisi", icon: Money },
 ];
@@ -243,6 +245,7 @@ export default function MasterKaryawanPage() {
             {activeTab === "master_shift" && <MasterShiftView />}
             {activeTab === "kehadiran" && <KehadiranStaffView />}
             {activeTab === "staf" && <AnggotaStaffView />}
+            {activeTab === "payroll" && <PayrollView />}
             {activeTab === "capabilities" && <StaffCapabilitiesView />}
             {activeTab === "komisi" && (
               <PlaceholderView

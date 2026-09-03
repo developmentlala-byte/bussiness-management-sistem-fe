@@ -1,6 +1,5 @@
 "use client";
 import {
-  Avatar,
   Dropdown,
   InputGroup,
   Label,
@@ -90,6 +89,40 @@ export default function AnggotaStaffView() {
   const handleDeleteClick = (staff: Staff) => {
     setSelectedStaff(staff);
     setIsDeleteModalOpen(true);
+  };
+
+  const handleDownloadSlipGaji = async (staff: Staff) => {
+    try {
+      const token = localStorage.getItem("token");
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
+      const response = await fetch(
+        `${baseUrl}/master/staffs/${staff.id}/slip-gaji/download`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "ngrok-skip-browser-warning": "true",
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Download slip gaji gagal");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `slip-gaji-${staff.employee_code || staff.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download slip gaji error:", error);
+      alert("Gagal mendownload slip gaji.");
+    }
   };
 
   return (
@@ -276,6 +309,21 @@ export default function AnggotaStaffView() {
                                 />
                                 <Label className="font-semibold text-sm cursor-pointer">
                                   Edit Profil
+                                </Label>
+                              </div>
+                            </Dropdown.Item>
+                            <Dropdown.Item
+                              id="slip-gaji"
+                              textValue="Download Slip Gaji"
+                              onPress={() => handleDownloadSlipGaji(staff)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Eye
+                                  weight="bold"
+                                  className="w-4 h-4 text-muted"
+                                />
+                                <Label className="font-semibold text-sm cursor-pointer">
+                                  Download Slip Gaji
                                 </Label>
                               </div>
                             </Dropdown.Item>
