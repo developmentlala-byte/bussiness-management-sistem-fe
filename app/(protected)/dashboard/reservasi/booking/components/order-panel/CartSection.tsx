@@ -26,7 +26,7 @@ import { Tooltip } from "@heroui/react";
 
 /**
  * Hook kecil buat deteksi apakah elemen teks lagi ke-truncate
- * (scrollWidth > clientWidth). Dipakai biar Tooltip nama layanan
+ * (scrollWidth > clientWidth). Dipakai biar Tooltip nama bundle
  * cuma aktif kalau memang teksnya kepotong — bukan nyala terus
  * buat semua item termasuk yang namanya udah muat penuh.
  *
@@ -64,14 +64,29 @@ interface CartRowProps {
     name: string;
     duration: number;
     price: number;
+    originalPrice?: number;
     categoryId: number;
   };
   qty: number;
   onRemove: () => void;
   onUpdateQty?: (qty: number) => void;
   isFree?: boolean;
+  membershipQty?: number;
 }
 
+/**
+ * Layout CartRow (kolom cart sempit ±300px, jadi dibuat 2 baris):
+ *
+ *  [≡]  Nama layanan (boleh wrap, tidak dipotong)              [×]
+ *       40 min
+ *       [ − 2 + ]                                     Rp 245.000
+ *       ┌──────────────────────────────────────────────────────┐
+ *       │ 1 × Bayar normal                          Rp 245.000 │
+ *       │ [MEMBERSHIP] 1 × pakai quota                     Rp0 │
+ *       └──────────────────────────────────────────────────────┘
+ *
+ * Rincian normal vs membership hanya muncul kalau ada unit membership.
+ */
 function CartRow({
   id,
   v,
@@ -79,6 +94,7 @@ function CartRow({
   onRemove,
   onUpdateQty,
   isFree = false,
+  membershipQty = 0,
 }: CartRowProps) {
   const {
     attributes,
@@ -96,83 +112,114 @@ function CartRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const { ref: nameRef, isTruncated } = useIsTruncated<HTMLParagraphElement>([
-    v.name,
-  ]);
+  const hasMembership = !isFree && membershipQty > 0;
+  const normalQty = Math.max(qty - membershipQty, 0);
+  const hasDiscount = !!v.originalPrice && v.originalPrice > v.price;
+  const lineTotal = isFree ? 0 : v.price * normalQty;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 py-2 border-b border-[#EDE8E3] last:border-0 bg-white"
+      className="py-3 border-b border-[#EDE8E3] last:border-0 bg-white"
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 text-[#B5AFA9] hover:text-[#7A736E]"
-      >
-        <ListIcon size={16} />
-      </div>
+      <div className="flex items-start gap-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 mt-0.5 text-[#B5AFA9] hover:text-[#7A736E] shrink-0"
+        >
+          <ListIcon size={16} />
+        </div>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <Tooltip delay={300} isDisabled={!isTruncated}>
-            <Tooltip.Trigger className="text-[13px] font-medium text-[#1A1614] truncate cursor-pointer">
-              <p ref={nameRef} className="">
+        <div className="flex-1 min-w-0">
+          {/* Baris 1: nama + durasi + tombol hapus */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold leading-snug text-[#1A1614] break-words">
                 {v.name}
               </p>
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              showArrow
-              placement="top"
-              className="max-w-[220px] rounded-lg border border-[#2A2422] bg-[#1A1614] px-2.5 py-1.5 text-[11px] font-medium leading-snug text-white shadow-lg"
-            >
-              <Tooltip.Arrow className="fill-[#1A1614]" />
-              {v.name}
-            </Tooltip.Content>
-          </Tooltip>
-        </div>
-        <p className="text-[11px] text-[#B5AFA9]">
-          {durFmt(v.duration)}
-          {isFree ? " · Bonus gratis" : ""}
-        </p>
-      </div>
+              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#B5AFA9]">
+                {durFmt(v.duration)}
+                {isFree && (
+                  <span className="rounded-md bg-[#FEF1F4] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#B55368]">
+                    Bonus gratis
+                  </span>
+                )}
+              </p>
+            </div>
 
-      <div className="flex items-center gap-3">
-        {!isFree && onUpdateQty && (
-          <div className="flex items-center bg-[#F3F0ED] rounded-lg p-0.5 border border-[#EDE8E3]">
             <button
-              onClick={() => onUpdateQty(qty - 1)}
-              disabled={qty <= 1}
-              className="w-6 h-6 flex items-center justify-center text-[#1A1614] hover:bg-white rounded-md transition-colors disabled:opacity-30"
+              onClick={onRemove}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-none hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
+              aria-label="Remove"
             >
-              −
-            </button>
-            <span className="w-5 text-center text-[11px] font-bold text-[#1A1614]">
-              {qty}
-            </span>
-            <button
-              onClick={() => onUpdateQty(qty + 1)}
-              className="w-6 h-6 flex items-center justify-center text-[#1A1614] hover:bg-white rounded-md transition-colors"
-            >
-              +
+              ×
             </button>
           </div>
-        )}
 
-        <div className="text-right min-w-[70px]">
-          <span className="text-[13px] font-semibold text-[#1A1614] block">
-            {idr(isFree ? 0 : v.price * qty)}
-          </span>
+          {/* Baris 2: stepper qty (kiri) + total harga (kanan) */}
+          <div className="mt-2 flex items-center justify-between gap-3">
+            {!isFree && onUpdateQty ? (
+              <div className="flex items-center bg-[#F3F0ED] rounded-lg p-0.5 border border-[#EDE8E3]">
+                <button
+                  onClick={() => onUpdateQty(qty - 1)}
+                  disabled={qty <= 1}
+                  className="w-6 h-6 flex items-center justify-center text-[#1A1614] hover:bg-white rounded-md transition-colors disabled:opacity-30"
+                >
+                  −
+                </button>
+                <span className="w-6 text-center text-[11px] font-bold text-[#1A1614]">
+                  {qty}
+                </span>
+                <button
+                  onClick={() => onUpdateQty(qty + 1)}
+                  className="w-6 h-6 flex items-center justify-center text-[#1A1614] hover:bg-white rounded-md transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            ) : (
+              <span />
+            )}
+
+            <div className="text-right">
+              {hasDiscount && !isFree && normalQty > 0 && (
+                <span className="block text-[11px] font-medium text-[#B5AFA9] line-through">
+                  {idr((v.originalPrice as number) * normalQty)}
+                </span>
+              )}
+              <span className="block text-[13px] font-semibold text-[#1A1614]">
+                {idr(lineTotal)}
+              </span>
+            </div>
+          </div>
+
+          {/* Rincian pembayaran: normal vs membership */}
+          {hasMembership && (
+            <div className="mt-2 space-y-1.5 rounded-lg border border-[#EDE8E3] bg-[#FCFAF8] px-2.5 py-2">
+              {normalQty > 0 && (
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-[#7A736E]">
+                    {normalQty} × Bayar normal
+                  </span>
+                  <span className="font-medium text-[#1A1614]">
+                    {idr(v.price * normalQty)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="flex items-center gap-1.5 font-medium text-emerald-700">
+                  <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                    Membership
+                  </span>
+                  {membershipQty} × pakai quota
+                </span>
+                <span className="font-semibold text-emerald-600">Rp0</span>
+              </div>
+            </div>
+          )}
         </div>
-
-        <button
-          onClick={onRemove}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-[#B5AFA9] text-lg leading-loose hover:bg-[#FEE2E8] hover:text-[#B55368] transition-colors duration-150 shrink-0"
-          aria-label="Remove"
-        >
-          ×
-        </button>
       </div>
     </div>
   );
@@ -352,6 +399,7 @@ export function CartSection({
                     v={line.variant}
                     qty={line.qty}
                     isFree={line.isFree}
+                    membershipQty={line.membershipQty}
                     onRemove={() => onRemoveLine(i)}
                     onUpdateQty={(q) => onUpdateServiceQty(i, q)}
                   />

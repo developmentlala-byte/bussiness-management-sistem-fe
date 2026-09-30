@@ -58,8 +58,8 @@ const SIDEBAR_DATA = {
       isActive: true,
       items: [
         { title: "Daftar Booking", url: "/reservasi/booking" },
+        { title: "Daftar Membership", url: "/membership" },
         { title: "Jadwal Theraphis", url: "/reservasi/theraphis" },
-        { title: "Daftar Membership", url: "/keanggotaan" },
       ],
     },
     {

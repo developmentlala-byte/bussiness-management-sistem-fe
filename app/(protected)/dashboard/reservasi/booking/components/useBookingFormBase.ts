@@ -13,6 +13,7 @@ import type { BundlePromo } from "@/app/(protected)/dashboard/master/bundle-prom
 import {
   calcBundlePricing,
   getBundleCalendarBounds,
+  roundPriceToThousand,
 } from "@/app/libs/bundle-pricing";
 import {
   addMinutesToTime,
@@ -39,7 +40,27 @@ import type {
   Resource,
   BogoEligibleService,
   ExistingTherapist,
+  BookingMembershipEligibility,
 } from "./booking.types";
+import type { BookingResourceAssignment } from "@/app/types/booking";
+
+type BookingLineItemPayload =
+  | {
+      type: "service_variant";
+      service_variant_id: number;
+      is_free?: boolean;
+      quantity: number;
+      payment_source?: "normal" | "membership";
+      customer_membership_id?: number;
+      group_id: string;
+      sequence: number;
+    }
+  | {
+      type: "bundle_promo";
+      bundle_promo_id: number;
+      group_id: string;
+      sequence: number;
+    };
 
 export interface UseBookingFormBaseProps {
   isOpen: boolean;
@@ -89,6 +110,7 @@ export function useBookingFormBase({
     voucherCode: isEdit ? (initialBooking?.applied_voucher?.code ?? "") : "",
     isParallel: isEdit ? (initialBooking?.is_parallel ?? false) : false,
   });
+  const [membershipPhone, setMembershipPhone] = useState("");
   const [viewingMonth, setViewingMonth] = useState<string>(() => {
     if (initialEditDateTime.date) return initialEditDateTime.date.slice(0, 7);
     return getCurrentMonth();
@@ -160,7 +182,8 @@ export function useBookingFormBase({
       subCat: v.service?.name ?? v.category?.name ?? "",
       name: v.name,
       duration: v.duration_minutes ?? v.duration ?? 0,
-      price: Number(v.final_price ?? v.retail_price ?? 0),
+      price: roundPriceToThousand(Number(v.final_price ?? v.retail_price ?? 0)),
+      originalPrice: Number(v.retail_price ?? 0),
       categoryId: v.category?.id ?? v.service?.bms_ms_service_category_id ?? 0,
     }));
   }, [variantsResp]);
@@ -173,6 +196,94 @@ export function useBookingFormBase({
     () => resourcesResp?.data ?? [],
     [resourcesResp],
   );
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setMembershipPhone(form.phone.trim());
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [form.phone]);
+
+  const membershipVariantIds = useMemo(
+    () => availableVariants.map((variant) => variant.id),
+    [availableVariants],
+  );
+  const membershipVariantIdsKey = membershipVariantIds.join(",");
+  const membershipEligibilityUrl = useMemo(() => {
+    if (membershipPhone.length < 8 || membershipVariantIds.length === 0) {
+      return "";
+    }
+
+    const params = new URLSearchParams({ phone: membershipPhone });
+    membershipVariantIds.forEach((variantId) => {
+      params.append("variant_ids[]", String(variantId));
+    });
+
+    return `/master/customer-memberships/booking-eligibility?${params.toString()}`;
+  }, [membershipPhone, membershipVariantIds]);
+
+  const {
+    data: membershipEligibilityResp,
+    isLoading: membershipEligibilityLoading,
+  } = useApiFetch<{ data: BookingMembershipEligibility }>(
+    [
+      "booking-membership-eligibility",
+      membershipPhone,
+      membershipVariantIdsKey,
+    ],
+    membershipEligibilityUrl,
+    undefined,
+    isOpen && !!membershipEligibilityUrl,
+  );
+  const membershipEligibility = membershipEligibilityResp?.data ?? null;
+
+  const membershipUsageByBenefitId = useMemo(() => {
+    const usage = new Map<number, number>();
+
+    cartLines.forEach((line) => {
+      if (line.kind !== "service" || line.isFree || !line.membershipQty) {
+        return;
+      }
+
+      const benefitId =
+        membershipEligibility?.variants[String(line.variant.id)]?.benefit_id;
+      if (!benefitId) return;
+      usage.set(benefitId, (usage.get(benefitId) ?? 0) + line.membershipQty);
+    });
+
+    return usage;
+  }, [cartLines, membershipEligibility]);
+
+  const getMembershipRemaining = (variantId: number) => {
+    const eligibility = membershipEligibility?.variants[String(variantId)];
+    if (!eligibility?.eligible || !eligibility.benefit_id) return 0;
+
+    return Math.max(
+      0,
+      eligibility.remaining -
+        (membershipUsageByBenefitId.get(eligibility.benefit_id) ?? 0),
+    );
+  };
+
+  const getMembershipMaxQty = (variantId: number) => {
+    const line = cartLines.find(
+      (candidate) =>
+        candidate.kind === "service" && candidate.variant.id === variantId,
+    );
+    if (line?.kind !== "service") return 0;
+
+    const eligibility = membershipEligibility?.variants[String(variantId)];
+    if (!eligibility?.eligible || !eligibility.benefit_id) return 0;
+
+    const otherUsage =
+      (membershipUsageByBenefitId.get(eligibility.benefit_id) ?? 0) -
+      (line.membershipQty ?? 0);
+
+    return Math.min(
+      line.qty,
+      Math.max(0, eligibility.remaining - Math.max(0, otherUsage)),
+    );
+  };
 
   useEffect(() => {
     if (form.date) {
@@ -252,9 +363,7 @@ export function useBookingFormBase({
 
       groupUnits.forEach((unit) => {
         const variant = availableVariants.find((v) => v.id === unit.variantId);
-        const duration = Number(
-          variant?.duration ?? variant?.duration_minutes ?? 0,
-        );
+        const duration = Number(variant?.duration ?? 0);
 
         let actualStartTime: string;
         if (groupIsParallel) {
@@ -608,6 +717,7 @@ export function useBookingFormBase({
     availableDatesUrl ?? "",
     undefined,
     isOpen && !!availableDatesUrl,
+    { staleTime: 0 },
   );
 
   const availableSlotsUrl = useMemo(() => {
@@ -634,18 +744,20 @@ export function useBookingFormBase({
     form.isParallel,
   ]);
 
-  const { data: availableSlotsResp } = useApiFetch<AvailableSlotsResponse>(
-    [
-      "available-slots",
-      form.date,
-      JSON.stringify(selectedServiceVariantIds),
-      String(initialBooking?.id ?? ""),
-      String(form.isParallel ?? false),
-    ],
-    availableSlotsUrl ?? "",
-    undefined,
-    isOpen && !!availableSlotsUrl,
-  );
+  const { data: availableSlotsResp, isFetching: availableSlotsLoading } =
+    useApiFetch<AvailableSlotsResponse>(
+      [
+        "available-slots",
+        form.date,
+        JSON.stringify(variantGroups),
+        String(initialBooking?.id ?? ""),
+        String(form.isParallel ?? false),
+      ],
+      availableSlotsUrl ?? "",
+      undefined,
+      isOpen && !!availableSlotsUrl,
+      { staleTime: 0 },
+    );
 
   const bonusAvailableSlotsUrl = useMemo(() => {
     if (!selectedFreeVariant?.id || !bonusBookingForm.date) return null;
@@ -668,11 +780,13 @@ export function useBookingFormBase({
 
   // Pricing calculations
   const grossAmt = cartLines.reduce((sum, line) => {
+    if (line.kind === "service" && line.isFree) return sum;
     return (
       sum +
       (line.kind === "bundle"
         ? line.pricing.subtotal
-        : line.variant.price * line.qty)
+        : (line.variant.originalPrice ?? line.variant.price) *
+          (line.qty - Math.min(line.qty, line.membershipQty ?? 0)))
     );
   }, 0);
 
@@ -683,7 +797,8 @@ export function useBookingFormBase({
         ? line.pricing.finalPrice
         : line.isFree
           ? 0
-          : line.variant.price * line.qty)
+          : line.variant.price *
+            (line.qty - Math.min(line.qty, line.membershipQty ?? 0)))
     );
   }, 0);
 
@@ -749,48 +864,90 @@ export function useBookingFormBase({
     ],
   );
 
-  const lineItemsPayload = useMemo(
+  const lineItemsPayload = useMemo<BookingLineItemPayload[]>(
     () =>
-      cartLines.map((line, idx) => {
-        const groupId = line.groupId ?? generateUniqueGroupId();
-        const sequence = idx + 1;
-        return line.kind === "bundle"
-          ? {
-              type: "bundle_promo" as const,
-              bundle_promo_id: line.bundle.id,
-              group_id: groupId,
-              sequence,
-            }
-          : {
+      cartLines.flatMap<BookingLineItemPayload>(
+        (line, idx): BookingLineItemPayload[] => {
+          const groupId = line.groupId ?? generateUniqueGroupId();
+          const sequence = idx + 1;
+          if (line.kind === "bundle") {
+            return [
+              {
+                type: "bundle_promo" as const,
+                bundle_promo_id: line.bundle.id,
+                group_id: groupId,
+                sequence,
+              },
+            ];
+          }
+
+          const normalQty =
+            line.qty - Math.min(line.qty, line.membershipQty ?? 0);
+          if (normalQty <= 0) return [];
+
+          return [
+            {
               type: "service_variant" as const,
               service_variant_id: line.variant.id,
               is_free: !!line.isFree,
-              quantity: line.qty,
+              quantity: normalQty,
               group_id: groupId,
               sequence,
-            };
-      }),
+            },
+          ];
+        },
+      ),
     [cartLines],
+  );
+
+  const membershipLineItemsPayload = useMemo(
+    () =>
+      cartLines.flatMap((line, idx) => {
+        if (line.kind !== "service" || line.isFree) return [];
+        const membershipQty = Math.min(line.qty, line.membershipQty ?? 0);
+        if (membershipQty <= 0) return [];
+        return [
+          {
+            type: "service_variant" as const,
+            service_variant_id: line.variant.id,
+            is_free: false,
+            quantity: membershipQty,
+            payment_source: "membership" as const,
+            customer_membership_id: membershipEligibility?.membership?.id,
+            group_id: line.groupId ?? generateUniqueGroupId(),
+            sequence: idx + 1,
+          },
+        ];
+      }),
+    [cartLines, membershipEligibility],
   );
 
   const parentLineItemsPayload = useMemo(
     () =>
-      lineItemsPayload.filter(
+      [...lineItemsPayload, ...membershipLineItemsPayload].filter(
         (line) =>
           !(
             line.type === "service_variant" &&
+            "is_free" in line &&
             selectedFreeVariant &&
             line.service_variant_id === selectedFreeVariant.id &&
             line.is_free
           ),
       ),
-    [lineItemsPayload, selectedFreeVariant],
+    [lineItemsPayload, membershipLineItemsPayload, selectedFreeVariant],
+  );
+
+  const lineItemsKey = useMemo(
+    () => JSON.stringify(lineItemsPayload),
+    [lineItemsPayload],
   );
 
   const pricingSummary = useMemo(() => {
     const hasAppliedVoucher =
       !!voucherPreview &&
       voucherPreview.code === form.voucherCode.trim().toUpperCase() &&
+      (!voucherPreview.lineItemsKey ||
+        voucherPreview.lineItemsKey === lineItemsKey) &&
       !!form.date &&
       !!lineItemsPayload.length;
     return {
@@ -807,6 +964,7 @@ export function useBookingFormBase({
   }, [
     form.date,
     form.voucherCode,
+    lineItemsKey,
     lineItemsPayload.length,
     grossAmt,
     netAmtBeforeVoucher,
@@ -906,9 +1064,43 @@ export function useBookingFormBase({
     setCartLines((prev) =>
       prev.map((line) =>
         line.kind === "service" && line.variant.id === variantId
-          ? { ...line, qty: Math.max(1, newQty) }
+          ? {
+              ...line,
+              qty: Math.max(1, newQty),
+              membershipQty: Math.min(
+                line.membershipQty ?? 0,
+                Math.max(1, newQty),
+              ),
+            }
           : line,
       ),
+    );
+  };
+
+  const updateMembershipQty = (variantId: number, newMembershipQty: number) => {
+    const eligibility = membershipEligibility?.variants[String(variantId)];
+    setCartLines((prev) =>
+      prev.map((line) => {
+        if (line.kind !== "service" || line.variant.id !== variantId)
+          return line;
+        const currentMembershipQty = line.membershipQty ?? 0;
+        const usedByOtherLines = eligibility?.benefit_id
+          ? (membershipUsageByBenefitId.get(eligibility.benefit_id) ?? 0) -
+            currentMembershipQty
+          : 0;
+        const maxMembershipQty = Math.min(
+          line.qty,
+          Math.max(0, (eligibility?.remaining ?? 0) - usedByOtherLines),
+        );
+        return {
+          ...line,
+          membershipQty: Math.max(
+            0,
+            Math.min(newMembershipQty, maxMembershipQty),
+          ),
+          membershipId: membershipEligibility?.membership?.id,
+        };
+      }),
     );
   };
 
@@ -1090,10 +1282,12 @@ export function useBookingFormBase({
     cartLines.some(
       (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
     );
-  const getPaidCartQty = (id: number) =>
-    cartLines.find(
+  const getPaidCartQty = (id: number) => {
+    const line = cartLines.find(
       (l) => l.kind === "service" && !l.isFree && l.variant.id === id,
-    )?.qty ?? 1;
+    );
+    return line?.kind === "service" ? line.qty : 1;
+  };
   const inFreeCart = (id: number) =>
     cartLines.some(
       (l) => l.kind === "service" && !!l.isFree && l.variant.id === id,
@@ -1145,6 +1339,7 @@ export function useBookingFormBase({
       })) as any;
       setVoucherPreview({
         code: normalizedCode,
+        lineItemsKey,
         subtotalAmount: Number(response.data.subtotal_amount ?? grossAmt),
         discountAmount: Number(response.data.discount_amount ?? 0),
         totalAmount: Number(response.data.total_amount ?? netAmtBeforeVoucher),
@@ -1275,6 +1470,7 @@ export function useBookingFormBase({
     totalDur,
     availableDatesResp,
     availableSlotsResp,
+    availableSlotsLoading,
     bonusAvailableSlotsResp,
     existingTherapists,
     selectedFreeVariant,
@@ -1287,6 +1483,16 @@ export function useBookingFormBase({
     removeLine,
     updateServiceQty,
     updateVariantQty,
+    updateMembershipQty,
+    getMembershipRemaining,
+    getMembershipMaxQty,
+    getMembershipQty: (variantId: number) => {
+      const line = cartLines.find(
+        (candidate) =>
+          candidate.kind === "service" && candidate.variant.id === variantId,
+      );
+      return line?.kind === "service" ? (line.membershipQty ?? 0) : 0;
+    },
     handleBonusScheduleModeChange,
     handleBonusDateChange,
     handleBonusSlotSelect,
@@ -1305,7 +1511,10 @@ export function useBookingFormBase({
     filteredBundles,
     cartSummaryLabel,
     customerBookingCount,
+    membershipEligibility,
+    membershipEligibilityLoading,
     parentLineItemsPayload,
+    membershipLineItemsPayload,
     reorderCartLines,
   };
 }

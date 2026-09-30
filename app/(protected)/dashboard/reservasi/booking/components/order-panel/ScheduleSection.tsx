@@ -3,14 +3,19 @@
 import React from "react";
 import { Calendar, Switch } from "@heroui/react";
 import { ClockIcon, WarningIcon } from "@phosphor-icons/react";
-import { parseDate, type DateValue } from "@internationalized/date";
+import {
+  getLocalTimeZone,
+  parseDate,
+  today,
+  type DateValue,
+} from "@internationalized/date";
 import { formatWallClockDate } from "@/app/libs/date-format";
 import type { AvailableSlot } from "@/app/types/booking";
 import type { FormState } from "../booking.types";
 
 interface ScheduleSectionProps {
   form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  setForm: (updater: (prev: FormState) => FormState) => void;
   availableDates: string[];
   availableSlots: AvailableSlot[] | null;
   bundleCalendarBounds: {
@@ -34,6 +39,30 @@ export function ScheduleSection({
   onDateSelect,
   onDateFocusChange,
 }: ScheduleSectionProps) {
+  const calendarFocusDate = (() => {
+    const target = form.date ? parseDate(form.date) : today(getLocalTimeZone());
+    if (
+      bundleCalendarBounds?.minValue &&
+      target.compare(bundleCalendarBounds.minValue) < 0
+    ) {
+      return bundleCalendarBounds.minValue;
+    }
+    if (
+      bundleCalendarBounds?.maxValue &&
+      target.compare(bundleCalendarBounds.maxValue) > 0
+    ) {
+      return bundleCalendarBounds.maxValue;
+    }
+    return target;
+  })();
+
+  React.useEffect(() => {
+    onDateFocusChange?.({
+      year: calendarFocusDate.year,
+      month: calendarFocusDate.month,
+    });
+  }, [calendarFocusDate.year, calendarFocusDate.month, onDateFocusChange]);
+
   const isDateAvailable = (dateStr: string): boolean => {
     if (form.date === dateStr) return true;
     if (availableDates.length === 0) return false;
@@ -74,14 +103,6 @@ export function ScheduleSection({
             Pilih Tanggal
           </p>
           <div className="flex items-center gap-3">
-            <div className="flex flex-col text-right">
-              <span className="text-[12px] font-semibold text-[#1A1614]">
-                Dilakukan Bersamaan?
-              </span>
-              <span className="text-[10px] text-[#B5AFA9]">
-                Pilih jika Anda datang bersama pasangan/teman
-              </span>
-            </div>
             <Switch
               size="sm"
               isSelected={form.isParallel}
@@ -90,15 +111,27 @@ export function ScheduleSection({
               }
               aria-label="Booking dilakukan bersamaan"
             >
-              <Switch.Control className="data-[selected=true]:bg-[#B55368]">
-                <Switch.Thumb />
-              </Switch.Control>
+              <Switch.Content className="flex items-center gap-3">
+                <div className="flex flex-col text-right">
+                  <span className="text-[12px] font-semibold text-[#1A1614]">
+                    Dilakukan Bersamaan?
+                  </span>
+                  <span className="text-[10px] text-[#B5AFA9]">
+                    Pilih jika Anda datang bersama pasangan/teman
+                  </span>
+                </div>
+                <Switch.Control className="data-[selected=true]:bg-[#B55368]">
+                  <Switch.Thumb />
+                </Switch.Control>
+              </Switch.Content>
             </Switch>
           </div>
         </div>
 
         <Calendar
+          key={`${bundleCalendarBounds?.minValue?.toString() ?? ""}:${bundleCalendarBounds?.maxValue?.toString() ?? ""}`}
           aria-label="Booking date"
+          defaultFocusedValue={calendarFocusDate}
           value={form.date ? parseDate(form.date) : null}
           onChange={handleDateSelect}
           onFocusChange={onDateFocusChange}

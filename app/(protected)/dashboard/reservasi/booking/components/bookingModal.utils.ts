@@ -289,6 +289,7 @@ export function buildInitialCartLines(
         name: line.name,
         duration: line.duration_minutes ?? 0,
         price: Number(line.is_free ? 0 : (line.retail_price ?? 0)),
+        originalPrice: variantFromApi?.originalPrice,
         categoryId: variantFromApi?.categoryId ?? 0,
       },
     };

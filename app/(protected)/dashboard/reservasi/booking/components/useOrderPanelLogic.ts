@@ -407,7 +407,10 @@ export function useOrderPanelLogic({
   };
 
   const handleResourceChange = (assignmentKey: string, resourceId: number) => {
-    console.log("[useOrderPanelLogic] handleResourceChange", { assignmentKey, resourceId });
+    console.log("[useOrderPanelLogic] handleResourceChange", {
+      assignmentKey,
+      resourceId,
+    });
     setForm((prev) => {
       const exists = prev.resourceAssignments.some(
         (a) => a.client_key === assignmentKey,
@@ -441,11 +444,13 @@ export function useOrderPanelLogic({
     });
   };
 
-  const handleDateFocusChange = (date: { year: number; month: number }) => {
-    const monthStr = `${date.year}-${String(date.month).padStart(2, "0")}`;
-    // @ts-ignore
-    setViewingMonth?.(monthStr);
-  };
+  const handleDateFocusChange = useCallback(
+    (date: { year: number; month: number }) => {
+      const monthStr = `${date.year}-${String(date.month).padStart(2, "0")}`;
+      setViewingMonth?.(monthStr);
+    },
+    [setViewingMonth],
+  );
 
   const handleDateSelect = (date: { toString: () => string }) => {
     const dateStr = date.toString();

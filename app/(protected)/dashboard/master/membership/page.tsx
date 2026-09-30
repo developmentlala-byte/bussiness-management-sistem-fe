@@ -17,7 +17,12 @@ import { formatRupiah } from "@/app/libs/format-rupiah";
 import { MembershipSkeleton } from "./components/membership-skeleton";
 import MembershipFormModal from "./modal/membership-form-modal";
 import { DeleteMembershipModal } from "./modal/delete-membership-modal";
-import { MembershipPackage, ServiceVariantOption } from "./types";
+import {
+  MembershipCategoryOption,
+  MembershipPackage,
+  MembershipServiceOption,
+  ServiceVariantOption,
+} from "./types";
 
 interface CategoryResponse {
   id: number;
@@ -70,6 +75,28 @@ export default function MembershipPage() {
     [packageResponse],
   );
 
+  const categoryOptions: MembershipCategoryOption[] = useMemo(
+    () =>
+      (categoryResponse?.data || []).map((category) => ({
+        id: category.id,
+        name: category.name,
+      })),
+    [categoryResponse],
+  );
+
+  const serviceOptions: MembershipServiceOption[] = useMemo(
+    () =>
+      (categoryResponse?.data || []).flatMap((category) =>
+        (category.services || []).map((service) => ({
+          id: service.id,
+          name: service.name,
+          categoryId: category.id,
+          categoryName: category.name,
+        })),
+      ),
+    [categoryResponse],
+  );
+
   const variantOptions: ServiceVariantOption[] = useMemo(() => {
     const categories = categoryResponse?.data || [];
     const options: ServiceVariantOption[] = [];
@@ -106,6 +133,12 @@ export default function MembershipPage() {
     () => packages.find((pkg) => pkg.id === activePackageId) ?? null,
     [packages, activePackageId],
   );
+
+  const benefitRows = useMemo(() => {
+    if (!activePackage) return [];
+    if (activePackage.benefits?.length) return activePackage.benefits;
+    return activePackage.variants ?? [];
+  }, [activePackage]);
 
   useEffect(() => {
     if (filteredPackages.length === 0) {
@@ -342,11 +375,11 @@ export default function MembershipPage() {
                       </div>
                       <div>
                         <span className="text-muted text-xs uppercase tracking-wide">
-                          Jumlah Varian
+                          Jumlah Benefit
                         </span>
                         <p className="font-semibold flex items-center gap-1">
                           <CheckCircle className="w-4 h-4" />
-                          {(activePackage.variants || []).length} jenis layanan
+                          {benefitRows.length} scope kuota
                         </p>
                       </div>
                     </div>
@@ -382,49 +415,93 @@ export default function MembershipPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(activePackage.variants || []).length === 0 ? (
+                    {benefitRows.length === 0 ? (
                       <tr>
                         <td
                           colSpan={3}
                           className="px-6 py-8 text-center text-muted"
                         >
-                          Belum ada varian layanan
+                          Belum ada benefit layanan
                         </td>
                       </tr>
                     ) : (
-                      activePackage.variants?.map((variant) => (
-                        <tr
-                          key={variant.id}
-                          className="border-t border-border/60"
-                        >
-                          <td className="px-6 py-4">
-                            <p className="font-medium">
-                              {variant.service_variant?.name || "—"}
-                            </p>
-                            <p className="text-xs text-muted">
-                              {variant.service_variant?.service?.name || ""}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4 text-muted">
-                            {variant.service_variant?.service ? (
+                      benefitRows.map((benefit, idx) => {
+                        const row = benefit as any;
+                        const isLegacyVariant = !(
+                          "service_category_id" in row ||
+                          "service_id" in row ||
+                          "service_variant_id" in row
+                        );
+
+                        const label = isLegacyVariant
+                          ? row.service_variant?.name || "—"
+                          : row.service_variant_id
+                            ? variantOptions.find(
+                                (v) => v.id === row.service_variant_id,
+                              )?.name ||
+                              row.service_variant?.name ||
                               "—"
-                            ) : (
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="w-4 h-4" />
-                                {formatDuration(
-                                  variant.service_variant?.duration_minutes ||
-                                    0,
-                                )}
+                            : row.service_id
+                              ? row.service?.name || "—"
+                              : row.service_category_id
+                                ? row.service_category?.name ||
+                                  row.serviceCategory?.name ||
+                                  "—"
+                                : "—";
+
+                        const subLabel = isLegacyVariant
+                          ? row.service_variant?.service?.name || ""
+                          : row.service_variant_id
+                            ? variantOptions.find(
+                                (v) => v.id === row.service_variant_id,
+                              )?.serviceName ||
+                              row.service_variant?.service?.name ||
+                              ""
+                            : row.service_id
+                              ? row.service?.category?.name || "Service scope"
+                              : row.service_category_id
+                                ? "Semua layanan di kategori ini"
+                                : "";
+
+                        return (
+                          <tr
+                            key={benefit.id ?? idx}
+                            className="border-t border-border/60"
+                          >
+                            <td className="px-6 py-4">
+                              <p className="font-medium">{label}</p>
+                              <p className="text-xs text-muted">{subLabel}</p>
+                            </td>
+                            <td className="px-6 py-4 text-muted">
+                              {row.service_variant_id ||
+                              row.service_id ||
+                              row.service_category_id ? (
+                                isLegacyVariant ? (
+                                  "Variant"
+                                ) : row.service_variant_id ? (
+                                  "Variant"
+                                ) : row.service_id ? (
+                                  "Service"
+                                ) : (
+                                  "Category"
+                                )
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="w-4 h-4" />
+                                  {formatDuration(
+                                    row.service_variant?.duration_minutes || 0,
+                                  )}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <span className="inline-flex items-center px-3 py-1 rounded-lg bg-accent/15 text-accent text-sm font-bold">
+                                {benefit.quota ?? (benefit as any).quota}x
                               </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-accent/15 text-accent text-sm font-bold">
-                              {variant.quota}x
-                            </span>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -438,6 +515,8 @@ export default function MembershipPage() {
         <MembershipFormModal
           onClose={() => setIsCreateOpen(false)}
           variantOptions={variantOptions}
+          categoryOptions={categoryOptions}
+          serviceOptions={serviceOptions}
         />
       )}
 
@@ -445,6 +524,8 @@ export default function MembershipPage() {
         <MembershipFormModal
           onClose={() => setIsEditOpen(false)}
           variantOptions={variantOptions}
+          categoryOptions={categoryOptions}
+          serviceOptions={serviceOptions}
           membership={activePackage}
         />
       )}

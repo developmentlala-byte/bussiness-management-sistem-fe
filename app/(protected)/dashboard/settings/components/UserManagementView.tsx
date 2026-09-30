@@ -39,8 +39,21 @@ interface AppUser {
   email: string;
   phone?: string;
   address?: string;
+  signature_path?: string | null;
   roles: Role[];
 }
+
+const axiosErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error !== "object" || error === null) return fallback;
+
+  const response = (
+    error as {
+      response?: { data?: { message?: string } };
+    }
+  ).response;
+
+  return response?.data?.message || fallback;
+};
 
 export default function UserManagementView() {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -62,6 +75,7 @@ export default function UserManagementView() {
     password: "",
     phone: "",
     address: "",
+    signature: null as File | null,
     role_ids: new Set<string>(),
   });
 
@@ -74,7 +88,7 @@ export default function UserManagementView() {
       ]);
       setUsers(usersRes.data.data);
       setRoles(rolesRes.data.data);
-    } catch (error) {
+    } catch {
       toast.danger("Gagal mengambil data user/role");
     } finally {
       setLoading(false);
@@ -82,7 +96,11 @@ export default function UserManagementView() {
   };
 
   useEffect(() => {
-    fetchData();
+    const loadData = async () => {
+      await fetchData();
+    };
+
+    void loadData();
   }, []);
 
   const handleOpenAddUser = () => {
@@ -93,6 +111,7 @@ export default function UserManagementView() {
       password: "",
       phone: "",
       address: "",
+      signature: null,
       role_ids: new Set(),
     });
     userModal.open();
@@ -106,6 +125,7 @@ export default function UserManagementView() {
       password: "",
       phone: user.phone || "",
       address: user.address || "",
+      signature: null,
       role_ids: new Set(user.roles.map((r) => r.id.toString())),
     });
     userModal.open();
@@ -119,14 +139,21 @@ export default function UserManagementView() {
   const handleSaveUser = async () => {
     setSubmitting(true);
     try {
-      const payload = {
-        ...formData,
-        role_ids: Array.from(formData.role_ids).map(Number),
-      };
+      const payload = new FormData();
+      payload.append("name", formData.name);
+      payload.append("email", formData.email);
+      payload.append("phone", formData.phone);
+      payload.append("address", formData.address);
+      if (formData.password) payload.append("password", formData.password);
+      Array.from(formData.role_ids).forEach((roleId) =>
+        payload.append("role_ids[]", roleId),
+      );
+      if (formData.signature) payload.append("signature", formData.signature);
 
       let res;
       if (selectedUser) {
-        res = await axiosInstance.put(`/st/users/${selectedUser.id}`, payload);
+        payload.append("_method", "PUT");
+        res = await axiosInstance.post(`/st/users/${selectedUser.id}`, payload);
       } else {
         res = await axiosInstance.post("/st/users", payload);
       }
@@ -138,8 +165,9 @@ export default function UserManagementView() {
         fetchData();
         userModal.close();
       }
-    } catch (error: any) {
-      toast.danger(error.response?.data?.message || "Terjadi kesalahan");
+    } catch (error: unknown) {
+      const message = axiosErrorMessage(error, "Terjadi kesalahan");
+      toast.danger(message);
     } finally {
       setSubmitting(false);
     }
@@ -155,8 +183,9 @@ export default function UserManagementView() {
         fetchData();
         deleteModal.close();
       }
-    } catch (error: any) {
-      toast.danger(error.response?.data?.message || "Gagal menghapus user");
+    } catch (error: unknown) {
+      const message = axiosErrorMessage(error, "Gagal menghapus user");
+      toast.danger(message);
     } finally {
       setSubmitting(false);
     }
@@ -176,7 +205,7 @@ export default function UserManagementView() {
         <Button
           variant="primary"
           onPress={handleOpenAddUser}
-          className="bg-accent text-accent-foreground font-bold rounded-xl"
+          className="bg-accent text-accent-foreground font-bold rounded-xl "
         >
           <Plus weight="bold" />
           Tambah User
@@ -402,6 +431,25 @@ export default function UserManagementView() {
                       setFormData({ ...formData, address: e.target.value })
                     }
                   />
+                  <FieldError />
+                </TextField>
+
+                <TextField name="signature">
+                  <Label>Tanda Tangan (Opsional)</Label>
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="rounded-xl"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        signature: e.target.files?.[0] ?? null,
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted">
+                    PNG, JPG, atau WEBP. Maksimal 2 MB.
+                  </p>
                   <FieldError />
                 </TextField>
 

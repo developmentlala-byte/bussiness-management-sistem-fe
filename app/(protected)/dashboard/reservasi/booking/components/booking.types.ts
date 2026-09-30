@@ -15,6 +15,7 @@ export interface Variant {
   name: string;
   duration: number;
   price: number;
+  originalPrice?: number;
   categoryId: number;
 }
 
@@ -33,9 +34,42 @@ export interface BogoEligibleService {
   retail_price: number;
 }
 
+export interface MembershipVariantEligibility {
+  eligible: boolean;
+  benefit_id: number | null;
+  scope: "variant" | "service" | "category" | null;
+  quota: number;
+  used: number;
+  remaining: number;
+}
+
+export interface BookingMembershipEligibility {
+  customer_id: number | null;
+  membership: {
+    id: number;
+    package_name: string | null;
+    start_date: string;
+    end_date: string;
+  } | null;
+  variants: Record<string, MembershipVariantEligibility>;
+}
+
 export type CartLine =
-  | { kind: "service"; variant: Variant; qty: number; isFree?: boolean; groupId?: string }
-  | { kind: "bundle"; bundle: BundlePromo; pricing: BundlePricing; groupId?: string };
+  | {
+      kind: "service";
+      variant: Variant;
+      qty: number;
+      membershipQty?: number;
+      membershipId?: number;
+      isFree?: boolean;
+      groupId?: string;
+    }
+  | {
+      kind: "bundle";
+      bundle: BundlePromo;
+      pricing: BundlePricing;
+      groupId?: string;
+    };
 
 export interface ExistingTherapist {
   id: number;
@@ -43,7 +77,9 @@ export interface ExistingTherapist {
   service_variant_id: number;
 }
 
-export type LocalStaffAssignment = BookingStaffAssignment & { client_key: string };
+export type LocalStaffAssignment = BookingStaffAssignment & {
+  client_key: string;
+};
 
 export interface FormState {
   name: string;
@@ -77,6 +113,7 @@ export interface CreatedBooking {
 
 export interface VoucherPreview {
   code: string;
+  lineItemsKey?: string;
   subtotalAmount: number;
   discountAmount: number;
   totalAmount: number;

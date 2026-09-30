@@ -25,6 +25,9 @@ interface DiscountItemModalProps {
   existingDiscount?: Discount | null;
 }
 
+const parseDiscountDate = (value: string) =>
+  parseDate(value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value);
+
 export const DiscountItemModal: React.FC<DiscountItemModalProps> = ({
   setIsDiscountItemOpen,
   variant,
@@ -40,10 +43,10 @@ export const DiscountItemModal: React.FC<DiscountItemModalProps> = ({
   const now = today(getLocalTimeZone());
   const [dateRange, setDateRange] = useState({
     start: existingDiscount
-      ? parseDate(existingDiscount.start_date.split("T")[0])
+      ? parseDiscountDate(existingDiscount.start_date)
       : now,
     end: existingDiscount
-      ? parseDate(existingDiscount.end_date.split("T")[0])
+      ? parseDiscountDate(existingDiscount.end_date)
       : now.add({ days: 7 }),
   });
 
@@ -93,8 +96,8 @@ export const DiscountItemModal: React.FC<DiscountItemModalProps> = ({
       bms_ms_service_variant_id: variant.id,
       discount_type: discountType,
       discount_value: Number(discountValue),
-      start_date: dateRange.start.toString(),
-      end_date: dateRange.end.toString(),
+      start_date: `${dateRange.start.toString()} 00:00:00`,
+      end_date: `${dateRange.end.toString()} 23:59:59`,
     };
 
     if (existingDiscount) {

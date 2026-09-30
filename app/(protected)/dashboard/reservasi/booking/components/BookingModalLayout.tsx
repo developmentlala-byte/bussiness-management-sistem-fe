@@ -4,6 +4,7 @@ import React from "react";
 import { idr } from "./bookingModal.utils";
 import { OrderPanel } from "./orderPanel";
 import { BrowsePanel } from "./BrowsePanel";
+import { Gift } from "@phosphor-icons/react";
 import type {
   Variant,
   CartLine,
@@ -13,6 +14,7 @@ import type {
   Resource,
   BogoEligibleService,
   ExistingTherapist,
+  BookingMembershipEligibility,
 } from "./booking.types";
 import type { BundlePromo } from "@/app/(protected)/dashboard/master/bundle-promo/types";
 import type {
@@ -40,6 +42,7 @@ const IconCalendar = () => (
 
 interface BookingModalLayoutProps {
   isEdit: boolean;
+  onBuyMembership?: () => void;
   step: BookingStep;
   setStep: (step: BookingStep) => void;
   browseMode: "services" | "bundles";
@@ -68,6 +71,7 @@ interface BookingModalLayoutProps {
   bundlesLoading: boolean;
   availableDatesResp?: AvailableDatesResponse;
   availableSlotsResp?: AvailableSlotsResponse;
+  availableSlotsLoading: boolean;
   bonusAvailableSlotsResp?: AvailableSlotsResponse;
   existingTherapists: ExistingTherapist[];
   selectedServiceVariantUnits: Array<{
@@ -89,7 +93,9 @@ interface BookingModalLayoutProps {
   mobileView: "browse" | "order";
   setMobileView: (v: "browse" | "order") => void;
   bonusBookingForm: BonusBookingFormState;
-  setBonusBookingForm: React.Dispatch<React.SetStateAction<BonusBookingFormState>>;
+  setBonusBookingForm: React.Dispatch<
+    React.SetStateAction<BonusBookingFormState>
+  >;
   selectedFreeVariant: Variant | null;
   selectedServiceVariantIds: number[];
   selectedBundle: BundlePromo | null;
@@ -118,31 +124,87 @@ interface BookingModalLayoutProps {
   groupedVariants: Record<string, Variant[]>;
   filteredBundles: BundlePromo[];
   cartSummaryLabel: string;
+  membershipEligibility: BookingMembershipEligibility | null;
+  getMembershipQty: (variantId: number) => number;
+  getMembershipRemaining: (variantId: number) => number;
+  getMembershipMaxQty: (variantId: number) => number;
+  updateMembershipQty: (variantId: number, newQty: number) => void;
 }
 
 export function BookingModalLayout(props: BookingModalLayoutProps) {
   const {
-    isEdit, step, setStep, browseMode, setBrowseMode, cat, setCat, search, setSearch,
-    cartLines, setCartLines, form, updateForm, pricingSummary, totalDur,
-    availableVariants, availableResources, bundlesLoading,
-    availableDatesResp, availableSlotsResp, bonusAvailableSlotsResp,
-    existingTherapists, selectedServiceVariantUnits, unitTimes,
-    handleBook, handleApplyVoucher, isSubmitPending, isApplyingVoucher,
-    viewingMonth, setViewingMonth, mobileView, setMobileView,
-    bonusBookingForm, selectedFreeVariant, selectedServiceVariantIds,
-    selectedBundle, customerBookingCount, toggleService, toggleBundle,
-    toggleFreeService, removeLine, reorderCartLines, updateServiceQty, updateVariantQty,
-    handleBonusScheduleModeChange, handleBonusDateChange, handleBonusSlotSelect,
-    handleBonusTherapistChange, isBonusSlotConflictingWithPaidBooking,
-    isBogoActive, bogoCapAmount, bogoEligibleServices, isBonusBlockedByPaidSelection,
-    inPaidCart, getPaidCartQty, inFreeCart, isBogoEligibleId, CATS,
-    groupedVariants, filteredBundles, cartSummaryLabel
+    isEdit,
+    onBuyMembership,
+    step,
+    setStep,
+    browseMode,
+    setBrowseMode,
+    cat,
+    setCat,
+    search,
+    setSearch,
+    cartLines,
+    setCartLines,
+    form,
+    updateForm,
+    pricingSummary,
+    totalDur,
+    availableVariants,
+    availableResources,
+    bundlesLoading,
+    availableDatesResp,
+    availableSlotsResp,
+    availableSlotsLoading,
+    bonusAvailableSlotsResp,
+    existingTherapists,
+    selectedServiceVariantUnits,
+    unitTimes,
+    handleBook,
+    handleApplyVoucher,
+    isSubmitPending,
+    isApplyingVoucher,
+    viewingMonth,
+    setViewingMonth,
+    mobileView,
+    setMobileView,
+    bonusBookingForm,
+    selectedFreeVariant,
+    selectedServiceVariantIds,
+    selectedBundle,
+    customerBookingCount,
+    toggleService,
+    toggleBundle,
+    toggleFreeService,
+    removeLine,
+    reorderCartLines,
+    updateServiceQty,
+    updateVariantQty,
+    handleBonusScheduleModeChange,
+    handleBonusDateChange,
+    handleBonusSlotSelect,
+    handleBonusTherapistChange,
+    isBonusSlotConflictingWithPaidBooking,
+    isBogoActive,
+    bogoCapAmount,
+    bogoEligibleServices,
+    isBonusBlockedByPaidSelection,
+    inPaidCart,
+    getPaidCartQty,
+    inFreeCart,
+    isBogoEligibleId,
+    CATS,
+    groupedVariants,
+    filteredBundles,
+    cartSummaryLabel,
+    membershipEligibility,
+    getMembershipQty,
+    getMembershipRemaining,
+    getMembershipMaxQty,
+    updateMembershipQty,
   } = props;
 
   return (
-    <div
-      className="flex h-full w-full min-h-0 flex-col overflow-hidden font-sans"
-    >
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden font-sans">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#EDE8E3] px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -162,6 +224,20 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
             </p>
           </div>
         </div>
+        {!isEdit && onBuyMembership && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onBuyMembership();
+            }}
+            className="inline-flex shrink-0 items-center gap-2 me-5 rounded-lg border border-[#E8B4C0] bg-white px-3 py-2 text-[12px] font-semibold text-[#B55368] transition-colors hover:bg-[#FEF1F4]"
+          >
+            <Gift size={16} weight="duotone" />
+            Beli Membership
+          </button>
+        )}
         {cartLines.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FEF1F4] rounded-full shrink-0">
             <span className="text-[13px] text-[#B55368] font-semibold">
@@ -180,7 +256,9 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
         <div
           className={[
             "flex min-h-0",
-            mobileView === "browse" ? "flex w-full min-w-0 flex-1" : "hidden md:flex md:min-w-0 md:flex-1",
+            mobileView === "browse"
+              ? "flex w-full min-w-0 flex-1"
+              : "hidden md:flex md:min-w-0 md:flex-1",
           ].join(" ")}
         >
           <BrowsePanel
@@ -208,6 +286,11 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
             updateVariantQty={updateVariantQty}
             toggleService={toggleService}
             isBogoEligibleId={isBogoEligibleId}
+            membershipEligibility={membershipEligibility}
+            getMembershipQty={getMembershipQty}
+            getMembershipRemaining={getMembershipRemaining}
+            getMembershipMaxQty={getMembershipMaxQty}
+            updateMembershipQty={updateMembershipQty}
           />
         </div>
 
@@ -235,6 +318,7 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
             selectedServiceVariantIds={selectedServiceVariantIds}
             availableDates={availableDatesResp?.data?.available_dates ?? []}
             availableSlots={availableSlotsResp?.data?.slots ?? null}
+            availableSlotsLoading={availableSlotsLoading}
             availableVariants={availableVariants}
             existingTherapists={existingTherapists}
             onBook={handleBook}
@@ -266,7 +350,9 @@ export function BookingModalLayout(props: BookingModalLayoutProps) {
             onBonusDateChange={handleBonusDateChange}
             onBonusSlotSelect={handleBonusSlotSelect}
             onBonusTherapistChange={handleBonusTherapistChange}
-            isBonusSlotConflictingWithPaidBooking={isBonusSlotConflictingWithPaidBooking}
+            isBonusSlotConflictingWithPaidBooking={
+              isBonusSlotConflictingWithPaidBooking
+            }
             unitTimes={unitTimes}
             availableResources={availableResources}
           />

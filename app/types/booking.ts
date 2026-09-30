@@ -29,6 +29,9 @@ export interface BookingServiceVariantLine {
   slug: string;
   quantity?: number;
   is_free?: boolean;
+  payment_source?: "normal" | "membership";
+  customer_membership_id?: number | null;
+  membership_package_name?: string | null;
   pivot?: {
     quantity: number;
     bms_ms_bundle_promo_id?: number | null;

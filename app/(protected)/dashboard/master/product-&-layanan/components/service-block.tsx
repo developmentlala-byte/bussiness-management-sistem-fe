@@ -534,6 +534,7 @@ function VariantCard({
       activeDiscount.discount_type === "percent"
         ? originalPrice - (originalPrice * dValue) / 100
         : originalPrice - dValue;
+    finalPrice = Math.round(Math.max(0, finalPrice) / 1000) * 1000;
   }
 
   const cardDisabled = !variant.is_active || !serviceActive;

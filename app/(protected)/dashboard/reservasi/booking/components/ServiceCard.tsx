@@ -44,6 +44,11 @@ interface ServiceCardProps {
   disabled?: boolean;
   helperText?: string;
   priceOverride?: number;
+  membershipEligible?: boolean;
+  membershipRemaining?: number;
+  membershipMaxQty?: number;
+  membershipQty?: number;
+  onUpdateMembershipQty?: (newQty: number) => void;
 }
 
 export function ServiceCard({
@@ -55,6 +60,11 @@ export function ServiceCard({
   disabled = false,
   helperText,
   priceOverride,
+  membershipEligible = false,
+  membershipRemaining = 0,
+  membershipMaxQty = membershipRemaining,
+  membershipQty = 0,
+  onUpdateMembershipQty,
 }: ServiceCardProps) {
   return (
     <div
@@ -82,10 +92,66 @@ export function ServiceCard({
         <span className="text-[11px] text-[#B5AFA9]">{durFmt(v.duration)}</span>
       </div>
 
+      {membershipEligible && (
+        <p
+          className={[
+            "mb-2 text-[10px] font-semibold",
+            membershipRemaining > 0 ? "text-emerald-600" : "text-[#B5AFA9]",
+          ].join(" ")}
+        >
+          {membershipRemaining > 0
+            ? `Membership tersedia · sisa ${membershipRemaining}`
+            : "Quota membership habis · harga normal"}
+        </p>
+      )}
+
+      {selected && membershipEligible && onUpdateMembershipQty && (
+        <div
+          className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="text-[10px] font-semibold text-emerald-700">
+            Pakai membership
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onUpdateMembershipQty(membershipQty - 1)}
+              disabled={membershipQty <= 0}
+              className="h-5 w-5 rounded bg-white text-emerald-700 disabled:opacity-30"
+              aria-label="Kurangi unit membership"
+            >
+              -
+            </button>
+            <span className="min-w-5 text-center text-[10px] font-bold text-emerald-700">
+              {membershipQty}
+            </span>
+            <button
+              type="button"
+              onClick={() => onUpdateMembershipQty(membershipQty + 1)}
+              disabled={
+                membershipQty >= membershipMaxQty || membershipQty >= qty
+              }
+              className="h-5 w-5 rounded bg-white text-emerald-700 disabled:opacity-30"
+              aria-label="Tambah unit membership"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-end justify-between gap-2 mt-auto">
         <p
           className={`text-[13px] font-bold ${selected ? "text-[#B55368]" : "text-[#1A1614]"}`}
         >
+          {v.originalPrice &&
+            v.originalPrice > v.price &&
+            priceOverride == null && (
+              <span className="block text-[11px] font-medium text-[#B5AFA9] line-through">
+                {idr(v.originalPrice * (selected ? qty : 1))}
+              </span>
+            )}
           {idr((priceOverride ?? v.price) * (selected ? qty : 1))}
         </p>
 

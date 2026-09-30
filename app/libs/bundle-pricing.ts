@@ -14,6 +14,10 @@ export interface BundlePricing {
   itemCount: number;
 }
 
+export function roundPriceToThousand(value: number): number {
+  return Math.round(value / 1000) * 1000;
+}
+
 export function normalizeBundleItems(
   bundle: BundlePromo & { bundleItems?: BundlePromoItem[] },
 ): BundlePromoItem[] {
@@ -34,7 +38,8 @@ export function calcBundlePricing(bundle: BundlePromo): BundlePricing {
       ? subtotal * (discountValue / 100)
       : Math.min(discountValue, subtotal);
 
-  const finalPrice = Math.max(0, subtotal - discountAmount);
+  const finalPrice = roundPriceToThousand(Math.max(0, subtotal - discountAmount));
+  const appliedDiscountAmount = Math.max(0, subtotal - finalPrice);
 
   let totalDuration = 0;
   if (bundle.is_parallel) {
@@ -68,7 +73,7 @@ export function calcBundlePricing(bundle: BundlePromo): BundlePricing {
 
   return {
     subtotal,
-    discountAmount,
+    discountAmount: appliedDiscountAmount,
     finalPrice,
     totalDuration,
     itemCount,

@@ -8,7 +8,7 @@ import { AppliedVoucherSnapshot } from "@/app/types/booking";
 
 interface SummarySectionProps {
   form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  setForm: (updater: (prev: FormState) => FormState) => void;
   totalDur: number;
   pricingSummary: {
     subtotalAmount: number;

@@ -39,6 +39,8 @@ interface DataTableProps<TData> {
   /** Jumlah baris skeleton yang ditampilkan saat loading. Default: pageSize aktif. */
   skeletonRowCount?: number;
   onRowClick?: (row: TData) => void;
+  expandOnRowClick?: boolean;
+  expandable?: boolean;
 
   /** Server-side pagination support */
   manualPagination?: boolean;
@@ -198,6 +200,8 @@ export function DataTable<TData>({
   isLoading = false,
   skeletonRowCount,
   onRowClick,
+  expandOnRowClick = false,
+  expandable = false,
   manualPagination = false,
   pageCount: manualPageCount,
   pageIndex: manualPageIndex,
@@ -284,7 +288,7 @@ export function DataTable<TData>({
   const totalRows = manualPagination ? (manualTotalRows ?? 0) : data.length;
   const startRow = totalRows === 0 ? 0 : pageIndex * pageSize + 1;
   const endRow = Math.min((pageIndex + 1) * pageSize, totalRows);
-  const columnCount = columns.length;
+  const columnCount = columns.length + (expandable ? 1 : 0);
   const skeletonCount = skeletonRowCount ?? pageSize;
 
   // Ambil header group untuk label di mobile card
@@ -382,6 +386,9 @@ export function DataTable<TData>({
                     </th>
                   );
                 })}
+                {expandable && (
+                  <th className="w-12 px-3 py-4" aria-label="Detail" />
+                )}
               </tr>
             ))}
           </thead>
@@ -409,9 +416,16 @@ export function DataTable<TData>({
                   <tr
                     className={cn(
                       "border-b border-border last:border-0 hover:bg-muted/40 transition-colors",
-                      onRowClick ? "cursor-pointer" : "",
+                      onRowClick || (expandOnRowClick && row.getCanExpand())
+                        ? "cursor-pointer"
+                        : "",
                     )}
-                    onClick={() => onRowClick?.(row.original)}
+                    onClick={() => {
+                      if (expandOnRowClick && row.getCanExpand()) {
+                        row.toggleExpanded();
+                      }
+                      onRowClick?.(row.original);
+                    }}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td
@@ -425,13 +439,37 @@ export function DataTable<TData>({
                         )}
                       </td>
                     ))}
+                    {expandable && (
+                      <td className="px-3 py-3.5 text-right align-middle">
+                        <button
+                          type="button"
+                          disabled={!row.getCanExpand()}
+                          aria-label={
+                            row.getIsExpanded()
+                              ? "Tutup detail row"
+                              : "Buka detail row"
+                          }
+                          title={
+                            row.getIsExpanded() ? "Tutup detail" : "Buka detail"
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            row.toggleExpanded();
+                          }}
+                          className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          {row.getIsExpanded() ? (
+                            <CaretUp weight="bold" className="size-4" />
+                          ) : (
+                            <CaretDown weight="bold" className="size-4" />
+                          )}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   {row.getIsExpanded() && renderExpandedRow && (
                     <tr className="border-b border-border bg-muted/15">
-                      <td
-                        colSpan={row.getVisibleCells().length}
-                        className="px-5 py-4"
-                      >
+                      <td colSpan={columnCount} className="px-5 py-4">
                         {renderExpandedRow(row)}
                       </td>
                     </tr>
@@ -462,6 +500,7 @@ export function DataTable<TData>({
                             )}
                       </td>
                     ))}
+                    {expandable && <td />}
                   </tr>
                 ))}
             </tfoot>
@@ -489,9 +528,16 @@ export function DataTable<TData>({
               key={row.id}
               className={cn(
                 "px-4 py-3 flex flex-col gap-2 hover:bg-muted/40 transition-colors",
-                onRowClick ? "cursor-pointer" : "",
+                onRowClick || (expandOnRowClick && row.getCanExpand())
+                  ? "cursor-pointer"
+                  : "",
               )}
-              onClick={() => onRowClick?.(row.original)}
+              onClick={() => {
+                if (expandOnRowClick && row.getCanExpand()) {
+                  row.toggleExpanded();
+                }
+                onRowClick?.(row.original);
+              }}
             >
               {row.getVisibleCells().map((cell, idx) => {
                 const header = headerGroup?.headers[idx];
@@ -517,6 +563,31 @@ export function DataTable<TData>({
                   </div>
                 );
               })}
+              {expandable && (
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    type="button"
+                    disabled={!row.getCanExpand()}
+                    aria-label={
+                      row.getIsExpanded()
+                        ? "Tutup detail row"
+                        : "Buka detail row"
+                    }
+                    title={row.getIsExpanded() ? "Tutup detail" : "Buka detail"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      row.toggleExpanded();
+                    }}
+                    className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    {row.getIsExpanded() ? (
+                      <CaretUp weight="bold" className="size-4" />
+                    ) : (
+                      <CaretDown weight="bold" className="size-4" />
+                    )}
+                  </button>
+                </div>
+              )}
               {row.getIsExpanded() && renderExpandedRow && (
                 <div className="mt-2 rounded-xl border border-border bg-muted/20 p-3">
                   {renderExpandedRow(row)}

@@ -18,7 +18,7 @@ import type {
 
 interface AssignmentSectionProps {
   form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  setForm: (updater: (prev: FormState) => FormState) => void;
   selectedServiceVariantUnits: Array<{
     key: string;
     variantId: number;
@@ -27,12 +27,15 @@ interface AssignmentSectionProps {
   }>;
   availableVariants: Variant[];
   availableSlots: AvailableSlot[] | null;
+  availableSlotsLoading: boolean;
   availableResources: Resource[];
   existingTherapists: ExistingTherapist[];
-  unitTimes: Map<string, { startTime: string; endTime: string; duration: number }>;
+  unitTimes: Map<
+    string,
+    { startTime: string; endTime: string; duration: number }
+  >;
   therapistAssignmentByKey: Map<string, { id: number; name: string }>;
   resourceAssignmentByKey: Map<string, { id: number; name: string }>;
-  availableTherapistsForSlot: AvailableTherapist[];
   staffAssignmentConflicts: string[];
   variantTherapistCountErrors: Array<{
     variantId: number;
@@ -48,16 +51,19 @@ export function AssignmentSection({
   selectedServiceVariantUnits,
   availableVariants,
   availableSlots,
+  availableSlotsLoading,
   availableResources,
   existingTherapists,
   unitTimes,
   therapistAssignmentByKey,
   resourceAssignmentByKey,
-  availableTherapistsForSlot,
   staffAssignmentConflicts,
   variantTherapistCountErrors,
 }: AssignmentSectionProps) {
-  const handleTherapistChange = (assignmentKey: string, therapistId: number) => {
+  const handleTherapistChange = (
+    assignmentKey: string,
+    therapistId: number,
+  ) => {
     setForm((prev) => ({
       ...prev,
       staffAssignments: prev.staffAssignments.map((a) =>
@@ -109,14 +115,35 @@ export function AssignmentSection({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {selectedServiceVariantUnits.map((unit) => {
-            const variant = availableVariants.find((v) => v.id === unit.variantId);
+            const variant = availableVariants.find(
+              (v) => v.id === unit.variantId,
+            );
             const times = unitTimes.get(unit.key);
             const therapist = therapistAssignmentByKey.get(unit.key);
             const resource = resourceAssignmentByKey.get(unit.key);
 
-            const slot = availableSlots?.find((s) => s.slot_time === form.slotTime);
+            const slot = availableSlots?.find(
+              (s) => s.slot_time === form.slotTime,
+            );
+            const availableTherapistIds =
+              slot?.available_therapists_by_variant?.[unit.variantId] ?? [];
+            const therapistOptions = (slot?.available_therapists ?? [])
+              .filter((item) => availableTherapistIds.includes(item.id))
+              .sort((a, b) => {
+                const timeA = a.last_assigned_at
+                  ? new Date(a.last_assigned_at).getTime()
+                  : 0;
+                const timeB = b.last_assigned_at
+                  ? new Date(b.last_assigned_at).getTime()
+                  : 0;
+                return timeA - timeB;
+              });
             const resourceOptions =
-              slot?.available_resources_by_variant?.[unit.variantId] ?? [];
+              !availableSlotsLoading && slot?.is_available
+                ? (slot.available_resources_by_variant?.[unit.variantId] ?? [])
+                : [];
+            const selectedResourceIsAvailable =
+              !!resource && resourceOptions.includes(resource.id);
 
             return (
               <div
@@ -141,11 +168,20 @@ export function AssignmentSection({
                   <Dropdown>
                     <Dropdown.Trigger className="w-full">
                       <button
+                        type="button"
+                        disabled={therapistOptions.length === 0}
                         aria-label="Pilih terapis"
-                        className="flex items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-[#F8F4F0] px-3 py-2 text-[13px] text-[#1A1614] cursor-pointer hover:border-[#E8B4C0] transition-colors w-full"
+                        className="flex w-full items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-[#F8F4F0] px-3 py-2 text-[13px] text-[#1A1614] transition-colors enabled:cursor-pointer enabled:hover:border-[#E8B4C0] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span className="truncate">
-                          {therapist?.name ?? "Pilih Terapis"}
+                          {therapist?.name ??
+                            (availableSlotsLoading
+                              ? "Memuat terapis..."
+                              : !form.slotTime
+                                ? "Pilih jadwal dahulu"
+                                : therapistOptions.length > 0
+                                  ? "Pilih Terapis"
+                                  : "Tidak ada terapis tersedia")}
                         </span>
                         <CaretDownIcon
                           size={14}
@@ -157,10 +193,12 @@ export function AssignmentSection({
                     <Dropdown.Popover className="rounded-xl border border-[#EDE8E3] bg-white p-1.5 shadow-lg">
                       <Dropdown.Menu
                         aria-label="Pilih Terapis"
-                        onAction={(key) => handleTherapistChange(unit.key, Number(key))}
+                        onAction={(key) =>
+                          handleTherapistChange(unit.key, Number(key))
+                        }
                         className="max-h-[260px] overflow-y-auto"
                       >
-                        {availableTherapistsForSlot.map((t) => (
+                        {therapistOptions.map((t) => (
                           <Dropdown.Item
                             key={t.id}
                             id={t.id}
@@ -175,15 +213,29 @@ export function AssignmentSection({
                   </Dropdown>
 
                   {/* Ruangan */}
-                  {resourceOptions.length > 0 ? (
+                  {availableSlotsLoading ? (
+                    <div className="h-11 rounded-xl bg-[#F3F0ED] px-3.5 flex items-center text-[13px] text-[#7A736E]">
+                      Memuat ketersediaan ruangan...
+                    </div>
+                  ) : slot?.fail_reason === "resource_full" ? (
+                    <div className="h-11 rounded-xl border border-amber-200 bg-amber-50 px-3.5 flex items-center text-[13px] text-amber-800">
+                      Ruangan penuh di slot ini
+                    </div>
+                  ) : resourceOptions.length > 0 ? (
                     <Dropdown>
                       <Dropdown.Trigger className="w-full">
                         <button
+                          type="button"
+                          disabled={!slot?.is_available}
                           aria-label="Pilih ruangan"
-                          className="w-full flex items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-[#F8F4F0] px-3 py-2 text-[13px] text-[#1A1614] cursor-pointer hover:border-[#E8B4C0] transition-colors"
+                          className="w-full flex items-center justify-between rounded-[10px] border border-[#EDE8E3] bg-[#F8F4F0] px-3 py-2 text-[13px] text-[#1A1614] transition-colors enabled:cursor-pointer enabled:hover:border-[#E8B4C0] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <span className="truncate">
-                            {resource?.name ?? "Pilih Ruangan"}
+                            {selectedResourceIsAvailable
+                              ? resource.name
+                              : resource
+                                ? "Pilih ulang ruangan"
+                                : "Pilih Ruangan"}
                           </span>
                           <CaretDownIcon
                             size={14}
@@ -195,11 +247,15 @@ export function AssignmentSection({
                       <Dropdown.Popover className="rounded-xl border border-[#EDE8E3] bg-white p-1.5 shadow-lg">
                         <Dropdown.Menu
                           aria-label="Pilih Ruangan"
-                          onAction={(key) => handleResourceChange(unit.key, Number(key))}
+                          onAction={(key) =>
+                            handleResourceChange(unit.key, Number(key))
+                          }
                           className="max-h-[260px] overflow-y-auto"
                         >
                           {resourceOptions.map((resId) => {
-                            const res = availableResources.find((r) => r.id === resId);
+                            const res = availableResources.find(
+                              (r) => r.id === resId,
+                            );
                             const label = res
                               ? `${res.resource_code} (${res.room_name})`
                               : `Resource #${resId}`;
@@ -219,7 +275,11 @@ export function AssignmentSection({
                     </Dropdown>
                   ) : (
                     <div className="h-11 px-3.5 rounded-xl bg-[#F3F0ED] flex items-center text-[13px] text-[#B5AFA9]">
-                      Ruangan N/A
+                      {form.slotTime && slot?.is_available
+                        ? "Ruangan tidak diperlukan"
+                        : !form.slotTime
+                          ? "Pilih jadwal dahulu"
+                          : "Ketersediaan ruangan belum dapat dipastikan"}
                     </div>
                   )}
                 </div>

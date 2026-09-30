@@ -8,10 +8,6 @@ import {
   useOverlayState,
   toast,
   cn,
-  Dropdown,
-  RangeCalendar,
-  TextField,
-  InputGroup,
   Switch,
 } from "@heroui/react";
 import type { Row } from "@tanstack/react-table";
@@ -24,21 +20,18 @@ import {
   getSpaBookingDuration,
 } from "@/app/types/booking";
 import {
-  CalendarBlank,
   CaretDown,
   CaretUp,
   Eye,
   PencilSimple,
   Plus,
-  CaretLeft,
-  CaretRight,
   Trash,
   PaperPlaneRight,
   ArrowsMergeIcon,
   ArrowsSplitIcon,
-  MagnifyingGlass,
-  X,
   InvoiceIcon,
+  Wallet,
+  IdentificationCardIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/app/components/data-table";
@@ -54,19 +47,16 @@ import CreateBookingModal from "./components/CreateBookingModal";
 import EditBookingModal from "./components/EditBookingModal";
 import { DeleteBookingPinModal } from "./components/DeleteBookingPinModal";
 import { useApiFetch, usePost, useRemove, usePatch } from "@/app/libs/use-http";
-import { formatDate, formatWallClockDate } from "@/app/libs/date-format";
+import { formatWallClockDate } from "@/app/libs/date-format";
 import { buildBookingPaymentRedirectPayload } from "@/app/libs/payment-redirect";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useVisualViewportHeight } from "@/app/libs/use-visual-viewport";
 import { apiGet } from "@/app/services/api";
-import { AlertDialog } from "@heroui/react";
-import StatusFilterDropdown from "./components/status-filter-inline";
-import StaffFilterDropdown from "./components/staff-filter-dropdown";
-import RatingFilterDropdown from "./components/rating-filter-inline";
 import RatingDrawer from "./components/ratingDrawer";
 import { CopyableText } from "@/app/components/copyable-text";
 import { Star } from "@phosphor-icons/react";
 import BookingsFilterToolbar from "./components/BookingsPageInner";
+import PurchaseMembershipModal from "../../membership/components/PurchaseMembershipModal";
 
 const getBookingStatusColor = (status: BookingStatus) => {
   const map: Record<
@@ -79,6 +69,27 @@ const getBookingStatusColor = (status: BookingStatus) => {
     Cancelled: "danger",
   };
   return map[status];
+};
+
+const getMembershipUnitCount = (booking: SpaBooking): number =>
+  (booking.service_variants ?? []).reduce((count, line) => {
+    if (isBundlePromoLine(line) || line.payment_source !== "membership") {
+      return count;
+    }
+    return count + Math.max(1, Number(line.quantity ?? 1));
+  }, 0);
+
+const isMembershipOnlyZeroBooking = (booking: SpaBooking): boolean => {
+  const lines = booking.service_variants ?? [];
+  return (
+    Number(booking.total_amount ?? 0) === 0 &&
+    getMembershipUnitCount(booking) > 0 &&
+    lines.every(
+      (line) =>
+        !isBundlePromoLine(line) &&
+        (line.is_free || line.payment_source === "membership"),
+    )
+  );
 };
 
 const columnHelper = createColumnHelper<SpaBooking>();
@@ -119,6 +130,11 @@ function BookingsPageInner() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const drawerHeight = useVisualViewportHeight();
   const createBookingDrawer = useOverlayState();
+  const [isMembershipOpen, setIsMembershipOpen] = useState(false);
+  const [membershipCustomer, setMembershipCustomer] = useState({
+    name: "",
+    phone: "",
+  });
   const detailDrawer = useOverlayState();
   const ratingDrawer = useOverlayState();
   const deletePinModal = useOverlayState();
@@ -280,6 +296,35 @@ function BookingsPageInner() {
         description: error.response?.data?.message || "Terjadi kesalahan.",
       });
       // Revert optimistic UI if needed (but we'll rely on invalidate)
+    },
+  });
+
+  const payMembership = usePost<
+    {
+      data: {
+        booking_code: string;
+        status: string;
+        payment_via: string;
+        booking: SpaBooking;
+      };
+    },
+    { bookingId: number }
+  >((payload) => `/master/bookings/${payload.bookingId}/pay-membership`, {
+    invalidate: [["bookings"]],
+    onSuccess: (response) => {
+      if (response.data?.booking) {
+        setSelectedBooking(response.data.booking);
+      }
+      toast.success("Quota membership berhasil digunakan");
+    },
+    onError: (error: unknown) => {
+      const responseError = error as {
+        response?: { data?: { message?: string } };
+      };
+      toast.danger("Gagal menyelesaikan booking dengan membership", {
+        description:
+          responseError.response?.data?.message ?? "Terjadi kesalahan.",
+      });
     },
   });
 
@@ -574,6 +619,11 @@ function BookingsPageInner() {
     }
   };
 
+  const handlePayMembership = async () => {
+    if (!selectedBooking?.id || payMembership.isPending) return;
+    await payMembership.mutateAsync({ bookingId: Number(selectedBooking.id) });
+  };
+
   const handleToggleConfirmed = async (isSelected: boolean) => {
     if (!selectedBooking?.id || toggleConfirmed.isPending) return;
 
@@ -666,12 +716,43 @@ function BookingsPageInner() {
     }),
     columnHelper.accessor("id", {
       header: "Booking ID",
-      cell: (info) => (
-        <CopyableText
-          text={info.row.original.booking_code || null}
-          className="font-mono font-semibold "
-        />
-      ),
+      cell: (info) => {
+        const booking = info.row.original;
+        const lines = booking.service_variants ?? [];
+
+        const membershipUnitCount = lines.reduce((count, line) => {
+          if (isBundlePromoLine(line) || line.payment_source !== "membership") {
+            return count;
+          }
+          return count + Math.max(1, Number(line.quantity ?? 1));
+        }, 0);
+        const membershipPackageNames = Array.from(
+          new Set(
+            lines.flatMap((line) =>
+              !isBundlePromoLine(line) &&
+              line.payment_source === "membership" &&
+              line.membership_package_name
+                ? [line.membership_package_name]
+                : [],
+            ),
+          ),
+        );
+
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <CopyableText
+              text={booking.booking_code || null}
+              className="font-mono font-semibold"
+            />
+            {membershipUnitCount > 0 && (
+              <Chip size="sm" variant="soft" color="success">
+                <IdentificationCardIcon size={12} weight="duotone" />
+                {membershipPackageNames.join(", ") || "Membership"}
+              </Chip>
+            )}
+          </div>
+        );
+      },
     }),
     columnHelper.accessor("customer_name", {
       header: "Customer",
@@ -701,6 +782,7 @@ function BookingsPageInner() {
         const isBundle = !!bundle;
 
         const lines = booking.service_variants ?? [];
+
         const serviceName =
           lines.length > 0
             ? lines.map((line) => getBookingLineLabel(line)).join(", ")
@@ -725,6 +807,7 @@ function BookingsPageInner() {
         return (
           <div className="flex flex-col">
             <span className="text-sm font-medium">{displayName}</span>
+
             <span className="text-xs text-muted-foreground">
               by {therapistNames}
             </span>
@@ -1082,8 +1165,8 @@ function BookingsPageInner() {
             />
             New Booking
           </Button>
-          <Drawer.Backdrop isDismissable={false}>
-            <Drawer.Content placement="bottom">
+          <Drawer.Backdrop isDismissable={false} className="z-40">
+            <Drawer.Content placement="bottom" className="z-40">
               <Drawer.Dialog
                 className="flex w-full max-w-6xl mx-auto flex-col overflow-hidden p-0"
                 style={{ height: drawerHeight }}
@@ -1093,6 +1176,10 @@ function BookingsPageInner() {
                   <CreateBookingModal
                     isOpen={createBookingDrawer.isOpen}
                     onSaved={createBookingDrawer.close}
+                    onOpenMembership={(customer) => {
+                      setMembershipCustomer(customer);
+                      setIsMembershipOpen(true);
+                    }}
                   />
                 ) : (
                   editingBooking && (
@@ -1107,6 +1194,13 @@ function BookingsPageInner() {
             </Drawer.Content>
           </Drawer.Backdrop>
         </Drawer>
+        <PurchaseMembershipModal
+          key={isMembershipOpen ? "membership-open" : "membership-closed"}
+          open={isMembershipOpen}
+          onClose={() => setIsMembershipOpen(false)}
+          initialCustomerName={membershipCustomer.name}
+          initialCustomerPhone={membershipCustomer.phone}
+        />
       </div>
 
       {/* TOOLBAR — 2 baris berdasarkan fungsi, biar tidak sesak */}
@@ -1353,6 +1447,15 @@ function BookingsPageInner() {
                                     <p className="font-medium mt-1">
                                       {getBookingLineLabel(line)}
                                     </p>
+                                    {!isBundlePromoLine(line) &&
+                                      line.payment_source === "membership" && (
+                                        <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                          <Wallet size={12} weight="duotone" />
+                                          {line.membership_package_name
+                                            ? `Paket ${line.membership_package_name}`
+                                            : "Dibayar dengan membership"}
+                                        </span>
+                                      )}
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       Durasi: {getBookingLineDuration(line)}{" "}
                                       menit
@@ -1465,34 +1568,58 @@ function BookingsPageInner() {
 
                       {selectedBooking.status === "Pending" && (
                         <div className="pt-2">
-                          <Button
-                            variant="primary"
-                            className="w-full rounded-xl"
-                            onClick={handleRetryPayment}
-                            isDisabled={createPayment.isPending}
-                          >
-                            {createPayment.isPending
-                              ? "Mengarahkan ke pembayaran..."
-                              : "Pilih Metode Pembayaran"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            className="mt-2 w-full rounded-xl"
-                            onClick={handlePayCash}
-                            isDisabled={payCash.isPending}
-                          >
-                            {payCash.isPending ? "Memproses..." : "Bayar Cash"}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            className="mt-2 w-full rounded-xl"
-                            onClick={handlePayFree}
-                            isDisabled={payFree.isPending}
-                          >
-                            {payFree.isPending
-                              ? "Memproses..."
-                              : "Bayar Free (Influencer/Ads)"}
-                          </Button>
+                          {isMembershipOnlyZeroBooking(selectedBooking) ? (
+                            <Button
+                              variant="primary"
+                              className="w-full rounded-xl"
+                              onClick={handlePayMembership}
+                              isDisabled={payMembership.isPending}
+                            >
+                              <IdentificationCardIcon
+                                size={18}
+                                weight="duotone"
+                              />
+                              {payMembership.isPending
+                                ? "Memproses membership..."
+                                : "Selesaikan dengan Membership"}
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="primary"
+                                className="w-full rounded-xl"
+                                onClick={handleRetryPayment}
+                                isDisabled={createPayment.isPending}
+                              >
+                                {createPayment.isPending
+                                  ? "Mengarahkan ke pembayaran..."
+                                  : "Pilih Metode Pembayaran"}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                className="mt-2 w-full rounded-xl"
+                                onClick={handlePayCash}
+                                isDisabled={payCash.isPending}
+                              >
+                                {payCash.isPending
+                                  ? "Memproses..."
+                                  : "Bayar Cash"}
+                              </Button>
+                              {getMembershipUnitCount(selectedBooking) ===
+                                0 && (
+                                <Button
+                                  variant="secondary"
+                                  className="mt-2 w-full rounded-xl"
+                                  onClick={handlePayFree}
+                                  isDisabled={payFree.isPending}
+                                >
+                                  {payFree.isPending
+                                    ? "Memproses..."
+                                    : "Bayar Free (Influencer/Ads)"}
+                                </Button>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

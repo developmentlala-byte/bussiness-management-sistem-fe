@@ -9,6 +9,7 @@ import type {
   Variant,
   CartLine,
   BogoEligibleService,
+  BookingMembershipEligibility,
 } from "./booking.types";
 import type { BundlePromo } from "@/app/(protected)/dashboard/master/bundle-promo/types";
 
@@ -56,16 +57,44 @@ interface BrowsePanelProps {
   updateVariantQty: (id: number, q: number) => void;
   toggleService: (v: Variant) => void;
   isBogoEligibleId: (id: number) => boolean;
+  membershipEligibility: BookingMembershipEligibility | null;
+  getMembershipQty: (variantId: number) => number;
+  getMembershipRemaining: (variantId: number) => number;
+  getMembershipMaxQty: (variantId: number) => number;
+  updateMembershipQty: (variantId: number, newQty: number) => void;
 }
 
 export function BrowsePanel(props: BrowsePanelProps) {
   const {
-    browseMode, setBrowseMode, cat, setCat, search, setSearch, CATS,
-    bundlesLoading, filteredBundles, cartLines, toggleBundle,
-    groupedVariants, isBogoActive, bogoCapAmount, bogoEligibleServices,
-    isBonusBlockedByPaidSelection, availableVariants, inFreeCart,
-    toggleFreeService, inPaidCart, getPaidCartQty, updateVariantQty,
-    toggleService, isBogoEligibleId
+    browseMode,
+    setBrowseMode,
+    cat,
+    setCat,
+    search,
+    setSearch,
+    CATS,
+    bundlesLoading,
+    filteredBundles,
+    cartLines,
+    toggleBundle,
+    groupedVariants,
+    isBogoActive,
+    bogoCapAmount,
+    bogoEligibleServices,
+    isBonusBlockedByPaidSelection,
+    availableVariants,
+    inFreeCart,
+    toggleFreeService,
+    inPaidCart,
+    getPaidCartQty,
+    updateVariantQty,
+    toggleService,
+    isBogoEligibleId,
+    membershipEligibility,
+    getMembershipQty,
+    getMembershipRemaining,
+    getMembershipMaxQty,
+    updateMembershipQty,
   } = props;
 
   return (
@@ -250,12 +279,25 @@ export function BrowsePanel(props: BrowsePanelProps) {
                 const isMassageB = nameB.indexOf("MASSAGE") !== -1;
                 const isSpaA = nameA.indexOf("SPA") !== -1;
                 const isSpaB = nameB.indexOf("SPA") !== -1;
-                const isAddOnA = nameA === "ADD ON" || nameA.indexOf("ADD_ON") !== -1 || nameA.indexOf("ADDON") !== -1 || nameA.indexOf("ADD-ON") !== -1;
-                const isAddOnB = nameB === "ADD ON" || nameB.indexOf("ADD_ON") !== -1 || nameB.indexOf("ADDON") !== -1 || nameB.indexOf("ADD-ON") !== -1;
+                const isAddOnA =
+                  nameA === "ADD ON" ||
+                  nameA.indexOf("ADD_ON") !== -1 ||
+                  nameA.indexOf("ADDON") !== -1 ||
+                  nameA.indexOf("ADD-ON") !== -1;
+                const isAddOnB =
+                  nameB === "ADD ON" ||
+                  nameB.indexOf("ADD_ON") !== -1 ||
+                  nameB.indexOf("ADDON") !== -1 ||
+                  nameB.indexOf("ADD-ON") !== -1;
                 const isBathA = nameA.indexOf("BATH") !== -1;
                 const isBathB = nameB.indexOf("BATH") !== -1;
 
-                const getPriority = (isM: boolean, isS: boolean, isB: boolean, isA: boolean) => {
+                const getPriority = (
+                  isM: boolean,
+                  isS: boolean,
+                  isB: boolean,
+                  isA: boolean,
+                ) => {
                   if (isM) return -4;
                   if (isS) return -3;
                   if (isB) return -2;
@@ -263,8 +305,18 @@ export function BrowsePanel(props: BrowsePanelProps) {
                   return 0;
                 };
 
-                const prioA = getPriority(isMassageA, isSpaA, isBathA, isAddOnA);
-                const prioB = getPriority(isMassageB, isSpaB, isBathB, isAddOnB);
+                const prioA = getPriority(
+                  isMassageA,
+                  isSpaA,
+                  isBathA,
+                  isAddOnA,
+                );
+                const prioB = getPriority(
+                  isMassageB,
+                  isSpaB,
+                  isBathB,
+                  isAddOnB,
+                );
                 if (prioA !== prioB) return prioA - prioB;
                 return a.localeCompare(b);
               })
@@ -299,8 +351,8 @@ export function BrowsePanel(props: BrowsePanelProps) {
                     </div>
                     {isBogoActive && (
                       <p className="mb-3 text-[12px] text-[#B5AFA9]">
-                        Layanan utama dikunci sementara. Pilih bonus gratis
-                        di bagian atas.
+                        Layanan utama dikunci sementara. Pilih bonus gratis di
+                        bagian atas.
                       </p>
                     )}
                     <div className="grid grid-cols-1 min-[450px]:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
@@ -319,11 +371,23 @@ export function BrowsePanel(props: BrowsePanelProps) {
                             selected={inPaidCart(v.id)}
                             qty={getPaidCartQty(v.id)}
                             onUpdateQty={(q) => updateVariantQty(v.id, q)}
+                            membershipEligible={
+                              membershipEligibility?.variants[String(v.id)]
+                                ?.eligible ?? false
+                            }
+                            membershipRemaining={getMembershipRemaining(v.id)}
+                            membershipMaxQty={getMembershipMaxQty(v.id)}
+                            membershipQty={getMembershipQty(v.id)}
+                            onUpdateMembershipQty={(q) =>
+                              updateMembershipQty(v.id, q)
+                            }
                             disabled={disableByBogo}
                             helperText={helperText}
                             onToggle={() => {
                               if (disableByBogo) {
-                                toast.warning("Item ini dikunci saat promo BOGO aktif. Pilih bonus gratis di bagian atas.");
+                                toast.warning(
+                                  "Item ini dikunci saat promo BOGO aktif. Pilih bonus gratis di bagian atas.",
+                                );
                                 return;
                               }
                               toggleService(v);

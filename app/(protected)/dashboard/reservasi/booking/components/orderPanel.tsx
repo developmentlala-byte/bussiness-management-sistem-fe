@@ -35,11 +35,11 @@ interface OrderPanelProps {
   onRemoveLine: (index: number) => void;
   onReorderLines?: (oldIndex: number, newIndex: number) => void;
   onUpdateServiceQty: (index: number, newQty: number) => void;
-  onClearCart: () => void;
   totalDur: number;
   selectedServiceVariantIds: number[];
   availableDates: string[];
   availableSlots: AvailableSlot[] | null;
+  availableSlotsLoading: boolean;
   availableVariants: {
     id: number;
     catKey: string;
@@ -76,6 +76,7 @@ interface OrderPanelProps {
     key: string;
     variantId: number;
     unitIndex: number;
+    groupId: string;
   }>;
   onBonusScheduleModeChange: (mode: "same_date" | "custom_date") => void;
   onBonusDateChange: (date: string) => void;
@@ -84,7 +85,7 @@ interface OrderPanelProps {
   isBonusSlotConflictingWithPaidBooking: (slot: AvailableSlot) => boolean;
   unitTimes: Map<
     string,
-    { startTime: string; endTime: string; duration: number; variantId: number }
+    { startTime: string; endTime: string; duration: number }
   >;
   availableResources: Resource[];
 }
@@ -103,6 +104,7 @@ export function OrderPanel(props: OrderPanelProps) {
     selectedServiceVariantIds,
     availableDates,
     availableSlots,
+    availableSlotsLoading,
     availableVariants,
     existingTherapists,
     onBook,
@@ -277,11 +279,17 @@ export function OrderPanel(props: OrderPanelProps) {
           const slot = availableSlots?.find(
             (s) => s.slot_time === form.slotTime,
           );
+          if (!slot?.is_available) return false;
           const hasResOptions =
             (slot?.available_resources_by_variant?.[unit.variantId]?.length ??
               0) > 0;
 
-          const staffOk = !!staffAssign && staffAssign.staff_id > 0;
+          const eligibleTherapistIds =
+            slot?.available_therapists_by_variant?.[unit.variantId] ?? [];
+          const staffOk =
+            !!staffAssign &&
+            staffAssign.staff_id > 0 &&
+            eligibleTherapistIds.includes(Number(staffAssign.staff_id));
           const resOk =
             !hasResOptions || (!!resAssign && resAssign.resource_id > 0);
 
@@ -297,6 +305,7 @@ export function OrderPanel(props: OrderPanelProps) {
     hasItems &&
     !!form.date &&
     !!form.slotTime &&
+    !availableSlotsLoading &&
     allUnitsAssigned &&
     variantTherapistCountErrors.length === 0 &&
     actualStaffAssignmentConflicts.length === 0 &&
@@ -341,7 +350,6 @@ export function OrderPanel(props: OrderPanelProps) {
               setForm={setForm}
               availableDates={availableDates}
               availableSlots={availableSlots}
-              isEdit={isEdit}
               bundleCalendarBounds={bundleCalendarBounds}
               onSlotSelect={logic.handleSlotSelect}
               isSlotDisabled={logic.isSlotDisabled}
@@ -368,12 +376,12 @@ export function OrderPanel(props: OrderPanelProps) {
                 selectedServiceVariantUnits={selectedServiceVariantUnits}
                 availableVariants={availableVariants}
                 availableSlots={availableSlots}
+                availableSlotsLoading={availableSlotsLoading}
                 availableResources={availableResources}
                 existingTherapists={existingTherapists}
                 unitTimes={unitTimes}
                 therapistAssignmentByKey={logic.therapistAssignmentByKey}
                 resourceAssignmentByKey={logic.resourceAssignmentByKey}
-                availableTherapistsForSlot={logic.availableTherapistsForSlot}
                 staffAssignmentConflicts={actualStaffAssignmentConflicts}
                 variantTherapistCountErrors={variantTherapistCountErrors}
               />
