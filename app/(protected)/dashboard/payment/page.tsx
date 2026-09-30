@@ -11,18 +11,17 @@ import {
   XCircle,
   Warning,
   ArrowLeft,
-  Trash,
 } from "@phosphor-icons/react";
 import { DataTable } from "@/app/components/data-table";
 import { useApiFetch } from "@/app/libs/use-http";
 import { IDR } from "@/app/libs/idr";
 import ReceiptModal from "./components/receiptModal";
-import { PaginatedApiResponse } from "@/app/types/api";
 import { CopyableText } from "@/app/components/copyable-text";
 import {
   DateRangeFilter,
   DateRangeValue,
 } from "@/app/components/date-range-filter";
+import { PaymentFilters } from "./components/payment-filters";
 
 export const STATUS_CONFIG: Record<
   PaymentStatus,
@@ -176,6 +175,15 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
     </span>
   );
 }
+const fmtDuration = (minutes?: number | string | null): string => {
+  const total = Math.round(Number(minutes) || 0);
+  if (total <= 0) return "";
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h && m) return `${h}j ${m}m`;
+  if (h) return `${h}j`;
+  return `${m}m`;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLUMN DEFINITIONS
@@ -293,13 +301,15 @@ function usePaymentColumns(onView: (p: Payment) => void) {
         if (booking) {
           const iso = booking.schedule_date;
           const { duration_minutes } = booking;
+          const durasi = fmtDuration(duration_minutes);
           return (
             <div className="flex flex-col">
               <span className="text-xs font-medium text-foreground">
                 {fmtDate(iso)}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                {fmtTime(iso)} · {duration_minutes / 60}j
+                {fmtTime(iso)}
+                {durasi ? ` · ${durasi}` : ""}
               </span>
             </div>
           );
@@ -463,10 +473,7 @@ function SummaryCards({
     total_online: number;
   };
   counts: {
-    paid: number;
-    pending: number;
-    cash: number;
-    online: number;
+    [key: string]: number;
   };
 }) {
   return (
@@ -589,6 +596,9 @@ export default function PaymentsPage() {
 
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterOption>("paid");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
@@ -614,8 +624,19 @@ export default function PaymentsPage() {
       status: statusFilter,
       start_date: dateRange?.startDate || null,
       end_date: dateRange?.endDate || null,
+      method: methodFilter || null,
+      search: paymentSearch.trim() || null,
+      service: serviceSearch.trim() || null,
     };
-  }, [page, perPage, statusFilter, dateRange]);
+  }, [
+    page,
+    perPage,
+    statusFilter,
+    dateRange,
+    methodFilter,
+    paymentSearch,
+    serviceSearch,
+  ]);
 
   const { data: response, isLoading: paymentLoading } = useApiFetch<{
     data: {
@@ -639,7 +660,6 @@ export default function PaymentsPage() {
     "/payment/booking-payments",
     queryParams,
   );
-  console.log("🚀 ~ PaymentsPage ~ response:", response);
 
   const paginatedData = response?.data?.data;
   const allPayments = paginatedData?.data ?? [];
@@ -689,39 +709,45 @@ export default function PaymentsPage() {
 
       {/* Summary Cards */}
       <div>
-        <SummaryCards summary={summary} counts={counts as any} />
+        <SummaryCards summary={summary} counts={counts} />
       </div>
 
       {/* Filter Tabs */}
       {/* Filter Row */}
-      <div
-        className="flex items-center gap-4 justify-between"
-        style={{
-          borderBottom: "1px solid var(--border)",
-          paddingBottom: "var(--space-4)",
+      <PaymentFilters
+        status={statusFilter}
+        onStatusChange={(v) => {
+          setStatusFilter(v);
+          setPage(1);
         }}
-      >
-        <div style={{ overflowX: "auto" }}>
-          <FilterTabs
-            value={statusFilter}
-            onChange={(v) => {
-              setStatusFilter(v);
-              setPage(1);
-            }}
-            counts={counts}
-          />
-        </div>
-
-        <div style={{ flexShrink: 0 }}>
-          <DateRangeFilter
-            value={dateRange}
-            onChange={(v) => {
-              setDateRange(v);
-              setPage(1);
-            }}
-          />
-        </div>
-      </div>
+        counts={counts}
+        dateRange={dateRange}
+        onDateRangeChange={(v) => {
+          setDateRange(v);
+          setPage(1);
+        }}
+        method={methodFilter}
+        onMethodChange={(v) => {
+          setMethodFilter(v);
+          setPage(1);
+        }}
+        paymentSearch={paymentSearch}
+        onPaymentSearchChange={(v) => {
+          setPaymentSearch(v);
+          setPage(1);
+        }}
+        serviceSearch={serviceSearch}
+        onServiceSearchChange={(v) => {
+          setServiceSearch(v);
+          setPage(1);
+        }}
+        onReset={() => {
+          setMethodFilter("");
+          setPaymentSearch("");
+          setServiceSearch("");
+          setPage(1);
+        }}
+      />
 
       {/* Table — pakai DataTable component kamu */}
       <DataTable
