@@ -150,7 +150,7 @@ export function OrderPanel(props: OrderPanelProps) {
     setViewingMonth,
   });
 
-  const bundleCalendarBounds = selectedBundle
+  const bundleCalendarBounds = selectedBundle && !isEdit
     ? getBundleCalendarBounds(selectedBundle)
     : null;
 

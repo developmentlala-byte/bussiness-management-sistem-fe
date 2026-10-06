@@ -983,7 +983,7 @@ export function useBookingFormBase({
     (updater: (prev: FormState) => FormState) => {
       setForm((prev) => {
         let next = updater(prev);
-        if (selectedBundle) {
+        if (selectedBundle && !isEdit) {
           const bounds = getBundleCalendarBounds(selectedBundle);
           if (next.date) {
             const picked = parseDate(next.date);
@@ -999,7 +999,7 @@ export function useBookingFormBase({
         return next;
       });
     },
-    [selectedBundle],
+    [isEdit, selectedBundle],
   );
 
   const toggleService = (v: Variant) => {
