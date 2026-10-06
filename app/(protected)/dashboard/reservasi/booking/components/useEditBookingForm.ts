@@ -23,7 +23,7 @@ export function useEditBookingForm({
   const updateBookingMutation = usePut<any, any>(
     (payload: any) => `/master/bookings/${payload.bookingId}`,
     {
-      invalidate: [["bookings"]],
+      invalidate: [["bookings"], ["gantt-bookings"]],
       onSuccess: () => {
         toast.success("Booking berhasil diupdate");
         onSaved?.();
